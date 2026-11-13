@@ -1,16 +1,20 @@
 # LiX
 
+**[下载 Windows x64 联网预览版](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/download/v0.7.11-preview/LiX-Setup-0.7.11-preview-x64.exe)** · [发行说明、源码与校验](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)
+
+首次使用需联网准备环境。此预览未签名，完整 CI 尚未通过；当前机器已跑通安装、首次准备、悬浮球与工作台。
+
 项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。本仓库提供0.7.11开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
 
 LiX 是原 Office Agent 的正式名称，面向 Windows 的本机文档助手。已有配置、历史和文件安全链沿用；内部 Python 包名和旧启动入口保持兼容。
 
 Windows 桌面文档编辑助手：打开文档，在本机编辑或提出修改要求，审阅差异后生成可验证的新副本。
 
-当前为 **0.7.11开发源码**，不是已完成发行验收的安装版。最新改动完成选定基础检查；完整自动化的历史成绩不代表当前提交已全量通过。原生、Office及独立质量验收仍有缺项。项目自有代码采用 AGPL-3.0-only；本仓库不捆绑SuperDoc编译JS/CSS，安装时从上游固定归档准备，见[第三方来源](docs/SUPERDOC_SOURCE.md)。详见[验证范围](docs/VALIDATION.md)。
+当前提供 **0.7.11 Windows 联网预览安装包及对应开发源码**，完整发行验收仍未完成。最新改动完成选定基础检查；完整自动化的历史成绩不代表当前提交已全量通过。原生、Office及独立质量验收仍有缺项。项目自有代码采用 AGPL-3.0-only；本仓库不捆绑SuperDoc编译JS/CSS，安装时从上游固定归档准备，见[第三方来源](docs/SUPERDOC_SOURCE.md)。详见[验证范围](docs/VALIDATION.md)。
 
 ## 三步上手
 
-Windows 联网安装包正在形成独立候选，默认按用户安装并主动准备运行环境，当前未公开发行，也不代表干净机器验收完成。构建、数据位置与卸载保留规则见[安装包说明](docs/WINDOWS_INSTALLER.md)。下方为源码运行方式。
+Windows 联网预览安装包已在[Releases](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)提供，默认按用户安装并由用户主动准备运行环境；干净机器验收仍未完成。构建、数据位置与卸载保留规则见[安装包说明](docs/WINDOWS_INSTALLER.md)。下方为源码运行方式。
 
 1. 在项目目录准备依赖（本机基线 Windows 11 x64、Python 3.12）：
 

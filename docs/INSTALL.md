@@ -1,6 +1,6 @@
 # 安装与运行
 
-Windows 联网预览安装器的候选流程、构建命令和配置保留边界见[安装包说明](WINDOWS_INSTALLER.md)。当前尚未发布安装器，以下命令继续用于开发源码。
+Windows 用户可直接[下载联网预览安装器](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/download/v0.7.11-preview/LiX-Setup-0.7.11-preview-x64.exe)，按向导安装后点击“准备并启动”。首次准备需联网，预留约 3 GB 空间；未签名，完整 CI 与干净机器验收尚未通过。[发行说明和 SHA256](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)、[配置与卸载边界](WINDOWS_INSTALLER.md)。以下命令用于开发源码。
 
 当前本机准备基线：Windows 11 x64、CPython 3.12.14、uv 0.12.18。`requires-python >=3.10` 不代表所有版本或操作系统已验证。
 
