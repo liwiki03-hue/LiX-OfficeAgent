@@ -1,0 +1,7 @@
+LiX repository configuration stage
+
+Project-authored code is licensed under GNU AGPL version 3 only; see LICENSE.
+Third-party copyright notices and licenses remain with their respective owners.
+See THIRD_PARTY_NOTICES.md, docs/LICENSING.md and original vendor licenses.
+Source candidate excludes user documents, credentials, installed dependencies,
+rendering runtimes, private logs and local model weights.
