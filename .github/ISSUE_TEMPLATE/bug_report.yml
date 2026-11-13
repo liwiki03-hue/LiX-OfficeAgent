@@ -1,0 +1,70 @@
+name: 故障反馈报告
+description: 使用自建材料报告可复现的界面、编辑或保存问题
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: 不上传 .env、密钥、个人正文或完整日志。涉及安全漏洞时按 SECURITY.md 私下报告。
+  - type: input
+    id: version
+    attributes:
+      label: LiX 版本或提交
+      placeholder: 设置中显示的版本；源码运行时可附提交号
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows 版本和启动方式
+      placeholder: Windows 11 x64；Start-LiX.cmd
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题发生阶段
+      options:
+        - 启动或悬浮球
+        - 文件选择、读取或显示
+        - 手工编辑
+        - AI 建议或模型配置
+        - 独立确认、保存副本或撤销
+        - 历史、恢复或继续编辑
+        - 图片生成或保存
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 可复现步骤
+      description: 从打开应用或自建样例开始，按实际顺序描述。
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期结果与实际结果
+    validations:
+      required: true
+  - type: dropdown
+    id: source_state
+    attributes:
+      label: 原文件状态
+      options:
+        - 未确认是否变化
+        - 已确认未变化
+        - 已确认有非预期变化
+        - 本次没有使用文档
+    validations:
+      required: true
+  - type: textarea
+    id: output_state
+    attributes:
+      label: 副本与错误反馈
+      description: 是否生成副本、是否能重开、界面显示的错误阶段；不确定时写“不确定”，不要重复提交可能已执行的操作。
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏截图或自建最小样例
+      description: 遮盖文件路径中的个人信息，不附真实配置和业务材料。

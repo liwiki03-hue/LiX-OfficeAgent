@@ -1,0 +1,46 @@
+name: 功能改进建议
+description: 从具体文档任务描述问题、期望结果和验收方式
+title: "[建议] "
+body:
+  - type: markdown
+    attributes:
+      value: 请使用自建或公开许可材料描述任务。不要上传个人文档、密钥或完整日志。
+  - type: textarea
+    id: task
+    attributes:
+      label: 你要完成什么任务？
+      placeholder: 例如统一技术报告中的某个术语，并保持数字、单位和引文不变。
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 对应场景
+      options:
+        - DOCX 文档
+        - XLSX 表格
+        - PPTX 演示文稿
+        - 问答与模型配置
+        - 图片生成
+        - 桌面入口与历史
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: difficulty
+    attributes:
+      label: 当前遇到的困难
+      description: 写出现在的操作步骤、卡住的位置或需要重复的工作。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果与验收方式
+      description: 说明哪些内容可以改变，哪些必须保留，以及怎样判断任务完成。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已尝试的替代方法
