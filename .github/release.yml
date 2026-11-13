@@ -1,0 +1,22 @@
+changelog:
+  categories:
+    - title: 不兼容变化
+      labels:
+        - breaking-change
+    - title: 问题修复
+      labels:
+        - bug
+    - title: 功能与体验
+      labels:
+        - enhancement
+        - ui
+    - title: 文档与使用说明
+      labels:
+        - documentation
+    - title: 依赖与构建
+      labels:
+        - dependencies
+        - build
+    - title: 其他变更
+      labels:
+        - "*"
