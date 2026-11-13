@@ -1,5 +1,7 @@
 # 安装与运行
 
+Windows 联网预览安装器的候选流程、构建命令和配置保留边界见[安装包说明](WINDOWS_INSTALLER.md)。当前尚未发布安装器，以下命令继续用于开发源码。
+
 当前本机准备基线：Windows 11 x64、CPython 3.12.14、uv 0.12.18。`requires-python >=3.10` 不代表所有版本或操作系统已验证。
 
 使用独立源码目录，按 README 锁定同步；不复制开发者的 .venv、.env、.runtime、浏览器配置或模型缓存。python-pptx 已移入正常依赖，PPT 功能不再依赖安装测试组。默认不安装研究/OCR/本地大模型 extras。

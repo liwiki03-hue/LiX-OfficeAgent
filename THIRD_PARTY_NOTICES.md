@@ -19,6 +19,8 @@
 | citeproc-py / Playwright | 0.11.1 / 1.63.0 | BSD-2-Clause-Views / Apache-2.0，后者为开发组 |
 | LibreOffice | 官方归档 26.2.6.2 x64 MSI | 外部下载，不打包进源码；保留下载器摘要和原安装包许可 |
 
+安装器候选使用 Inno Setup 7.1.1（is-7_1_1）官方编译器，下载归档和许可摘要固定在 release/WINDOWS_INSTALLER.json。原安装引擎通知保留，自行编写 .iss 配置，不复制第三方界面实现。随候选携带的 uv.exe 为官方 0.12.18 x64 归档，提交 01cb90c1a4f88af09906cb60de9766d2add4a062，原 Apache-2.0/MIT 两份许可完整保存在安装目录 licenses。来源及具体文件见[安装包说明](docs/WINDOWS_INSTALLER.md)；用户首次准备下载的 Python、锁定依赖、SuperDoc 与 LibreOffice 不包含在安装器中，原许可与捆绑发行缺项继续适用。
+
 本轮新脚本自行实现，未粘贴第三方实现。CI 参考 uv 官方锁定同步设计；actions/checkout 固定 11bd71901bbe5b1630ceea73d27597364c9af683（v4.2.2），astral-sh/setup-uv 固定 37802adc94f370d6bfd71619e3f0bf239e1f3b78（v7.6.0）。Action 不打包进应用。
 
 来源：[SuperDoc 固定归档](https://registry.npmjs.org/superdoc/-/superdoc-1.47.2.tgz)、[源码仓库](https://github.com/superdoc/docx-editor)、[CSL 固定源码](https://github.com/citation-style-language/styles/tree/6ba2e9c6aa6e0dab87d3a20b833ed8ff6500f698)。不能用当前分支冒充无法核对的固定源码。

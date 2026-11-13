@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "channel": "network-preview",
+  "platform": "windows-x64",
+  "python": "3.12.14",
+  "uv": {
+    "version": "0.12.18",
+    "commit": "01cb90c1a4f88af09906cb60de9766d2add4a062",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.12.18/uv-x86_64-pc-windows-msvc.zip",
+    "bytes": 17891221,
+    "sha256": "cae6a3bc25239f83dffb467a4b180508d9da23986c04639ebfa44e43e6a84bff",
+    "licenses": [
+      {"file": "LICENSE-UV-APACHE", "upstream": "LICENSE-APACHE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"},
+      {"file": "LICENSE-UV-MIT", "upstream": "LICENSE-MIT", "sha256": "860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c"}
+    ]
+  },
+  "inno": {
+    "version": "7.1.1",
+    "tag": "is-7_1_1",
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe",
+    "bytes": 14336568,
+    "sha256": "8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0",
+    "license_url": "https://raw.githubusercontent.com/jrsoftware/issrc/is-7_1_1/license.txt",
+    "license_sha256": "2e5346868c2a18434489824e11d65c3031620f792fefc415d05f19cd441abf5c"
+  },
+  "renderer": {
+    "version": "26.2.6.2",
+    "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.6.2/win/x86_64/LibreOffice_26.2.6.2_Win_x86-64.msi",
+    "bytes": 373293056,
+    "sha256": "788ce7d4b56460357f57552cb8cd848e8f2254f28f6e51fa61e0c65a18096373"
+  },
+  "bundles_python_environment": false,
+  "bundles_superdoc_compiled_assets": false,
+  "bundles_renderer": false,
+  "requires_first_run_network": true,
+  "automatic_model_requests": false,
+  "signed": false,
+  "release_authorized": false
+}
