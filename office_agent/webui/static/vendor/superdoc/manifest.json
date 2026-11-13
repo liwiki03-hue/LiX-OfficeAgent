@@ -1,0 +1,11 @@
+{
+  "package": "superdoc",
+  "version": "1.47.2",
+  "license": "AGPL-3.0",
+  "artifact_sha256": "12d9ab6178b8082949bbe3171ab395e38b9eec3594ea28f782e9d8fdc18f2125",
+  "files": {
+    "LICENSE": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+    "style.css": "b3de90e9cd8923fab19ad0ef4f0bcf2a3c2ea19533a9ff861fc80c45368ac787",
+    "superdoc.min.js": "5898d2a2f77e791841d540084b75d012a7005ed79e3b2293f9a6dafcfb908a8f"
+  }
+}

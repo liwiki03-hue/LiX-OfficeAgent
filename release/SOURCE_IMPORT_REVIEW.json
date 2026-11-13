@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "version": "0.7.11",
+  "scope": "development-source-import",
+  "prepared_utc": "2026-11-13T11:48:58.456987+00:00",
+  "repository": "https://github.com/liwiki03-hue/LiX-OfficeAgent",
+  "base_commit": "d9bb877b03ac45c2b15dba81116245bae32773a5",
+  "source_import_authorized": true,
+  "binary_release_created": false,
+  "application_updates_configured": false,
+  "public_files": 720,
+  "tested_source_files": 609,
+  "shared_local_dependencies_and_renderer": true,
+  "focused_tests": {
+    "command": "uv run --offline --project <existing-project> python -m pytest -q tests/test_frontend_assets.py tests/test_release_source.py tests/test_rag_ui.py tests/test_rag_ui_integration.py tests/test_skills_ui.py tests/test_editable_copies.py tests/test_editable_copy_browser.py",
+    "passed": 176,
+    "skipped": 0,
+    "elapsed_seconds": 73.43,
+    "exit_code": 0,
+    "full_suite": false
+  },
+  "browser": {
+    "actual_edge_and_superdoc": true,
+    "actual_copy_publisher_and_renderer": true,
+    "source_unchanged": true,
+    "fresh_copy_read_consent": true,
+    "typed_and_saved_copy": true,
+    "both_copies_rolled_back": true,
+    "model_requests": 0,
+    "native_webview": false
+  },
+  "frontend_preparation": {
+    "network": true,
+    "source": "https://registry.npmjs.org/superdoc/-/superdoc-1.47.2.tgz",
+    "archive_sha256": "12d9ab6178b8082949bbe3171ab395e38b9eec3594ea28f782e9d8fdc18f2125",
+    "asset_hashes_verified": 3,
+    "compiled_js_css_in_git": false,
+    "engine_version_changed": false
+  },
+  "privacy": {
+    "source_files": 719,
+    "office_archives_checked": 7,
+    "archive_text_parts_checked": 119,
+    "developer_paths": 0,
+    "history_commits": 7,
+    "history_blobs": 15,
+    "secret_hits": [],
+    "history_scope": "all existing remote reachable commits; staged import checked separately"
+  },
+  "owned_test_job_empty": true,
+  "not_verified": [
+    "current full pytest suite",
+    "GitHub CI at preparation time",
+    "new Windows installation",
+    "native WebView2 current candidate",
+    "Microsoft Office",
+    "physical IME/DPI/multiple monitors",
+    "real cloud service and billing",
+    "independent human quality",
+    "complete corresponding source for bundled SuperDoc binary releases"
+  ]
+}

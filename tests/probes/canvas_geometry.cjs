@@ -1,0 +1,34 @@
+const fs=require('node:fs'),path=require('node:path');
+let source=fs.readFileSync(path.join(__dirname,'l3_l4_canvas.cjs'),'utf8');
+source=source.slice(0,source.indexOf('(async()=>{'));
+source=source.replace('createElement:tag=>new Element(tag),','createElement:tag=>new Element(tag),createTextNode:text=>{const node=new Element("text");node.textContent=text;return node;},');
+source=source.replace("scope:'code test',cells:","scope:'code test',geometry:{rows:{'1':{editable:true,value:25},'2':{editable:true,value:null}},columns:{'1':{editable:true,value:24},'2':{editable:true,value:null}}},cells:");
+source+=`
+(async()=>{
+  let geometryResolve,acceptResolve;
+  api.canvas_prepare_geometry=async(...args)=>{calls.push(['geometry',...args]);return new Promise(resolve=>geometryResolve=resolve);};
+  api.canvas_commit_geometry=async(...args)=>{calls.push(['adopt',...args]);if(!args[3])return {...makeState(),cancelled:true};return new Promise(resolve=>acceptResolve=()=>{revision++;resolve({...makeState(),group_operations:1});});};
+  const geometryPlan=()=>({ok:true,plan:{id:'geometry-'+revision,changes:[{scope:'整行1，包含未显示单元格',before:'25',after:'36',unit:'磅'}]}});
+  await window.OfficeNative.update({document:{id:'doc',version:'v1',ready:true,name:'实验.xlsx'},busy:false});
+  assert.equal(byId('canvas-geometry').disabled,true);
+  await click(target('A1'));assert.equal(byId('canvas-geometry').disabled,false);
+  await click(byId('canvas-geometry'));
+  let node=dialogs()[0],input=descendants(node,'INPUT')[0],axis=descendants(node,'SELECT')[0];
+  assert.equal(input.value,25);input.value='36';
+  const pending=click(findButton(node,'预览影响'));await tick();
+  await click(findButton(node,'预览影响'));assert.equal(calls.filter(row=>row[0]==='geometry').length,1);
+  assert.equal(axis.disabled,true);assert.equal(input.disabled,true);
+  geometryResolve(geometryPlan());await pending;
+  const adopting=click(findButton(node,'采用到草稿'));await tick();
+  await click(findButton(node,'采用到草稿'));assert.equal(calls.filter(row=>row[0]==='adopt'&&row[4]===true).length,1);
+  acceptResolve();await adopting;assert.equal(revision,1);assert.equal(dialogs().length,0);
+  await click(target('A1'));await click(byId('canvas-geometry'));node=dialogs()[0];
+  input=descendants(node,'INPUT')[0];input.value='42';
+  const late=click(findButton(node,'预览影响'));await tick();
+  window.OfficeNative.close();geometryResolve(geometryPlan());await late;
+  assert.equal(dialogs().length,0);assert.equal(calls.filter(row=>row[0]==='adopt'&&row[4]===true).length,1);
+  const result={passed:true,kind:'Node DOM code regression; not browser/native acceptance',duplicate_blocked:true,late_isolated:true};
+  if(output)fs.writeFileSync(output,JSON.stringify(result));
+})().catch(fail);
+`;
+new Function('require','__dirname','process',source)(require,__dirname,process);

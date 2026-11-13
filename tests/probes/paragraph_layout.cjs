@@ -1,0 +1,30 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const output=process.argv[2];
+try{
+  const context=vm.createContext({structuredClone});
+  vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../../office_agent/webui/static/paragraph_layout.js'),'utf8'),context);
+  const layout=context.OfficeParagraphLayout;
+  const original={styleId:'Normal',spacing:{line:360,lineRule:'auto',after:120},indent:{left:20},keepNext:true};
+  const result=layout.properties(original,{before:6.5,left:12,right:3,firstLine:-9});
+  assert.equal(result.spacing.before,130);assert.equal(result.spacing.line,360);assert.equal(result.indent.hanging,180);assert.equal(result.indent.left,240);
+  assert.equal(result.styleId,'Normal');assert.equal(original.indent.left,20);assert.equal(original.spacing.before,undefined);
+  const positive=layout.properties(result,{firstLine:8});assert.equal(positive.indent.firstLine,160);assert.equal(positive.indent.hanging,undefined);
+  for(const value of [{},{before:-1},{left:145},{firstLine:73},{after:Infinity},{after:'6'},{xml:'bad'},{after:0.01}])assert.throws(()=>layout.values(value));
+  assert.throws(()=>layout.properties({indent:{leftChars:100}},{left:12}),/字符缩进/);
+  assert.throws(()=>layout.properties({indent:{leftChars:0}},{left:12}),/字符缩进/);
+  assert.throws(()=>layout.properties({spacing:{beforeLines:0}},{before:12}),/自动间距/);
+  assert.throws(()=>layout.properties({spacing:{beforeAutospacing:true}},{before:6}),/自动间距/);
+  assert.throws(()=>layout.properties({numberingProperties:{numId:1}},{left:6}),/列表/);
+  const nodes=[0,1].map(index=>({type:{name:'paragraph'},attrs:{sdBlockId:'p'+index,paragraphProperties:structuredClone(original),other:'retained'},text:'原文'+index}));
+  const doc={nodeAt:position=>nodes[position]},rows=nodes.map((node,position)=>({id:node.attrs.sdBlockId,position}));
+  let changes=[];
+  const editor={state:{doc,get tr(){return {setNodeMarkup(position,type,attrs){changes.push({position,attrs});return this;}};}}};
+  const selected=layout.capture(doc,rows,['p0','p1'],4);
+  layout.prepare(editor,selected,4,{after:12});assert.equal(changes.length,2);assert.equal(changes[1].attrs.other,'retained');assert.equal(changes[0].attrs.paragraphProperties.spacing.after,240);
+  assert.equal(nodes[0].attrs.paragraphProperties.spacing.after,120);
+  assert.throws(()=>layout.prepare(editor,selected,5,{after:12}),/过期/);
+  changes=[];nodes[1]={...nodes[1]};assert.throws(()=>layout.prepare(editor,selected,4,{after:12}),/身份/);assert.equal(changes.length,0);
+  assert.throws(()=>layout.capture(doc,rows,['p0','missing'],4));
+  assert.throws(()=>layout.capture(doc,rows,Array.from({length:9},(_,i)=>'p'+i),4));
+  fs.writeFileSync(output,JSON.stringify({passed:true,scope:'Pure JS transaction code; no browser, SuperDoc export, or native acceptance'}));
+}catch(error){fs.writeFileSync(output,JSON.stringify({passed:false,error:String(error.stack)}));process.exitCode=1;}

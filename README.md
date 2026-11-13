@@ -1,48 +1,68 @@
-# LiX — AI 文档编辑助手
+# LiX
 
-拖入文档，用对话指导修改，审阅后保存新副本。
+项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。本仓库提供0.7.11开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
 
-LiX 是面向 Windows 的桌面文档助手，原名 Office Agent。它将文档查看、受控编辑、AI 建议和副本交付放在同一工作流中。
+LiX 是原 Office Agent 的正式名称，面向 Windows 的本机文档助手。已有配置、历史和文件安全链沿用；内部 Python 包名和旧启动入口保持兼容。
 
-**仓库正在初始化：目前只有项目说明和 GitHub 配置，尚未上传应用源码，也没有安装包。** 以下能力描述对应本地开发项目，不代表可以从当前仓库直接安装运行。源码、版本记录和下载入口将在核对后单独提交。
+Windows 桌面文档编辑助手：打开文档，在本机编辑或提出修改要求，审阅差异后生成可验证的新副本。
 
-## 产品方向与当前开发范围
+当前为 **0.7.11开发源码**，不是已完成发行验收的安装版。最新改动完成选定基础检查；完整自动化的历史成绩不代表当前提交已全量通过。原生、Office及独立质量验收仍有缺项。项目自有代码采用 AGPL-3.0-only；本仓库不捆绑SuperDoc编译JS/CSS，安装时从上游固定归档准备，见[第三方来源](docs/SUPERDOC_SOURCE.md)。详见[验证范围](docs/VALIDATION.md)。
 
-| 场景 | 本地项目已接入 | 主要边界 |
+## 三步上手
+
+1. 在项目目录准备依赖（本机基线 Windows 11 x64、Python 3.12）：
+
+   ```powershell
+   uv python install 3.12.14
+   uv lock --check
+   uv sync --locked --python 3.12.14 --no-dev
+   Copy-Item .env.example .env
+   ```
+
+   仅在 `.env` 不存在时复制，保留原配置；模板不是可用密钥。
+
+2. 准备独立渲染运行时，使用标准入口：
+
+   ```powershell
+   uv run python tools/install_frontend_assets.py
+   .\tools\Install-DocumentRuntime.ps1
+   .\Start-LiX.cmd
+   ```
+
+   需要 WebView2、.NET Framework 和可用字体。标准入口固定 Edge/netfx/pythonnet 3.0.5。下载失败或执行策略拦截见[安装指南](docs/INSTALL.md)，不要更改全局策略。
+
+   本机项目文件夹还提供带图标的 `LiX.exe`，双击即可启动，内部仍调用上述标准入口。请保留在项目目录，不要单独移动 EXE；它不包含 Python、uv 或渲染运行时，也不是独立安装包。源码包不携带编译产物，可在 Windows 已有 .NET Framework 和 PowerShell 7 环境下运行 `uv run pwsh -NoProfile -File tools/build_lix_launcher.ps1` 重新生成。
+
+3. 将自己的 DOCX、XLSX 或 PPTX 拖到悬浮球，核对并同意读取。手工编辑无需模型密钥；保存先审阅并独立确认，副本验证成功才显示完成。
+
+## 当前范围
+
+| 文件 | 已接入 | 主要限制 |
 | --- | --- | --- |
-| Word / DOCX | 分页查看、普通文字和部分格式编辑、AI 草稿建议、修改审阅与副本保存 | 复杂域、修订和表格结构按能力检查处理，不承诺完整 Word 兼容 |
-| Excel / XLSX | 有界网格、冻结行列、受限公式、单元格编辑与副本保存 | 不是完整 Excel 公式或对象引擎 |
-| PowerPoint / PPTX | 幻灯片页图、已有普通文字编辑与副本保存 | 不是任意对象与复杂排版编辑器 |
-| AI 协作 | 普通问答、文档修改建议、多接口与分用途模型选择 | 需要自行配置可用服务；能力和费用由所选服务决定 |
-| 桌面入口 | 悬浮球、文件拖入、文档工作区与历史 | 文件读取仍需授权，历史不恢复旧批准 |
+| DOCX | 分页编辑、普通文本和部分格式、受控 AI 草稿、独立副本 | 固定 SuperDoc；复杂域、修订、表格结构按能力检查拒绝，不等于 Word 全兼容 |
+| XLSX | 有界网格、冻结行列、部分格式、同表受限公式、独立副本 | 不是全函数 Excel；当前窗口预算 30×16 |
+| PPTX | 页图、已有普通文字片段、独立副本 | 不是任意对象编辑器；页图与草稿各自核对版本 |
 
-## 文档处理流程
+只读DOCX可在支持范围内创建简化可编辑副本，再重新同意读取后编辑。正文和普通表格文字保留，原样式、自动编号和分页不保证保留；保护或复杂正文拒绝转换，不强制解锁原文件。
 
-1. 选择文档，或将 DOCX、XLSX、PPTX 拖到悬浮球。
-2. 核对文件并同意读取，在工作区查看内容。
-3. 手工编辑，或选择内容后向 AI 提出要求。
-4. 审阅修改；采用建议只更新草稿，不直接写文件。
-5. 独立确认保存计划，生成新副本并检查结果。
+详见[能力边界](docs/CAPABILITIES.md)。旧 DOC/XLS/PPT 写入和真实 Office 自动化保持暂停。LibreOffice/PDFium 证据不等于 Microsoft Office 人工验收。
 
-手工编辑不要求模型密钥。使用 AI 时，获准的相关内容会发送到你选择的模型服务；本机软件不意味着所有模型都离线运行。
+## AI 与数据
+
+设置中配置连接和模型；问答、文档 Agent、生图各自选择。选择影响后续请求，已发出的任务保留原配置。获取模型列表不等于调用通过。
+
+主动发送时获准的相关内容进入所选服务，可能计费；单机应用不代表 AI 离线。模型不能直接执行代码、XML 或文件写入。没有有效模型配置仍可手工编辑。真实 AI 主故事尚待当前候选上的独立验收。
 
 ## 文件保护
 
-计划 → 独立确认 → 备份 → 写新副本 → 重开与校验 → 审计 → 独立撤销。
+计划 → 独立确认 → 备份 → 写新副本 → 重开/渲染校验 → 审计 → 独立撤销。源变化、旧计划或结果不确定会阻止重复执行。接受 AI 建议只更新草稿，不等于批准写文件；历史不恢复旧批准。
 
-源变化、过期计划或结果不确定时，不能沿用旧批准。请保留重要原稿的独立备份，并先用自建材料了解支持范围。
+配置使用 `.env`。本机草稿、备份、审计与用户材料不进入源码包；不要上传密钥、正文或完整日志。请先用自建材料试用并保留重要源文件的独立备份。
 
-`.env`、密钥、本机历史、草稿、备份、审计和用户文档不属于公开源码。不要在 Issue 中提交完整日志、真实业务文件或凭据。
+## 开发与发行状态
 
-## 本仓库现有文件
+[安装](docs/INSTALL.md) · [故障处理](docs/TROUBLESHOOTING.md) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md) · [变更](CHANGELOG.md) · [合成样例](examples/README.md)
 
-- [贡献说明](CONTRIBUTING.md)：当前可提交范围与未来源码验证规则。
-- [安全报告](SECURITY.md)：隐私与漏洞反馈要求。
-- [GitHub 配置说明](docs/GITHUB_SETUP.md)：文件用途和后续合入方式。
-- [第三方清点快照](THIRD_PARTY_NOTICES.md)：本地项目的依赖信息，不表示这些资产已在此分发。
+最终完整门禁为 `uv run pytest -q`。R5历史冻结候选为 **4126 passed、5 skipped、165 subtests passed**，不适用于之后的产品改动。当前源码按维护者要求只运行选定基础检查，不能称为完整验收。范围与未验项见[验证记录](docs/VALIDATION.md)和[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。没有发布安装包，10 MiB代码更新ZIP不是安装器；应用更新仓库和公钥未配置。
 
-目前没有启用应用 CI，也没有发布 Release。本次配置上传不等于产品通过验收。后续将分别记录自动化、原生 Windows、Microsoft Office、真实模型和人工质量结果。
-
-## 许可
-
-项目自有代码选用 **AGPL-3.0-only**，见 [LICENSE](LICENSE)。第三方代码和资产保留各自许可与版权，见 [NOTICE](NOTICE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。第三方完整源码交付、构建复核和发行准备仍需单独核对。
+项目自有代码采用 [AGPL-3.0-only](LICENSE)，[许可决定](docs/LICENSING.md)记录范围；[第三方声明](THIRD_PARTY_NOTICES.md)和 [NOTICE](NOTICE)保留第三方原许可。许可选定不代表发行验收完成。

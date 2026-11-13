@@ -1,0 +1,69 @@
+:root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bg-elevated); }
+body {
+  display: flex; flex-direction: column;
+  --sd-ui-font-family: var(--font);
+  --sd-ui-bg: var(--card);
+  --sd-ui-text: var(--ink);
+  --sd-ui-text-muted: var(--muted);
+  --sd-ui-hover-bg: var(--card-inner);
+  --sd-ui-active-bg: var(--accent-soft);
+  --sd-ui-action: var(--accent);
+  --sd-ui-action-hover: var(--accent-strong);
+  --sd-ui-action-text: var(--on-accent);
+  --sd-ui-border: var(--border);
+  --sd-ui-toolbar-bg: var(--card);
+  --sd-ui-toolbar-button-text: var(--ink);
+  --sd-ui-toolbar-button-hover-bg: var(--card-inner);
+  --sd-ui-toolbar-button-active-bg: var(--accent-soft);
+  --sd-ui-dropdown-bg: var(--card);
+  --sd-ui-dropdown-text: var(--ink);
+  --sd-ui-dropdown-shadow: var(--shadow-menu);
+  --layout-panel: var(--card);
+  --layout-text: var(--ink);
+  --layout-border: var(--border-strong);
+}
+body[data-theme="dark"] { color-scheme: dark; }
+#format-bar { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 44px; padding: 4px 12px; background: var(--card); color: var(--ink); border-bottom: 1px solid var(--border); overflow-x: auto; font-family: var(--font); font-size: var(--fs-body); }
+#format-bar > label { display: flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-caption); }
+#format-bar select { height: var(--control-compact); max-width: 120px; border: 1px solid var(--border-strong); border-radius: var(--radius-btn); background: var(--card-inner); color: var(--ink); font: inherit; }
+#engine-toolbar { flex-shrink: 0; }
+#selection-format { flex-shrink: 0; font-size: var(--fs-caption); color: var(--muted); }
+#engine-toolbar .superdoc-toolbar { border: 0; padding: 0; }
+#table-body-actions[hidden] { display: none; }
+#table-body-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 4px 12px; color: var(--ink); background: var(--card); border-bottom: 1px solid var(--border); font-family: var(--font); font-size: var(--fs-caption); }
+#table-body-actions button { display: inline-flex; align-items: center; gap: 4px; min-height: var(--control-compact); padding: 4px 8px; color: inherit; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-btn); font: inherit; }
+#table-body-actions button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+#table-body-actions button:hover:not(:disabled) { background: var(--card-inner); }
+#table-body-actions button:disabled { opacity: .5; cursor: not-allowed; }
+#page-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 24px 16px 48px; scrollbar-width: auto; scrollbar-color: auto; }
+#page-scroll::-webkit-scrollbar { width: var(--scroll-size); height: var(--scroll-size); }
+#page-scroll::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 6px; }
+#page-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
+#page-scroll::-webkit-scrollbar-track, #page-scroll::-webkit-scrollbar-corner { background: transparent; }
+#page-scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+@supports not selector(::-webkit-scrollbar) { #page-scroll { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; } }
+@media (forced-colors: active), (any-pointer: coarse) {
+  #page-scroll { scrollbar-width: auto; scrollbar-color: auto; }
+  #page-scroll::-webkit-scrollbar { width: initial; height: initial; }
+  #page-scroll::-webkit-scrollbar-thumb { background: CanvasText; }
+}
+#editor { min-height: 100%; }
+#page-scroll .superdoc { justify-content: center; }
+#frame-error { position: absolute; bottom: 12px; left: 24px; right: 24px; color: var(--warn); background: var(--warn-soft); border: 1px solid var(--warning-border); padding: 8px; border-radius: var(--radius-btn); font: var(--fs-body)/var(--lh-body) var(--font); }
+#frame-error:empty { display: none; }
+body.paper-dark #editor { filter: invert(.88) hue-rotate(180deg); }
+body.paper-dark #page-scroll { background: var(--bg); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 650px) { #page-scroll { padding: 12px 8px 32px; } #format-bar { padding: 4px; } }
+#paragraph-layout { width: 32px; height: var(--control-compact); flex-shrink: 0; border: 1px solid var(--layout-border); border-radius: var(--radius-btn); background: var(--layout-panel); color: var(--layout-text); }
+#paragraph-layout svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; vertical-align: middle; }
+.paragraph-layout-dialog { width: min(340px,calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; background: var(--layout-panel); color: var(--layout-text); border: 1px solid var(--layout-border); border-radius: var(--radius-card); padding: 20px; font-family: var(--font); box-shadow: var(--shadow-dialog); }
+.paragraph-layout-dialog::backdrop { background: var(--overlay); }
+.paragraph-layout-dialog h2 { font-size: var(--fs-h2); margin: 0 0 12px; }
+.paragraph-layout-dialog p { font-size: var(--fs-body); line-height: var(--lh-body); }
+.paragraph-layout-dialog label { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 0; font-size: var(--fs-body); }
+.paragraph-layout-dialog input { width: 100px; min-height: var(--control-height); padding: 8px; background: var(--card-inner); color: var(--layout-text); border: 1px solid var(--layout-border); border-radius: var(--radius-btn); font: inherit; }
+.paragraph-layout-dialog button { margin: 8px 8px 0 0; min-height: var(--control-height); padding: 8px 12px; background: var(--layout-panel); color: var(--layout-text); border: 1px solid var(--layout-border); border-radius: var(--radius-btn); font: inherit; }
+.paragraph-layout-dialog :focus-visible, #paragraph-layout:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

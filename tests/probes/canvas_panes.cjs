@@ -1,0 +1,37 @@
+const fs=require('node:fs'),path=require('node:path');
+let source=fs.readFileSync(path.join(__dirname,'l3_l4_canvas.cjs'),'utf8');
+source=source.slice(0,source.indexOf('(async()=>{'));
+source=source.replace("const makeView=()=>", "let viewRow=1,frozen=0;\nconst makeView=()=>");
+source=source.replace('row:1,col:1,rows:2,cols:3,','row:viewRow,col:1,rows:2,cols:3,row_indices:viewRow===1?[1,2]:[1,viewRow],col_indices:[1,2,3],panes:{supported:true,editable:true,rows:frozen,cols:0},');
+source=source.replace('matches(selector){','matches(selector){if(["thead","tbody"].includes(selector))return this.tagName===selector.toUpperCase();');
+source+=`
+(async()=>{
+  let previewResolve,adoptResolve;
+  baseCells.push({id:'A45',value:'后部数据',type:'inlineStr',editable:true});
+  api.canvas_view=async(...args)=>{calls.push(['view',...args]);viewRow=args[3]||1;return {...makeState(),view:makeView()};};
+  api.canvas_prepare_panes=async(...args)=>{calls.push(['panes',...args]);return new Promise(resolve=>previewResolve=resolve);};
+  api.canvas_commit_panes=async(...args)=>{calls.push(['adopt',...args]);if(!args[3])return {...makeState(),cancelled:true};return new Promise(resolve=>adoptResolve=()=>{revision++;frozen=1;resolve({...makeState(),group_operations:1});});};
+  const plan=()=>({ok:true,plan:{id:'freeze-'+revision,changes:[{before:'无冻结',after:'前1行'}]}});
+  assert.deepEqual(Array.from(Grid.indices({row:45,col:8,rows:3,cols:2,row_indices:[1,2,45],col_indices:[1,8]}).rows),[1,2,45]);
+  assert.throws(()=>Grid.indices({row_indices:[1,1],col_indices:[1],row:1,col:1,rows:2,cols:1}));
+  assert.throws(()=>Grid.indices({row_indices:Array.from({length:31},(_,i)=>i+1),col_indices:[1],row:1,col:1,rows:31,cols:1}));
+  await window.OfficeNative.update({document:{id:'doc',version:'v1',ready:true,name:'实验.xlsx'},busy:false});
+  await click(byId('canvas-panes'));let node=dialogs()[0],fields=descendants(node,'INPUT');fields[0].value='1';fields[1].value='0';
+  const preparing=click(findButton(node,'预览影响'));await tick();await click(findButton(node,'预览影响'));
+  assert.equal(calls.filter(row=>row[0]==='panes').length,1);assert.equal(fields[0].disabled,true);
+  previewResolve(plan());await preparing;
+  const adopting=click(findButton(node,'采用到草稿'));await tick();await click(findButton(node,'采用到草稿'));
+  assert.equal(calls.filter(row=>row[0]==='adopt'&&row[4]===true).length,1);adoptResolve();await adopting;
+  assert.equal(target('A1').parentElement.dataset.frozenRow,'true');
+  byId('canvas-window').value='A45';byId('canvas-window').onkeydown({key:'Enter',preventDefault(){}});await tick();await tick();
+  assert.ok(target('A45'));assert.equal(target('A1').parentElement.dataset.frozenRow,'true');
+  await click(target('A45'));target('A45').onkeydown({key:'ArrowUp',preventDefault(){}});await tick();await tick();
+  assert.equal(calls.filter(row=>row[0]==='view').at(-1)[4],44);
+  await click(byId('canvas-panes'));node=dialogs()[0];fields=descendants(node,'INPUT');fields[0].value='2';
+  const late=click(findButton(node,'预览影响'));await tick();window.OfficeNative.close();previewResolve(plan());await late;
+  assert.equal(dialogs().length,0);assert.equal(calls.filter(row=>row[0]==='adopt'&&row[4]===true).length,1);
+  const result={passed:true,scope:'Node DOM code regression, not browser/native acceptance',pinned_source_rows_preserved:true,keyboard_navigation:true,duplicate_and_late_isolation:true};
+  if(output)fs.writeFileSync(output,JSON.stringify(result));
+})().catch(fail);
+`;
+new Function('require','__dirname','process',source)(require,__dirname,process);

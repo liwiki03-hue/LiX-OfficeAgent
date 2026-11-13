@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiX — 审核后写入</title>
+  <link rel="icon" type="image/png" href="brand/lix.png">
+  <link rel="stylesheet" href="design_tokens.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="diagram_preview.css">
+  <link rel="stylesheet" href="workspace_layout.css">
+  <link rel="stylesheet" href="workbench_ui.css">
+  <link rel="stylesheet" href="floating_shell.css">
+  <link rel="stylesheet" href="paged_workspace.css">
+  <link rel="stylesheet" href="agent_elements.css">
+  <link rel="stylesheet" href="icon_controls.css">
+  <link rel="stylesheet" href="presentation_workspace.css">
+  <link rel="stylesheet" href="office_canvas.css">
+  <link rel="stylesheet" href="settings_workspace.css">
+  <link rel="stylesheet" href="compact_surfaces.css">
+</head>
+<body>
+  <section id="auth-screen" hidden aria-live="polite"></section>
+  <div class="app" id="workspace" hidden inert aria-hidden="true">
+    <!-- 主区优先置于 DOM，Tab 顺序：文件 → 输入 → 结果 → 详情 → 导航与设置。 -->
+    <main class="main">
+      <div class="topbar">
+        <div class="titles">
+          <h1 id="page-title">当前任务</h1>
+          <div class="subtitle">选择文档，输入任务；保存修改需单独确认，原文件保留。</div>
+        </div>
+          <details id="tools-menu" class="top-details tools-menu">
+            <summary id="tools-menu-toggle" aria-controls="tools-panel">工具</summary>
+            <div id="tools-panel" class="tools-panel" aria-label="生成能力说明">
+              <section class="card pane" aria-labelledby="imagegen-title">
+                <h2 id="imagegen-title">生成图片</h2>
+                <p class="pane-body">直接在对话里说明你要什么图，例如「生成一张海边猫咪的照片」或「生成三张海边猫咪的照片」；不说张数默认一张，最多八张。每张生成、保存、撤销各自单独确认；保存只新增文件，原文件不变。</p>
+              </section>
+              <section class="card pane" aria-labelledby="diagram-help-title">
+                <h2 id="diagram-help-title">生成图表</h2>
+                <p class="pane-body">直接在对话里说明图的主题，例如「画一个博物馆预约系统的类图」，会直接画好并列在对话里。支持流程图、类图、时序图、状态图、实体关系图；图形不满意可展开文字、复制后自行微调。</p>
+              </section>
+            </div>
+          </details>
+        <!-- 保留脚本绑定的唯一 ID；重复入口不显示、不参与键盘焦点。 -->
+        <button class="iconbtn" id="btn-select" tabindex="-1" title="选择要处理的文件" aria-label="选择要处理的文件" hidden>📂</button>
+        <button class="iconbtn" id="btn-probe" tabindex="-1" title="检测本机 Office" aria-label="检测本机 Office" hidden>🔍</button>
+        <button class="iconbtn" id="btn-theme" tabindex="-1" title="切换主题" aria-label="切换主题" hidden>◐</button>
+      </div>
+      <div class="content">
+        <div class="file-strip">
+          <button class="btn primary" id="btn-select2">选择文档</button>
+          <div class="fileinfo">
+            <div class="filename" id="file-name">当前文件：尚未选择</div>
+          </div>
+        </div>
+        <section class="file-entry card" id="file-entry" aria-label="文档选择">
+          <div id="file-empty">
+            <div class="card-title" id="file-entry-title">先选择要处理的文档</div>
+            <div id="file-drop" class="file-drop" tabindex="0" role="button" aria-label="拖入一个Office文件或按回车选择文档">也可拖入一个 .docx / .xlsx / .doc / .xls 文件。拖入后仍需在系统选择框确认；旧版 .doc/.xls 的修改预览暂不可用。</div>
+          </div>
+          <details id="file-options" class="file-options">
+            <summary>最近文档 / 粘贴路径</summary>
+            <div class="path-entry"><label for="file-path">粘贴本地路径</label><input id="file-path" type="text" autocomplete="off" spellcheck="false" placeholder="例如 C:\文档\报告.docx" aria-describedby="file-entry-status" /><button class="btn secondary" id="btn-path-select" type="button">选择此文件…</button></div>
+            <div class="card-title">最近打开过的文件（最多8条）<span class="spacer"></span><button class="btn link" id="btn-recent-clear" type="button">清空最近记录</button></div>
+            <div id="recent-files" class="recent-files" aria-label="最近打开过的文件"></div>
+          </details>
+          <details class="file-safety-details"><summary>关于文件使用范围</summary><p id="file-entry-status" class="file-entry-note" role="status" aria-live="polite">粘贴的路径和最近记录只是方便填表，不代表已经打开；请在系统选择框里确认才算数。</p></details>
+        </section>
+        <div id="work-view">
+          <div class="banner" id="banner" style="display:none;" role="status">
+            <span aria-hidden="true">!</span><span id="banner-text"></span>
+          </div>
+          <div class="card" id="status-card">
+            <div class="card-title">
+              <span class="pill info" id="badge"><span class="pdot"></span><span id="badge-label">尚未开始</span></span>
+              <span class="spacer"></span>
+            </div>
+            <div class="status-line" id="status-line" role="status">请选择要处理的文档；保存修改需单独确认，默认不覆盖原文件。</div>
+            <div class="next-step" id="next-step">下一步：点击「选择文档」。</div>
+            <div class="error-line" id="error-line" style="display:none;" role="alert"></div>
+          </div>
+          <div class="activity" id="activity" role="status" aria-live="polite">正在连接桌面服务；连接完成后可选择文档。</div>
+          <!-- 提交与输入同区；确认保存和撤销只放在当前计划/输出旁。 -->
+          <div class="prompt-bar">
+            <textarea id="prompt" rows="2" aria-label="自然语言任务指令" aria-describedby="input-help" placeholder="输入任务，例如：概括文档内容，或先预览修改计划"></textarea>
+            <button class="btn primary" id="btn-ask" disabled>发送</button>
+            <button class="btn secondary" id="btn-stop" type="button" title="停止后续模型和工具步骤；当前请求可能需要先返回" hidden>停止</button>
+          </div>
+          <details id="professional-panel" class="professional-panel">
+            <summary>专业文档：补写、核验与局部修改</summary>
+            <section id="doc-task-panel" aria-label="完整文档修改任务">
+              <h4>完整文档修改任务</h4><p>选择文档 → 提出要求 → 确认范围 → 审阅计划 → 独立生成副本 → 审阅并继续。每组独立事务，不是整体原子写入。</p>
+              <p id="doc-task-workflow" role="status" aria-live="polite">下一步：选择准确的DOCX，输入完整修改要求。</p>
+              <label for="doc-task-profile">下一次精确术语任务或回流候选的保护方案</label><select id="doc-task-profile"><option value="general">通用数字、引文及公式保护</option><option value="technical_report_v1">技术报告：已识别单位、条件及否定字面保护</option></select>
+              <label for="doc-task-profile-literals">额外保留的确切文字（每行一项，最多30项，每项200字符）</label><textarea id="doc-task-profile-literals" maxlength="6030" placeholder="例如：实验组A；每项必须在本次目标原文中出现"></textarea>
+              <p>以上选择只用于新建精确术语任务和回流候选，不修改已有任务。高级JSON规格须显式声明editing_profile和protected_literals；模型/结构/导入入口不继承以上选择。技术报告规则仅比较识别到的字面项，不做单位换算、实验条件可比性、语义或事实判定；不确定项请加入额外保留文字并人工核对。</p><pre id="doc-task-protection" aria-label="本任务实际保护清单"></pre>
+              <label for="doc-task-query">精确搜索</label><input id="doc-task-query" maxlength="120"><button id="doc-task-navigate" type="button" class="btn secondary">读取大纲与目标覆盖</button><button id="doc-task-navigate-next" type="button" class="btn secondary" disabled>下一页目标</button><pre id="doc-task-navigation"></pre>
+              <label for="doc-task-section">明确章节（模型润色必须选择）</label><select id="doc-task-section"><option value="">请选择已读取的章节</option></select>
+              <label for="doc-task-request">完整修改要求</label><textarea id="doc-task-request" maxlength="2000" placeholder="例如：将全文所有“旧术语”替换为“规范术语”，保留数字、单位、公式和引文"></textarea>
+              <div class="actions"><button id="doc-task-create" type="button" class="btn secondary">编译精确术语任务</button><button id="doc-task-polish" type="button" class="btn secondary">模型生成章节润色方案（主动调用，可能计费）</button><button id="doc-task-import" type="button" class="btn secondary">导入Agent已生成的任务方案</button></div>
+              <details><summary>高级：明确的任务规格JSON</summary><textarea id="doc-task-spec" maxlength="100000" aria-label="严格任务规格JSON"></textarea><button id="doc-task-create-spec" type="button" class="btn secondary">按规格建立任务</button></details>
+              <details><summary>阶段2：明确普通段落块、章节及书签目标</summary>
+                <p>先读取/搜索目标。仅净稿结构操作；复杂编号、表格、节和标记拒绝。章节移动须选择完整普通章节。</p>
+                <label for="doc-task-block-action">操作</label><select id="doc-task-block-action"><option value="paragraphs_replace">连续普通段落替换（保持段落边界）</option><option value="paragraphs_merge">合并连续普通段落（要求相同段落属性）</option><option value="chapter_move">完整普通章节移动</option><option value="bookmark_text">受限同段书签目标文字</option></select>
+                <label for="doc-task-block-first">起始普通段落</label><select id="doc-task-block-first"></select><label for="doc-task-block-last">结束普通段落</label><select id="doc-task-block-last"></select>
+                <label for="doc-task-block-destination">章节移动目标（起始章使用上方章节选择）</label><select id="doc-task-block-destination"></select><select id="doc-task-block-placement" aria-label="章节移动位置"><option value="before">目标章节之前</option><option value="after">目标章节完整结束后</option></select>
+                <label for="doc-task-block-bookmark">已登记引用目标</label><select id="doc-task-block-bookmark"></select><label><input id="doc-task-block-ack" type="checkbox">明确接受书签目标改字后域显示仍可能过时，需在Word核对</label>
+                <label for="doc-task-block-start">第一段起点（Unicode字符，可选）</label><input id="doc-task-block-start" type="number" min="0" max="8000" value="0"><label for="doc-task-block-end">最后段终点（留空为整段）</label><input id="doc-task-block-end" type="number" min="0" max="8000">
+                <label for="doc-task-block-texts">新文字（每段之间独立一行 ---；合并/书签仅一段）</label><textarea id="doc-task-block-texts" maxlength="12000"></textarea><label for="doc-task-block-inheritance">混合字符格式策略</label><select id="doc-task-block-inheritance"><option value="reject_mixed">拒绝跨格式替换</option><option value="start">明确使用受影响起点格式</option><option value="distributed">等长按原字符分配</option></select><button id="doc-task-block-create" type="button" class="btn secondary">建立结构任务，检查整组影响</button>
+              </details>
+              <pre id="doc-task-summary"></pre><div class="actions"><button id="doc-task-prepare-return" type="button" class="btn secondary" disabled>填入当前交付链，准备回流核对</button></div><div id="doc-task-deliveries" class="actions" aria-label="已完成事务的页图审阅入口"></div><div id="doc-task-ledger"></div><button id="doc-task-next" type="button" class="btn secondary">下一页账本</button>
+              <div class="actions"><button id="doc-task-route" type="button" class="btn primary">推荐执行方案并预览</button><button id="doc-task-plan" type="button" class="btn secondary">逐组选区方案预览</button><button id="doc-task-confirm" type="button" class="btn confirm">独立确认本组副本</button><button id="doc-task-undo" type="button" class="btn secondary">独立撤销最后一组</button><button id="doc-task-save" type="button" class="btn secondary">保存任务与账本</button></div><pre id="doc-task-preview"></pre><pre id="doc-task-visual" aria-label="本组版式观察"></pre>
+              <label for="doc-task-receipt">任务存档回执（恢复前重新选择准确的当前版本）</label><input id="doc-task-receipt" maxlength="32" autocomplete="off"><button id="doc-task-restore" type="button" class="btn secondary">重新核验并恢复任务</button>
+              <details id="doc-task-return-panel"><summary>重新准入并继续修改</summary><p>可先用上方按钮填入已知交付链，再在文件选择器选择用户另存的当前DOCX。同目录选文件仅保留这份主动准备的文件名/回执草稿；退出或换目录清理。独立同意后读取三版本。比较不合并、不写入、不恢复旧批准。</p>
+                <label for="doc-task-return-baseline">原始基线文件名</label><input id="doc-task-return-baseline" maxlength="220" autocomplete="off">
+                <label for="doc-task-return-delivered">系统交付文件名</label><input id="doc-task-return-delivered" maxlength="220" autocomplete="off">
+                <label for="doc-task-return-receipts">本系统交付链的审计回执（按执行顺序，逗号分隔）</label><textarea id="doc-task-return-receipts" maxlength="600"></textarea>
+                <label><input id="doc-task-return-tables" type="checkbox">本次比较显式纳入普通单段表格单元格（最多100格、20列；三版本位置及网格属性须一致，无合并、嵌套或特殊标记）</label>
+                <button id="doc-task-return-compare" type="button" class="btn secondary">同意读取三个版本并比较</button><button id="doc-task-return-next" type="button" class="btn secondary" disabled>下一页变化</button><pre id="doc-task-return-output"></pre>
+                <label for="doc-task-return-target">继续修改的当前文段（仅本页已核验安全候选）</label><select id="doc-task-return-target" disabled></select>
+                <label for="doc-task-return-find">当前文段中唯一出现的原文字（最多120字符）</label><input id="doc-task-return-find" maxlength="120" autocomplete="off">
+                <label for="doc-task-return-replacement">新文字</label><input id="doc-task-return-replacement" maxlength="200" autocomplete="off">
+                <label for="doc-task-return-reason">本轮修改原因</label><input id="doc-task-return-reason" maxlength="400" autocomplete="off">
+                <label for="doc-task-return-mode">本轮交付模式</label><select id="doc-task-return-mode"><option value="clean">净稿局部文字</option><option value="tracked">原生文字修订（不修改其他作者修订）</option></select>
+                <label><input id="doc-task-return-ack" type="checkbox">我已核对当前原文及比较中的未知项；这里只提出新的局部修改，不合并旧建议。</label>
+                <button id="doc-task-return-create" type="button" class="btn secondary" disabled>建立本轮候选，再预览并独立确认</button>
+                <p>每次仅一个普通正文或显式准入单元格中的唯一文字范围，五分钟内有效；重复文字、冲突、未映射、未支持表格、敏感内容和跨保护边界拒绝。保护方案使用上方当前选择，建立后查看实际清单。接受/拒绝其他作者修订、自动冲突合并及Word域刷新不在本入口范围。</p>
+              </details>
+              <p id="doc-task-status" role="status" aria-live="polite">未建立任务；不会自动调用模型或写入。</p>
+            </section>
+            <section id="range-panel" aria-label="高保真选区编辑">
+              <h4>高保真选区编辑</h4>
+              <p>选择宿主文段并在原文框中选中文字。书签、域、批注及已有修订构成保护边界；字段显示不会更新。默认净稿，文字修订单独选择。所有操作先加入清单，再独立确认生成副本。</p>
+              <div class="actions"><button id="range-load" type="button" class="btn secondary">读取编辑视图</button><button id="range-next" type="button" class="btn secondary" disabled>下一页文段</button></div>
+              <div class="workbench-grid">
+                <div><label for="range-target">宿主定位文段</label><select id="range-target" aria-label="宿主定位文段"></select><label for="range-original">原文选区（只读，可选择文字）</label><textarea id="range-original" readonly rows="5"></textarea><p id="range-selection" aria-live="polite">尚未选择</p><label for="range-island">保护标记边界处的范围</label><select id="range-island"><option value="">自动（仅唯一匹配）</option></select><button id="range-compose" type="button" class="btn secondary" disabled>将选区与修改原因填入对话</button><pre id="range-structures"></pre></div>
+                <div><label for="range-action">操作</label><select id="range-action"><option value="replace">替换选中文字</option><option value="insert">在光标处插入</option><option value="delete">删除选中文字</option><option value="format">调整选区字符格式</option><option value="paragraph_format">调整本段样式/间距</option><option value="insert_before">在本段前插入</option><option value="insert_after">在本段后插入</option><option value="split">在光标处分拆段落</option><option value="merge_next">与下一普通段落合并</option><option value="paragraph_delete">删除普通段落</option><option value="list_continue">应用/继续参考段落编号</option><option value="list_restart">本段重新从1编号</option><option value="row_insert">在本单元格所在行后插入空行</option><option value="row_delete">删除本单元格所在普通行</option><option value="revision_accept">接受所选已有修订</option><option value="revision_reject">拒绝所选已有修订</option></select>
+                  <label for="range-text">新文字</label><textarea id="range-text" rows="3" maxlength="2000"></textarea><label for="range-reason">修改原因</label><input id="range-reason" maxlength="400">
+                  <label for="range-inheritance">跨格式替换的继承策略</label><select id="range-inheritance"><option value="reject_mixed">混合格式时拒绝，要求明确选择</option><option value="start">新文字沿用选区起点直接格式</option><option value="distributed">等长替换，按原字符位置分配格式</option></select>
+                  <details><summary>格式、编号与已有修订</summary><label for="range-bold">粗体</label><select id="range-bold"><option value="">保持</option><option value="true">是</option><option value="false">否</option></select><label for="range-italic">斜体</label><select id="range-italic"><option value="">保持</option><option value="true">是</option><option value="false">否</option></select><label for="range-underline">下划线</label><select id="range-underline"><option value="">保持</option><option value="true">是</option><option value="false">否</option></select><label for="range-font">字体（留空保持）</label><input id="range-font" maxlength="80"><label for="range-size">字号（6–72）</label><input id="range-size" type="number" min="6" max="72" step="0.5"><label for="range-style">已有段落样式</label><select id="range-style"><option value="">保持</option></select><label for="range-align">对齐</label><select id="range-align"><option value="">保持</option><option value="left">左</option><option value="center">中</option><option value="right">右</option><option value="both">两端</option></select><label for="range-before">段前（磅）</label><input id="range-before" type="number" min="0" max="144"><label for="range-after">段后（磅）</label><input id="range-after" type="number" min="0" max="144"><label for="range-line">行距倍数</label><input id="range-line" type="number" min="0.5" max="3" step="0.1"><label for="range-left">左缩进（磅）</label><input id="range-left" type="number" min="0" max="360"><label for="range-first">首行缩进（磅，负值为悬挂）</label><input id="range-first" type="number" min="-72" max="144"><label for="range-numbering">编号参考文段</label><select id="range-numbering"></select><label for="range-revision">已有修订</label><select id="range-revision"></select></details>
+                  <button id="range-add" type="button" class="btn secondary" disabled>接受为待修改项</button>
+                </div>
+                <div><h5>待修改清单</h5><div id="range-queue"></div><label for="range-mode">输出模式</label><select id="range-mode"><option value="clean">净稿（保留无关已有修订）</option><option value="tracked">原生文字修订（不含格式/结构操作）</option></select><label><input id="range-protect" type="checkbox" checked>保护数字、单位、公式及引文</label><div class="actions"><button id="range-plan" type="button" class="btn secondary" disabled>预览整组实际变化</button><button id="range-confirm" type="button" class="btn confirm" disabled>独立确认生成副本</button><button id="range-undo" type="button" class="btn secondary" disabled>独立撤销副本</button></div><pre id="range-preview"></pre><pre id="range-output"></pre></div>
+              </div><button id="range-review" type="button" class="btn secondary" disabled>模型辅助核对意图（主动调用已配置模型，可能计费）</button><pre id="range-assessment"></pre><section aria-label="副本逐项审阅" id="range-delivery">
+                <label for="range-delivery-id">文档输出回执（可由完整任务填入）</label><input id="range-delivery-id" maxlength="32" autocomplete="off" aria-describedby="range-delivery-help"><p id="range-delivery-help" class="muted">请选择该事务的准确源文件或副本，再主动同意读取。回执不是权限；选文件只保留此回执草稿，旧批准及页图清理，退出即清空。</p>
+                <div class="actions"><button id="range-open-review" type="button" class="btn secondary">打开本次副本对照</button><button id="range-save-review" type="button" class="btn secondary">保存审阅状态</button></div>
+                <label for="range-archive-id">已保存的审阅回执</label><input id="range-archive-id" maxlength="32" autocomplete="off"><button id="range-restore-review" type="button" class="btn secondary">恢复审阅记录</button><button id="range-remove-review" type="button" class="btn secondary">独立撤销审阅存档</button>
+                <p id="range-review-note" role="status"></p><label for="range-review-item">审阅项</label><select id="range-review-item"></select><button id="range-next-review" type="button" class="btn secondary">下一审阅项</button>
+                <div class="range-page-pair"><figure><figcaption id="range-before-caption">原稿静态呈现</figcaption><div id="range-before-pages"></div></figure><figure><figcaption id="range-after-caption">副本静态呈现</figcaption><div id="range-after-pages"></div></figure></div>
+                <label for="range-review-state">本项状态</label><select id="range-review-state"><option value="unreviewed">未审阅</option><option value="viewed">已查看</option><option value="needs_review">待复核</option><option value="ignored">明确忽略（必填原因）</option></select><label for="range-review-reason">复核或忽略原因（不填密钥）</label><input id="range-review-reason" maxlength="400"><button id="range-mark-review" type="button" class="btn secondary">记录本项状态</button>
+              </section><p id="range-status" role="status" aria-live="polite">尚未读取。不自动写入或调用模型。</p>
+            </section>
+            <section id="workbench-panel" aria-label="项目研究工作台">
+              <h4>项目研究工作台</h4><p>材料收藏、已读、证据支持与写入批准分别管理。打开工作台不联网、不调用模型。</p>
+              <div class="actions"><button id="wb-load" class="btn secondary" type="button">读取项目与文段</button><button id="wb-new" class="btn secondary" type="button">新建独立项目</button><button id="wb-next" class="btn secondary" type="button" disabled>下一页文段</button><button id="wb-save" class="btn secondary" type="button">预览保存项目</button><button id="wb-save-confirm" class="btn confirm" type="button" disabled>独立确认项目保存</button></div>
+              <label for="wb-name">项目名</label><input id="wb-name" maxlength="100"><button id="wb-rename" class="btn secondary" type="button">更新项目名</button><p id="wb-project-state" aria-live="polite">尚未读取项目。</p>
+              <label for="wb-receipt">项目快照回执</label><input id="wb-receipt" maxlength="32" autocomplete="off"><div class="actions"><button id="wb-restore" class="btn secondary" type="button">恢复项目（不恢复批准）</button><button id="wb-remove-plan" class="btn secondary" type="button">预览删除快照记录</button><button id="wb-remove-confirm" class="btn confirm" type="button" disabled>独立确认删除记录</button></div>
+              <button id="wb-history-load" class="btn secondary" type="button" disabled>查看当前项目已登记历史（最多8项）</button><label for="wb-history-select">项目历史快照（只填入回执，恢复需另行操作）</label><select id="wb-history-select" disabled><option value="">尚未主动读取历史</option></select><p id="wb-history-status" role="status">不扫描目录；首次重启仍需提供一个已知项目回执。历史不恢复批准。</p>
+              <div class="workbench-columns">
+                <section aria-label="目标文段"><h4>1 目标与问题</h4><label for="wb-target">宿主签发的文段位置</label><select id="wb-target"></select><pre id="wb-original"></pre>
+                  <div class="actions" id="wb-actions"><button class="btn secondary" type="button" data-action="explain">解释</button><button class="btn secondary" type="button" data-action="evidence">找证据</button><button class="btn secondary" type="button" data-action="numeric">检查引用与数值</button><button class="btn secondary" type="button" data-action="polish">润色</button><button class="btn secondary" type="button" data-action="supplement">补写</button><button class="btn secondary" type="button" data-action="comment">添加批注</button></div>
+                  <label for="wb-question">研究问题（保留否定、数字、年份和条件）</label><textarea id="wb-question" maxlength="200" rows="3"></textarea><label for="wb-focus">主动补查的精确术语（可选）</label><input id="wb-focus" maxlength="50"><label><input id="wb-dense" type="checkbox">使用已配置本机嵌入及重排；不可用时明确降级</label><button id="wb-search" class="btn secondary" type="button">检索当前已准入证据（最多两轮）</button><div id="wb-gap-summary" role="region" aria-label="研究问题覆盖与补查"></div><pre id="wb-coverage"></pre>
+                  <label for="wb-mode">模型研究方式</label><select id="wb-mode"><option value="critique">解释与核对建议</option><option value="polish">保留事实的润色</option><option value="supplement">证据补写建议</option></select><label><input id="wb-outbound" type="checkbox">允许本次向当前配置模型发送所选文段及已准入证据，最多3次、60秒，可能产生模型费用</label><div class="actions"><button id="wb-assist" class="btn secondary" type="button">主动运行现有研究助理</button><button id="wb-cancel-task" class="btn secondary" type="button" disabled>停止本次研究</button><button id="wb-task-queue" class="btn secondary" type="button" disabled>将本段建议加入待修改队列</button></div><p id="wb-task-feedback" role="status" aria-live="polite"></p><pre id="wb-task"></pre><button id="wb-task-status" class="btn secondary" type="button" disabled>重新读取任务状态（不重启模型）</button>
+                  <p class="muted">研究运行中请先停止本次研究，再切换目标、新建或恢复项目及历史任务。切换后需重新确认模型发送；停止不保证撤回已发出的模型请求。</p>
+                  <div class="actions"><button id="wb-task-save" class="btn secondary" type="button" disabled>预览保存研究任务</button><button id="wb-task-confirm" class="btn confirm" type="button" disabled>独立确认任务保存</button></div><label for="wb-task-receipt">已保存研究任务回执</label><input id="wb-task-receipt" maxlength="32"><button id="wb-task-restore" class="btn secondary" type="button">恢复任务供重新核对</button>
+                  <label for="wb-task-select">当前项目已登记研究任务（不自动恢复）</label><select id="wb-task-select" disabled><option value="">尚未读取项目或没有登记任务</option></select>
+                  <label for="wb-evidence-select">项目登记的历史证据（只填回执，不恢复准入）</label><select id="wb-evidence-select" disabled><option value="">尚无登记证据</option></select><p>重启后的历史证据回执不能直接恢复读取或模型权限；请先对当前来源重新检索并独立批准保存证据，再绑定当前回执。</p>
+                </section>
+                <section aria-label="项目材料与证据"><h4>2 材料与来源</h4>
+                  <details><summary>CSL-JSON导入与导出</summary><label for="wb-import-file">明确选择元数据文件（最多256KB，不读取附件）</label><input id="wb-import-file" type="file" accept=".json,application/json"><label for="wb-import">CSL-JSON数组</label><textarea id="wb-import" rows="4" maxlength="256000"></textarea><div class="actions"><button id="wb-import-run" class="btn secondary" type="button">校验并加入项目</button><button id="wb-export" class="btn secondary" type="button">导出当前CSL到下方</button></div></details>
+                  <label for="wb-filter-query">题名、DOI或作者关键词</label><input id="wb-filter-query" maxlength="200"><details><summary>作者、年份、类型、标签及状态筛选</summary><label for="wb-filter-author">作者</label><input id="wb-filter-author" maxlength="100"><label for="wb-filter-year">年份</label><input id="wb-filter-year" maxlength="4"><label for="wb-filter-type">CSL类型</label><input id="wb-filter-type" maxlength="40"><label for="wb-filter-tag">标签</label><input id="wb-filter-tag" maxlength="40"><label for="wb-filter-decision">纳排</label><select id="wb-filter-decision"><option value="">全部</option><option value="include">纳入</option><option value="exclude">排除</option><option value="undecided">待定</option></select><label for="wb-filter-fulltext">全文关联</label><select id="wb-filter-fulltext"><option value="">全部</option><option value="associated_unverified">已关联，需重核对</option><option value="none">未关联</option></select><label for="wb-filter-read">阅读状态</label><select id="wb-filter-read"><option value="">全部</option><option value="partial">有已读记录</option><option value="unread">无已读记录</option></select><label for="wb-filter-indexed">索引状态</label><select id="wb-filter-indexed"><option value="">全部</option><option value="recorded_requires_revalidation">有历史索引记录</option><option value="unknown">尚未知</option></select></details><div class="actions"><button id="wb-filter" class="btn secondary" type="button">筛选</button><button id="wb-record-next" class="btn secondary" type="button" disabled>下一页材料</button></div><div id="wb-records"></div><pre id="wb-conflicts"></pre>
+                  <label for="wb-online-query">主动在线查找元数据</label><input id="wb-online-query" maxlength="200"><button id="wb-online" class="btn secondary" type="button">查询Crossref/OpenAlex（不下载全文）</button><div id="wb-online-results"></div>
+                  <label for="wb-decision">所选条目纳排</label><select id="wb-decision"><option value="undecided">待定</option><option value="include">纳入</option><option value="exclude">排除</option></select><label for="wb-reason">明确理由</label><input id="wb-reason" maxlength="400"><label for="wb-tags">标签（逗号分隔）</label><input id="wb-tags" maxlength="500"><div class="actions"><button id="wb-review" class="btn secondary" type="button">保存纳排到项目草稿</button><button id="wb-canonical" class="btn secondary" type="button">明确选为本DOI规范版本</button></div>
+                  <label for="wb-related">关系目标（已读取的项目元数据，不合并证据）</label><select id="wb-related"></select><label for="wb-relation-type">所选条目与目标的关系</label><select id="wb-relation-type"><option value="possible_duplicate_of">疑似重复</option><option value="preprint_of">目标的预印本</option><option value="version_of">目标的另一版本</option><option value="correction_of">对目标的勘误</option><option value="retraction_of">对目标的撤稿通知</option></select><button id="wb-relate" class="btn secondary" type="button">按上方明确理由登记关系</button>
+                  <label for="wb-file">明确关联同目录PDF文件名</label><input id="wb-file" maxlength="128"><button id="wb-associate" class="btn secondary" type="button">关联并核对文件身份（不解析正文）</button><label for="wb-page">PDF页码（从1计）</label><input id="wb-page" type="number" min="1" max="2000" value="1"><label for="wb-limit">主动读取页数（1至5）</label><input id="wb-limit" type="number" min="1" max="5" value="1"><div class="actions"><button id="wb-capture" class="btn secondary" type="button">读取并准入明确页段</button><button id="wb-index-status" class="btn secondary" type="button">核对已发布索引范围</button><button id="wb-impact" class="btn secondary" type="button">分析本来源变化影响</button></div>
+                  <button id="wb-mark-read" class="btn secondary" type="button">明确标记本次完整页段已阅读（不表示支持）</button><label for="wb-evidence-receipt">已保存且本次获准的检索证据回执</label><input id="wb-evidence-receipt" maxlength="32"><button id="wb-evidence-attach" class="btn secondary" type="button">绑定所选条目并复用证据</button><div id="wb-evidence"></div><div id="wb-source-page"></div><details id="wb-numeric-shell"><summary>当前文段的表格数值核验</summary><div id="wb-numeric-slot"></div></details><button id="wb-numeric-queue" class="btn secondary" type="button" disabled>将本次数值问题加入工作台批注队列</button><div id="wb-impact-list" aria-label="登记来源影响清单"></div><pre id="wb-impact-result"></pre>
+                </section>
+                <section aria-label="待修改队列与差异"><h4>3 修改队列与整组影响</h4><p>接受建议仅加入待写范围，实际写入仍须独立确认。超限须拆成独立事务。</p><div id="wb-queue"></div>
+                  <label for="wb-operation">修改类型</label><select id="wb-operation"><option value="comment">普通批注</option><option value="replace">局部替换</option><option value="insert">有证据支持的新段落</option></select><label for="wb-quote">明确批注文字范围</label><textarea id="wb-quote" maxlength="2000" rows="2"></textarea><label for="wb-text">草稿或逐项修订文本</label><textarea id="wb-text" maxlength="2000" rows="4"></textarea><div class="actions"><button id="wb-queue-add" class="btn secondary" type="button">加入当前文段队列</button><button id="wb-queue-edit" class="btn secondary" type="button" disabled>更新所选项并重新核对</button><button id="wb-queue-remove" class="btn secondary" type="button" disabled>撤回所选项</button><button id="wb-queue-rebind" class="btn secondary" type="button" disabled>重新准入恢复项（不恢复审阅）</button></div>
+                  <button id="wb-editor-clear" class="btn secondary" type="button">清空编辑框，保留队列</button><label for="wb-relation">人工核对的证据关系</label><select id="wb-relation"><option value="insufficient">证据不足或仅提示问题</option><option value="supports">支持</option><option value="contradicts">反对</option></select><label for="wb-applicability">适用范围</label><input id="wb-applicability" maxlength="500"><label for="wb-limitation">限制</label><input id="wb-limitation" maxlength="500"><label><input id="wb-reviewed" type="checkbox">已核对本项原文、来源身份与适用范围；不代表批准写入</label><div class="actions"><button id="wb-accept" class="btn secondary" type="button" disabled>接受为待写项</button><button id="wb-reject" class="btn secondary" type="button" disabled>拒绝本项</button></div>
+                  <label for="wb-bib-anchor">新增书目的明确位置</label><select id="wb-bib-anchor"><option value="">本事务不新增书目或尚未选择</option></select><details><summary>已有引文与书目整组授权</summary><button id="wb-citations" class="btn secondary" type="button">读取本页已有引文位置</button><div id="wb-number-map"></div><div id="wb-citation-scope"></div></details>
+                  <div class="actions"><button id="wb-plan" class="btn secondary" type="button">预览已接受项的整组影响</button><button id="wb-confirm" class="btn confirm" type="button" disabled>独立确认生成副本</button><button id="wb-undo" class="btn secondary" type="button" disabled>独立撤销本次副本</button></div><pre id="wb-preview"></pre><pre id="wb-output"></pre>
+                </section>
+              </div><pre id="wb-status" role="status" aria-live="polite">尚未读取；所有网络、模型和写入操作均需主动触发。</pre>
+            </section>
+            <section id="continuous-panel" aria-label="持续研究与文档审阅">
+              <h4>持续研究与文档审阅</h4>
+              <nav class="actions" aria-label="研究步骤">
+                <button id="cr-nav-ranges" class="btn secondary" type="button" aria-pressed="true">继续索引其他页段</button>
+                <button id="cr-nav-check" class="btn secondary" type="button" aria-pressed="false">核对本段引用与数值</button>
+                <button id="cr-nav-write" class="btn secondary" type="button" aria-pressed="false">在此处补写并更新书目</button>
+              </nav>
+              <div id="cr-ranges">
+                <p>选中PDF后读取已发布页集合。填写最终保留范围，例如 1-2,6-7。合集最多20页、10万字符、500块；未处理页不代表没有证据。移除索引不删除历史证据。</p>
+                <label for="cr-pdf-file">同目录PDF文件名（留空使用当前所选PDF；保持目标DOCX选中可直接将回执交给研究助理）</label><input id="cr-pdf-file" maxlength="128">
+                <button id="cr-range-load" class="btn secondary" type="button">读取已发布覆盖</button>
+                <label for="cr-range-input">最终保留页段（空白表示全部移除）</label><input id="cr-range-input" maxlength="200" placeholder="1-2,6-7">
+                <div class="actions"><button id="cr-range-plan" class="btn secondary" type="button">预览页段变更</button><button id="cr-range-confirm" class="btn confirm" type="button" disabled>确认发布索引</button><button id="cr-range-undo" class="btn secondary" type="button" disabled>撤销本次发布</button></div>
+                <pre id="cr-range-coverage"></pre>
+                <p>未发布尝试仅存会话内存。可主动保存终止尝试的诊断记录；不含PDF正文，不发布索引，也不恢复批准。</p>
+                <div class="actions"><button id="cr-history-plan" class="btn secondary" type="button">预览保存本次失败记录</button><button id="cr-history-confirm" class="btn confirm" type="button" disabled>独立确认保存记录</button></div>
+                <label for="cr-history-receipt">页段尝试记录回执ID</label><input id="cr-history-receipt" maxlength="32" autocomplete="off">
+                <div class="actions"><button id="cr-history-restore" class="btn secondary" type="button">恢复历史记录供核对</button><button id="cr-history-remove-plan" class="btn secondary" type="button">预览撤销这条记录</button><button id="cr-history-remove-confirm" class="btn confirm" type="button" disabled>独立确认撤销记录</button></div><pre id="cr-history-result"></pre>
+                <label for="cr-query">共同检索已发布页段</label><input id="cr-query" maxlength="200"><button id="cr-query-run" class="btn secondary" type="button">检索并预览保存证据</button><pre id="cr-range-results"></pre>
+              </div>
+              <div id="cr-document" hidden>
+                <label for="cr-receipt">续编副本的写作回执ID（可选，恢复编号候选，不恢复批准）</label><input id="cr-receipt" maxlength="32" autocomplete="off">
+                <label for="cr-dependency-target">撤销前检查的输出回执ID</label><input id="cr-dependency-target" maxlength="32" autocomplete="off">
+                <label for="cr-dependency-receipts">其他已知输出回执（最多8个，逗号分隔；本会话生成的输出自动纳入）</label><input id="cr-dependency-receipts" maxlength="263" autocomplete="off">
+                <button id="cr-dependency-check" class="btn secondary" type="button">兼容检查并纳入已知集合</button><p>兼容检查会将所填回执纳入当前检查集合；仅试读或纠错请使用下方审阅会话。仅支持专业DOCX副本，不代表完整依赖图，不恢复撤销权限。无法核验的已知记录会阻止撤销。先处理下游；审计和备份保留。</p><pre id="cr-dependency-result"></pre>
+                <div class="actions"><button id="cr-review-start" class="btn secondary" type="button">开始依赖审阅会话</button><button id="cr-review-refresh" class="btn secondary" type="button" disabled>刷新并查看变化</button><button id="cr-review-ack" class="btn secondary" type="button" disabled>确认已审阅当前快照</button><button id="cr-review-undo" class="btn confirm" type="button" disabled>另行确认撤销当前目标</button><button id="cr-review-cancel" class="btn secondary" type="button" disabled>结束审阅会话</button></div>
+                <p>审阅会话只读，最多5分钟；修改回执后需重新开始。未核验回执不会因浏览而加入实际撤销检查集合。审阅快照不证明文件内容未变；实际撤销仍需本次写作的原有权限和独立确认，不批量删除。</p><pre id="cr-review-result" aria-live="polite"></pre>
+                <div class="actions"><button id="cr-review-save-plan" class="btn secondary" type="button" disabled>预览保存回执集合</button><button id="cr-review-save-confirm" class="btn confirm" type="button" disabled>确认保存集合</button></div>
+                <label>已保存集合回执<input id="cr-review-archive-receipt" maxlength="32" autocomplete="off" placeholder="保存后请保留此32位回执"></label>
+                <div class="actions"><button id="cr-review-restore" class="btn secondary" type="button">恢复并重新核验集合</button><button id="cr-review-remove-plan" class="btn secondary" type="button">预览删除集合记录</button><button id="cr-review-remove-confirm" class="btn confirm" type="button" disabled>确认删除集合记录</button></div>
+                <p>明确保存当前列出的最多32项回执与校验摘要，不含正文、路径或撤销凭据。恢复仅供只读审阅，重新检查所列记录及当前已知集合，不扫描目录、不恢复旧批准。删除仅影响集合记录，文档、备份与审计保留。</p><pre id="cr-review-archive-result" aria-live="polite"></pre>
+                <div class="actions"><button id="cr-load" class="btn secondary" type="button">读取DOCX锚点与已取证材料</button><button id="cr-next" class="btn secondary" type="button" disabled>下一组锚点</button></div>
+                <label for="cr-anchor">明确正文锚点 / 核对段落</label><select id="cr-anchor"></select><pre id="cr-original"></pre>
+                  <label for="cr-capture">已获准取证材料（可选）</label><select id="cr-capture"></select><div id="cr-fragments" aria-label="支持新增文字的原文证据"></div>
+                  <p>选择上方已取证原文后可主动请求一次论点核验；只返回未审阅建议，使用已配置模型，可能产生模型费用。</p><button id="cr-claim-add" class="btn secondary" type="button">将所选原文加入论点对照（最多3来源）</button><pre id="cr-claim-sources"></pre><button id="cr-claim-review" class="btn secondary" type="button">主动核对本段论点（一次模型请求）</button><pre id="cr-claim-result"></pre>
+<button id="cr-claim-apply" class="btn secondary" type="button">将核验建议填入替换草稿</button>
+                <div id="cr-check" hidden>
+                  <p>主动读取同目录DOCX/XLSX普通表格。原始值与缺失状态保留；合并表头、未知单位及缺失条件不作自动结论。</p>
+                  <label for="cr-table-file">表格来源文件名</label><input id="cr-table-file" maxlength="128"><button id="cr-table-load" class="btn secondary" type="button">读取表格证据</button>
+                  <button id="cr-pdf-table-toggle" class="btn secondary" type="button" aria-expanded="false" aria-controls="cr-pdf-table-section">展开PDF简单表格试点</button><div id="cr-pdf-table-section" hidden><p>仅读取同目录明确页，不自动找表或OCR。先预览原页，再指定行列边界百分比（左上角为0,0）。只支持单行单元格，不支持合并、多行和跨页表格；检测到文字跨界或多行时拒绝，仍须人工核对全部单元格，不代表事实正确。</p>
+                    <label for="cr-pdf-table-file">PDF文件名</label><input id="cr-pdf-table-file" maxlength="128"><label for="cr-pdf-table-page">PDF页码（非印刷页码）</label><input id="cr-pdf-table-page" type="number" min="1" max="2000" value="1"><button id="cr-pdf-table-preview" class="btn secondary" type="button">预览这一页</button>
+                    <label for="cr-pdf-table-region">明确分析矩形（左、上、右、下百分比；不分析其他区域）</label><input id="cr-pdf-table-region" maxlength="120" placeholder="例如 28,20.9,75,24.4"><div class="actions"><button id="cr-pdf-table-propose" class="btn secondary" type="button">仅分析明确区域，提出网格候选</button><button id="cr-pdf-table-retry" class="btn secondary" type="button">重新显示本次原页（不重读）</button></div>
+                    <label for="cr-pdf-table-header-rows">所选网格的表头行数</label><select id="cr-pdf-table-header-rows"><option value="1">一行表头</option><option value="2">两行逐列对齐表头</option></select><p>两行表头必须每格有明确文字，至少另有一行数据。保留两行表头原文及位置；空白、合并、跨列表头不推断。单位或统计含义冲突时核验不足，采用布局不等于事实已核对。</p>
+                    <label for="cr-pdf-table-point-mode">原页点击方式</label><select id="cr-pdf-table-point-mode" aria-describedby="cr-pdf-table-point-help"><option value="inspect">仅查看坐标</option><option value="rows">添加行边界</option><option value="columns">添加列边界</option></select><p id="cr-pdf-table-point-help">选择添加方式后点击文字之间的空白，边界自动排序。也可用Tab进入下方百分比输入框精确编辑。最多保留16次选点或清空操作的撤销；手工输入后重新开始记录。</p><div class="actions"><button id="cr-pdf-table-point-undo" class="btn secondary" type="button" disabled>撤销上次网格操作</button><button id="cr-pdf-table-point-clear" class="btn secondary" type="button" disabled>清空网格与映射</button></div>
+                    <div id="cr-pdf-table-frame"><img id="cr-pdf-table-image" alt="所选PDF原页预览，可按所选方式添加边界；也可在下方输入" hidden><svg id="cr-pdf-table-grid" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg></div><p id="cr-pdf-table-position" aria-live="polite">可点击原页查看横向和纵向百分比；也可直接输入边界。</p>
+                    <label for="cr-pdf-table-rows">行边界百分比（含表头，逗号分隔）</label><input id="cr-pdf-table-rows" maxlength="300" placeholder="例如 20,25,30"><label for="cr-pdf-table-columns">列边界百分比</label><input id="cr-pdf-table-columns" maxlength="200" placeholder="例如 10,40,70,90"><label for="cr-pdf-table-units">数值列:单位列（可选，从1计数）</label><input id="cr-pdf-table-units" maxlength="100" placeholder="例如 3:2,5:2；单位须来自所选表格单元格">
+                    <section id="cr-unit-review" hidden aria-label="逐列核对单位来源"><p>仅有数字和 Units 列不能证明单位归属。请对照原页逐列选择；不关联表示未建立单位来源，不会猜测为无量纲。</p><div id="cr-unit-review-fields"></div><button id="cr-unit-review-apply" class="btn secondary" type="button" disabled>将本次选择填入单位映射（仍需提取并采用布局）</button></section>
+                    <label for="cr-pdf-table-notes">同页单行脚注区域（可选，左/上/右/下百分比）</label><input id="cr-pdf-table-notes" maxlength="120" placeholder="例如 10,70,90,75"><p>脚注必须显式选择且不能与表格重叠；自然语言注释保留后返回不足。不选择区域不代表该表没有脚注。</p>
+                    <div class="actions"><button id="cr-pdf-table-read" class="btn secondary" type="button" disabled>提取明确网格</button><button id="cr-pdf-table-ack" class="btn secondary" type="button" disabled>已核对网格与单元格，采用本次布局</button></div><div id="cr-pdf-table-cells"></div><pre id="cr-pdf-table-result" aria-live="polite"></pre>
+                  </div>
+                  <label for="cr-observation">观察值（原文与位置）</label><select id="cr-observation"></select><label for="cr-baseline">比较基线（可选）</label><select id="cr-baseline"></select>
+                  <label for="cr-operation">核对方式</label><select id="cr-operation"><option value="value">正文值与单位</option><option value="relative_increase">相对提高</option><option value="relative_decrease">相对降低</option><option value="percentage_points">百分点差</option></select>
+                  <label for="cr-value">正文中要核对的数值</label><input id="cr-value" maxlength="50"><label for="cr-unit">单位</label><input id="cr-unit" maxlength="30" placeholder="ms、s、%、百分点">
+                  <label for="cr-statistic">正文统计口径</label><select id="cr-statistic"><option value="value">普通数值</option><option value="mean">均值</option><option value="uncertainty">不确定度</option></select>
+                  <details><summary>核对正文的适用范围</summary><label for="cr-sample">正文样本或对象</label><input id="cr-sample" maxlength="200"><label for="cr-time">正文时间</label><input id="cr-time" maxlength="100"><label for="cr-conditions">正文实验条件</label><input id="cr-conditions" maxlength="300"><p>仅核对你明确填写的范围，不自动抽取整段条件。脚注首版识别[a]或[1]及紧邻表格的“注[a]: 条件=…”，不猜测未标记注释；缺失和冲突需人工判断。</p></details>
+                  <div class="actions"><button id="cr-verify" class="btn secondary" type="button">核对所选数值与段落</button><button id="cr-check-comment" class="btn secondary" type="button">加入批注草稿</button><button id="cr-ignore" class="btn secondary" type="button">记录忽略原因</button></div>
+                  <label for="cr-ignore-reason">忽略原因（本次审阅草稿）</label><input id="cr-ignore-reason" maxlength="300"><pre id="cr-check-result"></pre>
+                </div>
+                <div id="cr-write" hidden>
+                  <p>普通段落净稿插入；现有文本原生修订入口保留。事实性补写应选择证据并人工核对。接受建议不等于批准写入。</p>
+                  <label for="cr-side">插入位置</label><select id="cr-side"><option value="after">锚点之后</option><option value="before">锚点之前</option></select>
+                  <label for="cr-text">新增正文</label><textarea id="cr-text" rows="4" maxlength="2000"></textarea>
+                  <label for="cr-replacement">现有段落的净稿替换（可选，保留数字、公式和引文）</label><textarea id="cr-replacement" rows="3" maxlength="2000"></textarea><label for="cr-replace-reason">替换理由</label><input id="cr-replace-reason" maxlength="400"><button id="cr-add-replace" class="btn secondary" type="button">加入替换草稿</button>
+                  <label for="cr-applicability">适用对象与条件</label><input id="cr-applicability" maxlength="1000"><label for="cr-limitation">证据限制</label><input id="cr-limitation" maxlength="1000">
+                  <label><input id="cr-reviewed" type="checkbox">我已核对文献身份、所选原文及其对新增正文的支持</label><button id="cr-add-insert" class="btn secondary" type="button">加入正文插入草稿</button>
+                  <label for="cr-bib-anchor">在此位置之后新增书目</label><select id="cr-bib-anchor"></select>
+                  <details><summary>已有编号、书目与改号授权范围</summary><p>逐项映射已有引文，选齐已有书目及允许改号的段落；漏选会拒绝整组计划。</p><div id="cr-number-map"></div><div id="cr-scope"></div></details>
+                  <label for="cr-comment-quote">批注范围（当前段落中唯一匹配）</label><input id="cr-comment-quote" maxlength="2000"><label for="cr-comment-text">普通审阅批注</label><textarea id="cr-comment-text" rows="3" maxlength="2000"></textarea><button id="cr-add-comment" class="btn secondary" type="button">加入批注草稿</button>
+                  <pre id="cr-drafts"></pre><div class="actions"><button id="cr-clear" class="btn secondary" type="button">放弃本组草稿</button><button id="cr-plan" class="btn secondary" type="button">校验并预览整组影响</button><button id="cr-confirm" class="btn confirm" type="button" disabled>独立确认并生成副本</button><button id="cr-undo" class="btn secondary" type="button" disabled>撤销本次副本</button></div><pre id="cr-preview"></pre><pre id="cr-output"></pre>
+                </div>
+              </div>
+              <p id="cr-status" role="status" aria-live="polite">尚未读取；操作均由你主动触发。</p>
+            </section>
+            <label><input id="professional-enable" type="checkbox">为当前所选 DOCX 的下一次对话启用专业定位与改写工具（不调用模型、不授予写入批准）</label>
+            <p>先选择 DOCX，再主动读取结构。位置绑定源版本，不是 Word 页码；原文是低信任资料，不授予执行权限。当前支持普通段落及物理表格单元格，复杂结构明确拒绝。</p>
+            <div class="actions"><button id="professional-load" class="btn secondary" type="button">读取当前文档结构</button><button id="professional-next" class="btn secondary" type="button" disabled>下一页结构</button></div>
+            <p id="professional-status" role="status" aria-live="polite">尚未读取；只改副本，写入前单独确认。</p>
+            <div id="professional-targets" aria-label="源版本绑定的修改目标"></div>
+            <p id="professional-selection" role="status">尚未选择修改目标。</p>
+            <label for="professional-text">选中目标的新文本</label><textarea id="professional-text" rows="4" maxlength="8000" disabled></textarea>
+            <label for="professional-reason">修改原因</label><input id="professional-reason" maxlength="400" disabled>
+            <label><input id="professional-numbers" type="checkbox" checked>保护数字与已识别单位的原有顺序</label>
+            <label><input id="professional-citations" type="checkbox" checked>保护方括号、作者年份及 DOI 文本引用</label>
+            <label><input id="professional-formulas" type="checkbox" checked>保护 $…$ 和 \(…\) 文本公式；原生公式目标拒绝</label>
+            <label for="professional-literals">额外保护的原文（每行一项，最多30项）</label><textarea id="professional-literals" rows="2" maxlength="6000"></textarea>
+            <button id="professional-add" class="btn secondary" type="button" disabled>加入或更新修改清单</button>
+            <div id="professional-changes" aria-label="逐项选择的修改清单"></div>
+            <button id="professional-plan" class="btn primary" type="button" disabled>生成最终差异计划</button>
+            <pre id="professional-preview" class="professional-preview"></pre>
+            <button id="professional-confirm" class="btn confirm" type="button" disabled>确认写入新副本…</button>
+            <p id="professional-output" role="status"></p>
+            <button id="professional-rollback" class="btn secondary" type="button" disabled>撤销本次输出副本…</button>
+            <p>修改只改目标文字节点，保留段落/run 属性、合并结构及非目标部件；新增文字沿用受影响 run 格式。证据 ID 只证明出处可追溯，不证明新结论受支持。此处差异不是原生修订，渲染差异不等于真实 Word 人工验收。</p>
+          </details>
+          <details id="literature-panel" class="professional-panel">
+            <summary>文献发现与来源核验</summary>
+            <p>先选择工作区文档，再主动检索。只向选定的 Crossref / OpenAlex 发送手动输入的检索词，不上传文档；打开面板不联网。每次最多2个请求、每源10条，最多3页；失败不自动重试。匿名模式默认启用，服务可能限流或要求认证；只有在本机配置明确启用 OpenAlex 密钥请求预算后才发送密钥，可能消耗该来源额度，不自动购买额度。</p>
+            <label for="literature-query">关键词、题名或 DOI</label><input id="literature-query" maxlength="300">
+            <div class="literature-fields">
+              <label>检索方式<select id="literature-mode"><option value="keywords">中英文关键词 / 主题</option><option value="title">题名</option><option value="doi">精确 DOI（不叠加筛选）</option></select></label>
+              <label>作者<input id="literature-author" maxlength="100"></label>
+              <label>起始年<input id="literature-from" type="number" min="1500" max="2100"></label>
+              <label>截至年<input id="literature-to" type="number" min="1500" max="2100"></label>
+              <label>文献类型<select id="literature-kind"><option value="">全部类型</option><option value="article">期刊论文</option><option value="preprint">预印本</option><option value="proceedings">会议论文</option><option value="book">图书</option></select></label>
+              <label>页码<select id="literature-page"><option value="1">第1页</option><option value="2">第2页</option><option value="3">第3页</option></select></label>
+            </div>
+            <label><input id="literature-crossref" type="checkbox" checked>Crossref</label><label><input id="literature-openalex" type="checkbox" checked>OpenAlex</label>
+            <div class="actions"><button id="literature-search" class="btn primary" type="button">检索文献</button><button id="literature-collection" class="btn secondary" type="button">查看本次收藏</button></div>
+            <p id="literature-status" role="status" aria-live="polite">尚未检索；收藏先保留在本工作区会话，导出后才保存。退出或换文档清空。</p>
+            <pre id="literature-reports"></pre>
+            <div id="literature-results" aria-label="文献结果与来源字段"></div>
+            <details><summary>收藏、引用预览与导出</summary>
+              <p>同 DOI 的不同来源保留冲突，导出时请明确选择一个版本。无 DOI 的相似条目仅提示候选重复；预印本、正式版、勘误和撤稿关系分别显示。未报告撤稿不代表未撤稿。</p>
+              <pre id="literature-bibliography"></pre>
+              <div class="actions"><button id="literature-csl" class="btn secondary" type="button">保存 CSL-JSON…</button><button id="literature-record" class="btn secondary" type="button">保存检索与纳排记录…</button></div>
+              <label for="literature-citation-text">核对普通数字引用（仅识别 [1] 形式）</label><textarea id="literature-citation-text" rows="2" maxlength="8000"></textarea><button id="literature-check" class="btn secondary" type="button">核对编号与缺失字段</button><pre id="literature-citation-report"></pre>
+              <p>预览为普通文本编号，不是 GB/T 或 CSL 样式排版、Word 文献域或论点支持判断；CSL-JSON 是书目数据，可交给引用管理器处理。</p>
+            </details>
+            <p>全文候选不等于已取得或读过全文。下载只支持元数据明确列出的 CC 许可 arXiv PDF，最多512KB，重定向或其他来源拒绝；下载后仍需单独确认保存。自有 PDF 请先选中它，再检索对应文献并点击关联；关联由用户指定，不证明 DOI 匹配。文本层最多5页/2万字符，不做 OCR。</p>
+            <pre id="literature-fulltext"></pre><div id="literature-outputs" aria-label="本次保存与撤销"></div>
+          </details>
+          <details id="assist-panel" class="professional-panel">
+            <summary>研究助理与改稿建议 · 人工审阅后写副本</summary>
+            <p>先读取并选择最多12个普通段落。可使用已取证的 PDF 页段或本次保存的检索回执。模型只生成未审阅建议，不具备工具、路径或写入权限。补证和批评建议须经过引文面板人工核对。</p>
+            <div class="actions"><button id="assist-load" type="button" class="btn secondary">读取当前文档与证据</button><button id="assist-prev" type="button" class="btn secondary">上一页结构</button><button id="assist-next" type="button" class="btn secondary">下一页结构</button></div>
+            <div id="assist-targets" aria-label="选择改稿段落"></div>
+            <label for="assist-mode">任务方式</label><select id="assist-mode"><option value="polish">润色并保持事实</option><option value="supplement">所选章节的证据缺口</option><option value="critique">夸大、术语与引文批评</option></select>
+            <label for="assist-question">研究问题或改稿要求</label><textarea id="assist-question" rows="2" maxlength="200"></textarea>
+            <label for="assist-terms">保护术语（每行一个，最多30项）</label><textarea id="assist-terms" rows="2" maxlength="2000"></textarea>
+            <details><summary>本次任务预算</summary><label for="assist-max-calls">模型调用上限（1至3次）</label><input id="assist-max-calls" type="number" min="1" max="3" value="3"><label for="assist-compute-budget">计算阶段预算（5至60秒，不含人工审阅）</label><input id="assist-compute-budget" type="number" min="5" max="60" value="60"><p>取消后停止后续阶段，当前底层调用须等待其超时或退出；不自动重试。</p></details>
+            <div id="assist-captures" aria-label="本次已取证的 PDF 页段"></div>
+            <label for="assist-receipt">已保存检索证据的回执 ID（可选，32位）</label><input id="assist-receipt" maxlength="32" autocomplete="off">
+            <p>研究请求读取磁盘 .env 中的模型配置，可能与正在运行的对话实例不同；本面板未取得运行实例快照。点击生成后，会把研究问题、所选原段落及证据发送给该模型；云端提供方可能产生费用。本地权重仅在本机推理，不自动重试。</p>
+            <div class="actions"><button id="assist-start" type="button" class="btn primary">整理证据并生成改稿建议…</button><button id="assist-cancel" type="button" class="btn secondary">取消本次研究</button></div>
+            <p id="assist-status" role="status" aria-live="polite">尚未读取；打开面板不调用模型。</p>
+            <div id="assist-cards" aria-label="未审阅证据卡片与缺口"></div><div id="assist-suggestions" aria-label="逐项人工审阅建议"></div>
+            <label><input id="assist-tracked" type="checkbox">输出为原生 Word 插入/删除修订（仅无既有修订的普通段落；需核对 Word 界面效果）</label>
+            <label><input id="assist-granular" type="checkbox">词级修订：仅标记变化片段（需同时启用原生修订；中文按单字边界，最多100个插入/删除标记）</label>
+            <div class="actions"><button id="assist-plan" type="button" class="btn secondary">预览已审阅的润色修改</button><button id="assist-confirm" type="button" class="btn primary">独立确认并保存副本…</button><button id="assist-undo" type="button" class="btn secondary">撤销本次副本…</button></div>
+            <div id="assist-preview" aria-live="polite"></div><p id="assist-output"></p>
+            <details><summary>保存与恢复研究任务</summary>
+              <p>任务按现有工作区归档规则保存，不保存模型调用或写入批准。恢复保留历史材料供比较，清除人工审阅与操作权限；再次研究需重新选择当前证据并主动确认。旧回执不恢复删除权限。</p>
+              <button id="assist-save-task" type="button" class="btn secondary">保存当前研究与人工草稿…</button>
+              <label for="assist-task-receipt">研究任务回执 ID（32位）</label><input id="assist-task-receipt" maxlength="32" autocomplete="off">
+              <button id="assist-restore-task" type="button" class="btn secondary">恢复为待审阅材料</button><button id="assist-undo-task" type="button" class="btn secondary">撤销本次任务归档…</button>
+              <pre id="assist-task-output"></pre>
+            </details>
+          </details>
+          <details id="grounded-panel" class="professional-panel">
+            <summary>证据驱动写作 · 单篇 IEEE 试点</summary>
+            <p>保持目标 DOCX 选中，在文献面板检索并明确纳入一篇文献。输入同目录自有 PDF 文件名，人工核对是否为该文献；默认前5页/2万字符，也可显式选择页段并续读，每次预算保持。不联网、不调用模型、不做 OCR。只替换两个已有普通段落，不插入结构或重排已有数字引文。</p>
+            <button id="grounded-load" class="btn secondary" type="button">读取纳入文献与文档结构</button>
+            <label for="grounded-source">纳入的文献</label><select id="grounded-source"></select>
+            <label for="grounded-file">同目录 PDF 文件名</label><input id="grounded-file" maxlength="128" placeholder="paper.pdf">
+            <button id="grounded-capture" class="btn secondary" type="button" disabled>读取原文证据</button>
+            <label for="grounded-archive">公开 PDF 归档回执 ID（32位；只读取受检归档）</label><input id="grounded-archive" maxlength="32" autocomplete="off">
+            <button id="grounded-archive-capture" class="btn secondary" type="button">从归档回执取证</button>
+            <div class="citations-pages" aria-label="明确选择 PDF 页段">
+              <label for="grounded-page">PDF 起始页（从1开始）</label><input id="grounded-page" type="number" min="1" max="2000" value="1">
+              <label for="grounded-page-limit">本次最多读取页数</label><input id="grounded-page-limit" type="number" min="1" max="5" value="5">
+              <button id="grounded-range" type="button" class="btn secondary">读取所选页段</button>
+              <button id="grounded-continue" type="button" class="btn secondary" disabled>续读下一页段/字符</button>
+              <p>归档回执非空时读取该归档，否则读取上面的同目录文件。读取不建立索引；未覆盖完整篇时不能据此说“全文未发现”。</p>
+              <pre id="grounded-coverage" role="status"></pre>
+              <button id="grounded-reading-status" type="button" class="btn secondary">查看阅读覆盖与失败记录</button>
+              <div id="grounded-page-view" aria-label="证据的原始 PDF 页面"></div>
+              <details><summary>按需本机 OCR 与人工校正</summary>
+                <p>仅点击后识别当前取证页段中的一页。使用本机 Windows 已有识别语言；不下载语言包、不调用付费 API。原始 OCR、人工校正分开保存；数字、单位、上下标、符号和多栏顺序都需核对。校正不证明来源身份或支持关系。</p>
+                <label for="grounded-ocr-page">要识别的 PDF 页码</label><input id="grounded-ocr-page" type="number" min="1" max="2000" value="1">
+                <button id="grounded-ocr" type="button" class="btn secondary">识别这一页…</button><button id="grounded-ocr-view" type="button" class="btn secondary">查看 OCR 对应的原页</button>
+                <pre id="grounded-ocr-raw"></pre><div id="grounded-ocr-corrections" aria-label="独立人工校正"></div>
+                <label><input id="grounded-ocr-reviewed" type="checkbox">已对照原页核对全部校正文本，特别是数字、单位与符号</label>
+                <button id="grounded-ocr-review" type="button" class="btn secondary">保存为已人工核对的 OCR 候选</button>
+              </details>
+            </div>
+            <p>回执在文献全文保存结果中。恢复仅取得只读来源，不恢复旧的写入批准；换文件或重启后可显式输入同目录归档回执。被写作计划或本次输出引用的归档，须先取消计划或撤销输出，才能撤销归档。</p>
+            <p id="grounded-status" role="status" aria-live="polite">尚未读取；所有写入均需独立确认。</p>
+            <div id="grounded-evidence" aria-label="可选择的原文片段"></div>
+            <label for="grounded-body">正文目标（前40项内的已有普通段落）</label><select id="grounded-body"></select>
+            <label for="grounded-reference">书目占位段落（整段替换；不得含数字、公式或引文）</label><select id="grounded-reference"></select>
+            <label for="grounded-claim">主张正文（引文编号由程序添加）</label><textarea id="grounded-claim" rows="3" maxlength="2000"></textarea>
+            <label for="grounded-relation">人工判断的支持关系</label><select id="grounded-relation"><option value="insufficient">证据不足（不可写入）</option><option value="supports">支持</option><option value="contradicts">反对</option></select>
+            <label for="grounded-applicability">适用范围与实验条件</label><textarea id="grounded-applicability" rows="2" maxlength="2000"></textarea>
+            <label for="grounded-limitation">限制与证据缺口</label><textarea id="grounded-limitation" rows="2" maxlength="2000"></textarea>
+            <label><input id="grounded-identity" type="checkbox">已人工核对 PDF 与所选文献的身份对应</label>
+            <label><input id="grounded-reviewed" type="checkbox">已核对所选原文、主张、适用条件与限制</label>
+            <button id="grounded-plan" class="btn secondary" type="button" disabled>生成最终差异与引用</button>
+            <pre id="grounded-preview"></pre>
+            <button id="grounded-confirm" class="btn confirm" type="button" disabled>确认写入新副本…</button>
+            <p id="grounded-output" role="status"></p>
+            <button id="grounded-rollback" class="btn secondary" type="button" disabled>撤销本次副本…</button>
+            <p>固定版本 IEEE CSL 普通文本引文，不是 Word 域、Zotero 或 GB/T。数字与公式检查只能防止部分错写，人工支持判断不等于机器证明。已有数字引文、特殊结构或不完整书目会拒绝；文档原件不变，原件索引仍绑定原版本，输出副本需另选并重建索引。</p>
+          </details>
+          <details id="citations-panel" class="professional-panel">
+            <summary>多引文与书目生命周期</summary>
+            <p>先在上方面板为新增主张取得原文证据，再读取此处结构。已有编号须明确映射到文献，按正文首次出现顺序重建 IEEE 普通文本编号；同 DOI 合并为一条。最多12个显式授权的已有普通段落、8条书目、4项主张；不插入/删除段落，不扩展目录授权。</p>
+            <label for="citations-receipt">续编本工具输出时，填写该输出的写作回执 ID（可留空）</label><input id="citations-receipt" maxlength="32" autocomplete="off">
+            <button id="citations-load" class="btn secondary" type="button">读取文档与可用来源</button>
+            <p id="citations-status" role="status" aria-live="polite">尚未读取；打开面板不联网。</p>
+            <div id="citations-mapping" aria-label="已有编号与文献的明确映射"></div>
+            <section aria-label="按编号定位">
+              <label for="citations-find-number">查找原编号出现位置（正文结构范围）</label><select id="citations-find-number" disabled></select>
+              <button id="citations-find" class="btn secondary" type="button" disabled>查找出现位置</button>
+              <p id="citations-find-status" role="status" aria-live="polite">只列出现位置及书目候选，不是完整重排影响分析；查找和跳转不授权、不写入。</p>
+              <div id="citations-locations" aria-label="编号出现位置"></div>
+              <button id="citations-find-more" class="btn secondary" type="button" disabled>下一页出现位置</button>
+            </section>
+            <nav class="citations-pages" aria-label="结构项分页">
+              <button id="citations-prev" class="btn secondary" type="button" disabled>上一页</button>
+              <button id="citations-next" class="btn secondary" type="button" disabled>下一页</button>
+              <label for="citations-position">跳至第几项（结构顺序，非 Word 页码）</label><input id="citations-position" type="number" min="1" max="4000" value="1" step="1">
+              <button id="citations-jump" class="btn secondary" type="button" disabled>跳转</button>
+              <p id="citations-page" role="status" aria-live="polite">每次最多40项，按文本预算分页；浏览不扩大写入范围。</p>
+            </nav>
+            <div id="citations-selected" aria-label="跨页授权段落"></div>
+            <div id="citations-targets" tabindex="-1" aria-label="授权段落与操作"></div>
+            <label><input id="citations-reviewed" type="checkbox">已核对原编号、文献版本、书目段落与授权范围；理解删除引文不会自动证明剩余主张成立</label>
+            <button id="citations-plan" class="btn secondary" type="button" disabled>生成整组编号与书目差异</button>
+            <pre id="citations-preview"></pre>
+            <button id="citations-confirm" class="btn confirm" type="button" disabled>确认整组写入新副本…</button>
+            <p id="citations-output" role="status"></p>
+            <button id="citations-rollback" class="btn secondary" type="button" disabled>撤销本次输出…</button>
+            <p>必须选择所有受重排影响的段落及已有书目；范围外有影响、映射缺失、同 DOI 元数据冲突或来源变化时整组拒绝。释放的书目段落保留“未使用”占位。续编回执只恢复版本绑定的编号/元数据候选，不恢复旧的取证、写入或撤销批准；新增主张仍须重新取证与审阅。保存后另选新副本可继续编排，其索引须另行建立。</p>
+          </details>
+          <div class="input-help" id="input-help">Enter 发送，Shift+Enter 换行，Ctrl+Enter 兼容发送。真正写入前会独立确认。</div>
+          <div class="actions">
+            <span class="pill" id="busy-pill" style="display:none;"><span class="pdot"></span><span id="busy-label">正在处理</span></span>
+          </div>
+          <section class="conversation" id="content-panes" aria-label="当前文档对话流" aria-busy="false">
+            <div id="conversation-empty" class="conversation-empty"><h2>你想对这份文档做什么？</h2><p>先选择文档，再选择任务或输入自己的要求。修改只会先生成预览。</p><div class="presets"><button class="btn secondary" type="button" data-prompt="请总结文档内容">总结内容</button><button class="btn secondary" type="button" data-prompt="请提取文档中的表格">提取表格</button><button class="btn secondary" type="button" data-prompt="请找出文档中的关键数据">找出关键数据</button><button class="btn secondary" type="button" data-prompt="请先预览文档改写计划，不要直接写入">预览改写</button></div></div>
+            <div class="flow-toolbar"><span id="log-title">对话与处理记录</span><span class="spacer"></span><button class="btn secondary" id="btn-log-latest" type="button" aria-controls="log-pane" hidden>回到最新</button><button class="btn link" id="btn-copy-log" title="只复制这个窗口里还在的记录，不是完整存档">复制记录</button><button class="btn link" id="btn-clear">清空显示…</button></div>
+            <div id="processing-message" class="processing-message" role="status" hidden>正在处理…已有计划与结果保留。</div>
+            <div class="conversation-stream" id="log-pane" tabindex="0" aria-labelledby="log-title"></div>
+          </section>
+          <div id="card-store" hidden>
+          <div class="panes" aria-busy="false">
+            <div class="review-panels">
+              <!-- 待确认由外部 activity 播报；这里保留静态提示，避免 aria-busy 内重复播报。 -->
+              <div class="pending-notice" id="pending-notice" hidden>
+                <span>未写入，等待确认。请先查看完整计划，保存副本需单独确认。</span>
+                <button class="btn secondary" id="btn-pending-plan" type="button" aria-controls="plan-card">查看计划</button>
+              </div>
+              <div class="panel-switcher" role="group" aria-label="定位内容面板">
+                <button class="btn secondary" id="btn-show-plan" aria-controls="plan-card" aria-pressed="true">修改计划 / 输出</button>
+                <button class="btn secondary" id="btn-show-result" aria-controls="result-card" aria-pressed="false">读取结果</button>
+              </div>
+              <section class="card pane panel-active" id="plan-card" aria-labelledby="plan-title">
+                <div class="card-title"><span id="plan-title">修改计划 / 输出</span><span class="spacer"></span><button class="btn link" id="btn-copy-plan">复制</button></div>
+                <div class="pane-body empty-state" id="plan-pane" tabindex="0" aria-labelledby="plan-title">尚未生成修改计划。输入任务后在这里查看预览；确认后才会保存副本，原文件不变。</div>
+                <div class="actions plan-actions">
+                  <button class="btn confirm" id="btn-confirm" disabled hidden>应用更改…</button>
+                  <button class="btn danger" id="btn-undo" disabled hidden>撤销输出…</button>
+                </div>
+                <p class="plan-safety-note">保存副本，原文件不变。撤销仅删除符合校验的输出副本，源文件与备份保留。</p>
+              </section>
+              <section class="card pane" id="result-card" aria-labelledby="result-title">
+                <div class="card-title"><span id="result-title">读取结果</span><span class="spacer"></span><button class="btn link" id="btn-copy-result">复制文本</button><button class="btn link" id="btn-copy-tsv" disabled title="复制全部已接收结构化行，不仅当前页">复制全部 TSV</button></div>
+                <div class="result-controls" id="result-controls" hidden>
+                  <div id="result-range" role="status"></div>
+                  <div class="result-pages"><button class="btn secondary" id="btn-result-prev" type="button" aria-controls="result-pane">上一页</button><button class="btn secondary" id="btn-result-next" type="button" aria-controls="result-pane">下一页</button></div>
+                  <div class="result-limit">每页最多 50 行，仅分页已接收数据，不会补取；完整总量及后端截断情况请查看下方原始说明。</div>
+                </div>
+                <div class="pane-body empty-state" id="result-pane" tabindex="0" aria-labelledby="result-title">尚无读取结果。选择文档并发送读取任务后，结果会显示在这里；不会覆盖待确认的修改计划。</div>
+              </section>
+            </div>
+          </div>
+          </div>
+          <details id="technical-details" class="technical-details card">
+            <summary>运行详情</summary>
+            <div class="technical-info">
+              <div class="filedir" id="file-dir">已打开的文件：尚未选择。首次选择只允许本次使用这一个文件；读别的文件仍会再问一次。</div>
+              <div class="meters">
+                <div class="meter"><span class="m-label">处理进度</span><div class="track"><div class="fill" id="iter-fill" style="width:0%"></div></div><span class="m-value" id="iter-value">尚未收到</span></div>
+                <div class="meter" hidden><span class="m-label">可用容量</span><div class="track"><div class="fill" id="budget-fill" style="width:0%"></div></div><span class="m-value" id="budget-value">—</span></div>
+              </div>
+              <div class="checkpoint" id="checkpoint">进度记录：尚未运行任务</div>
+              <button class="btn secondary" id="btn-resume" disabled hidden>继续上次进度（未支持）</button>
+              <details class="advanced-details"><summary>更详细的技术信息</summary>
+                <p class="technical-note">进度记录目前只能查看，不能接着跑。对话窗口最多保留 2000 条；等待你确认和可以撤销的卡片会优先保留，所以窗口里不一定全是最新的记录。更早的记录在文件旁边留有一份完整的只读记录。</p>
+              </details>
+            </div>
+            <div id="log-card" hidden></div>
+          </details>
+        </div>
+        <section id="history-view" hidden aria-labelledby="history-title">
+          <div class="card">
+            <div class="history-heading">
+              <h2 id="history-title">处理记录</h2>
+              <div class="history-heading-actions">
+                <button class="iconbtn history-search-toggle" id="history-search-toggle" type="button" aria-label="搜索处理记录" title="搜索处理记录" aria-controls="history-search-panel" aria-expanded="false" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+                </button>
+                <button class="iconbtn" id="btn-history-refresh" type="button" aria-label="刷新记录" title="刷新记录"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M5.6 9a7 7 0 0 1 11.7-2L20 12M4 12l2.7 5a7 7 0 0 0 11.7-2"></path></svg></button>
+                <button class="iconbtn" id="btn-history-current" type="button" aria-label="回到当前任务" title="回到当前任务"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16v14H4zM8 9h8M8 13h5"></path></svg></button>
+              </div>
+            </div>
+            <div class="history-search-panel" id="history-search-panel" hidden>
+              <label class="visually-hidden" for="history-search">搜索任务指令、文件名或状态</label>
+              <input id="history-search" type="search" autocomplete="off" aria-label="搜索任务指令、文件名或状态" placeholder="搜索记录…">
+            </div>
+            <div id="history-status" class="activity history-status" role="status" aria-live="polite" hidden></div>
+            <div id="history-list" class="history-list" aria-label="历史会话列表" aria-busy="false"></div>
+          </div>
+          <section class="card" id="history-detail" aria-labelledby="history-detail-title" hidden>
+            <div class="card-title"><span id="history-detail-title">记录详情 · 只读</span></div>
+            <dl id="history-metadata" class="history-metadata"></dl>
+            <h2 class="history-summary-title">结果摘要 · 非原文</h2>
+            <pre id="history-summary" class="history-summary"></pre>
+            <section id="history-transcript" class="history-transcript" aria-label="这段记录的内容（只读）"></section>
+            <div class="actions"><button class="btn secondary" id="btn-history-resume" type="button" disabled title="暂时不能从记录接着跑；这里只供回看">暂不支持接着跑</button><button class="btn danger" id="btn-history-hide" type="button">从本窗口隐藏…</button></div>
+          </section>
+        </section>
+      </div>
+    </main>
+    <!-- 设置使用原生折叠控件，窄窗口仍保留可见文字与键盘入口。 -->
+    <aside class="sidebar">
+      <div class="logo"><div class="mark" aria-hidden="true"><img class="lix-brand-icon" src="brand/lix.png" alt="" width="30" height="30"></div><div><div class="name">LiX <small id="app-version"></small></div><div class="sub">审核后写入</div></div></div>
+      <nav aria-label="工作区导航">
+        <div class="nav-group">
+          <div class="group-label">工作区</div>
+          <button class="nav-item active" id="nav-work" type="button" data-view="work" aria-current="page" aria-controls="prompt" title="当前任务" aria-label="当前任务">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6"/></svg><span>当前任务</span>
+          </button>
+          <button class="nav-item" id="nav-log" type="button" data-view="log" aria-controls="log-pane" title="窗口记录" aria-label="窗口记录" hidden>
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v13H9l-5 4z M8 8h8 M8 12h5"/></svg><span>窗口记录</span>
+          </button>
+          <button class="nav-item" id="nav-history" type="button" data-view="history" aria-controls="history-view" title="处理记录（已保存的只读回看）" aria-label="处理记录">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16v15H4z M8 3v6 M16 3v6 M4 11h16 M8 15h3 M8 18h7"/></svg><span>处理记录</span>
+          </button>
+        </div>
+        <div class="nav-group nav-group-tail">
+          <button class="nav-item" id="nav-settings" type="button" title="设置" aria-label="打开设置窗口" aria-haspopup="dialog" aria-controls="settings-dialog">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6 M12 18.6v2.6 M21.2 12h-2.6 M5.4 12H2.8 M18.5 5.5l-1.9 1.9 M7.4 16.6l-1.9 1.9 M18.5 18.5l-1.9-1.9 M7.4 7.4 5.5 5.5"/></svg><span>设置</span>
+          </button>
+        </div>
+      </nav>
+    </aside>
+  </div>
+
+  <div class="settings-backdrop" id="settings-backdrop" hidden></div>
+  <section class="settings-dialog" id="settings-dialog" role="dialog" aria-modal="true"
+           aria-labelledby="settings-dialog-title" hidden>
+    <header class="settings-head">
+      <h2 id="settings-dialog-title">设置</h2>
+      <button class="iconbtn" id="settings-expand" type="button" title="展开设置" aria-label="展开设置" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"></path></svg></button>
+      <button class="iconbtn" id="settings-close" type="button" title="关闭设置（Esc）" aria-label="关闭设置">×</button>
+    </header>
+    <div class="settings-body">
+      <nav class="settings-nav" aria-label="设置分区">
+        <button class="settings-tab" id="tab-machine" type="button" aria-controls="settings-pane-machine">通用与外观</button>
+        <button class="settings-tab active" id="tab-model" type="button" aria-controls="settings-pane-model" aria-current="true">模型与服务</button>
+        <button class="settings-tab" id="tab-skills" type="button" aria-controls="settings-pane-skills">技能</button>
+        <button class="settings-tab" id="tab-rag" type="button" aria-controls="settings-pane-rag">文档检索</button>
+        <button class="settings-tab" id="tab-account" type="button" aria-controls="settings-pane-account">数据与隐私</button>
+        <button class="settings-tab" id="tab-updates" type="button" aria-controls="settings-pane-updates">关于与更新</button>
+      </nav>
+      <div class="settings-panes">
+        <section class="settings-pane" id="settings-pane-updates" aria-labelledby="tab-updates" hidden>
+          <h3>LiX <span id="updates-version">正在读取版本…</span></h3>
+          <p id="updates-source">正在读取发布源…</p>
+          <label><input type="checkbox" id="updates-auto-check">启动后自动检查新版本</label>
+          <label><input type="checkbox" id="updates-auto-download">检查到新版后自动下载已签名更新包</label>
+          <p>自动选项只在你启用后生效，并保存在此浏览器。检查只访问发布仓库，不上传配置或文档；安装始终需要单独确认。安装会关闭软件并重启，请先完成当前任务。</p>
+          <div class="actions"><button id="updates-check" type="button" class="btn secondary">检查更新</button><button id="updates-download" type="button" class="btn secondary" disabled>下载并校验</button><button id="updates-install" type="button" class="btn primary" disabled>安装并重启…</button></div>
+          <p id="updates-status" role="status" aria-live="polite">尚未联网检查。</p>
+          <section id="updates-release" hidden><h4 id="updates-release-title"></h4><pre id="updates-release-notes"></pre></section>
+          <details><summary>本机安装记录</summary><div id="updates-install-history"></div></details>
+          <h3>更新日志</h3><div id="updates-changelog"></div>
+        </section>
+        <section class="settings-pane" id="settings-pane-model" aria-labelledby="tab-model">
+          <div class="settings-form">
+            <p>模型配置保存在本机，此设备共用；确认保存后请重启应用。</p>
+            <span id="settings-editor-version" hidden>2</span>
+            <button id="settings-load" class="btn secondary" type="button">读取配置</button>
+            <p id="settings-status" role="status" aria-live="polite">尚未读取配置。</p>
+            <p id="settings-runtime" class="settings-hint">运行配置快照尚不可得。</p>
+            <h3>对话模型</h3>
+            <label for="settings-provider">模型提供方</label><select id="settings-provider"><option value="deepseek">DeepSeek</option><option value="dashscope">百炼</option><option value="ollama">本地 Ollama</option></select>
+            <section id="settings-setup" class="settings-setup" aria-labelledby="settings-setup-title" hidden>
+              <div class="settings-setup-head">
+                <h3 id="settings-setup-title">配置引导</h3>
+                <button id="settings-setup-toggle" class="btn secondary" type="button" aria-expanded="false" aria-controls="settings-setup-body">展开引导</button>
+              </div>
+              <p id="settings-setup-summary" role="status" aria-live="polite"></p>
+              <div id="settings-setup-body" hidden>
+                <p>按下面顺序核对当前提供方。引导只修改表单草稿，保存仍需独立确认；已填写不代表服务或模型能力已验证。</p>
+                <ol class="settings-setup-steps">
+                  <li><strong>明确使用哪个提供方</strong><p id="settings-setup-provider-state"></p><button id="settings-setup-provider" class="btn secondary" type="button">选用当前提供方（仅草稿）</button></li>
+                  <li><strong>填写模型与服务地址</strong><p id="settings-setup-model-state"></p><p id="settings-setup-url-state"></p><button id="settings-setup-defaults" class="btn secondary" type="button">补齐缺失地址与模型（仅草稿）</button><p>只补空白，不覆盖自定义值；建议来自项目现有统一默认定义，仍需自行核对模型容量与能力。</p></li>
+                  <li><strong>核对该提供方的密钥</strong><p id="settings-setup-key-state"></p><button id="settings-setup-key" class="btn secondary" type="button">前往填写密钥</button></li>
+                  <li><strong>按需测试连接（可跳过）</strong><p id="settings-setup-test-state"></p><button id="settings-setup-test" class="btn secondary" type="button">前往测试连接</button></li>
+                  <li><strong>查看真实差异并确认保存</strong><p id="settings-setup-save-state"></p><button id="settings-setup-save" class="btn secondary" type="button">前往保存确认</button></li>
+                </ol>
+                <details><summary>上下文容量与文档检索（另行核对）</summary>
+                  <p>上下文窗口须按模型真实容量填写，引导不会代填容量。文档内容检索可稍后配置，不作为对话配置的完成条件。</p>
+                  <p id="settings-setup-retrieval-state"></p>
+                  <button id="settings-setup-context" class="btn secondary" type="button">核对上下文窗口</button>
+                  <button id="settings-setup-retrieval" class="btn secondary" type="button">配置文档检索</button>
+                </details>
+              </div>
+            </section>
+            <label for="settings-model">模型名</label><input id="settings-model" maxlength="200" autocomplete="off">
+            <label for="settings-url">服务地址</label><input id="settings-url" maxlength="2048" autocomplete="off">
+            <label for="settings-key">替换访问密钥（留空保留原值）</label><input id="settings-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
+            <label><input id="settings-clear-key" type="checkbox">清除当前提供方的密钥</label><p id="settings-key-state"></p>
+            <p>输入框提示来自统一配置定义，模型名也可手动填写。字段未配置时由启动入口取值；磁盘已有空值不等同于未配置，需填入替换值。新密钥只用于当前提供方。</p>
+            <button id="settings-test" class="btn secondary" type="button" disabled>测试连接（当前草稿）</button>
+            <p id="settings-test-status" role="status" aria-live="polite">仅在点击后联网；不发送生成请求，不证明工具调用成功。</p>
+            <details class="settings-advanced"><summary>高级参数：上下文窗口</summary>
+            <label for="settings-context">上下文窗口</label><input id="settings-context" type="number" min="1024" max="2097152">
+            <p>留空保留原值；应以模型真实容量为准。.env 和进程环境均未设置时，文档任务沿用 32768 的既有默认值。</p></details>
+            <h3>文档内容检索模型</h3>
+            <label for="settings-embedding-channel">内容检索用的通道</label><select id="settings-embedding-channel"><option value="local">本地离线</option><option value="api">联网接口</option></select>
+            <p id="settings-embedding-api">联网检索固定使用百炼及其 DASHSCOPE_API_KEY，与当前对话提供方独立；现有后端仅接受官方兼容地址和受支持的检索模型、维度组合。</p>
+            <p id="settings-embedding-local">本地检索不使用 API 密钥，只使用已经准备好的离线模型目录。</p>
+            <label id="settings-embedding-model-label" for="settings-embedding-model">检索模型名</label><input id="settings-embedding-model" maxlength="200" autocomplete="off">
+            <details class="settings-advanced"><summary>高级参数：检索维度与时限</summary>
+            <label for="settings-embedding-dimension">检索向量维度（1至4096）</label><input id="settings-embedding-dimension" type="number" min="1" max="4096" step="1" autocomplete="off" disabled>
+            <label for="settings-embedding-timeout">单次检索超时（1至20秒）</label><input id="settings-embedding-timeout" type="number" min="1" max="20" step="any" autocomplete="off" disabled>
+            <label for="settings-embedding-budget">检索总时长上限（1至60秒）</label><input id="settings-embedding-budget" type="number" min="1" max="60" step="any" autocomplete="off" disabled>
+            </details>
+            <p>此表单只负责保存配置，不会自动去联网检索；换了检索模型或维度需要重建索引。数值留空表示保留原值。联网接口使用百炼的配置，本地通道使用已有的离线模型目录，不额外下载权重。运行中的任务可在任务栏停止，当前模型请求可能先返回。</p>
+            <button id="settings-save" class="btn primary" type="button" disabled>查看改动并确认保存</button>
+            <button id="settings-discard" class="btn secondary" type="button" disabled>放弃改动</button>
+            <button id="settings-rollback" class="btn secondary" type="button" disabled>撤销本次配置改动…</button>
+            <details><summary>存储、备份与生效说明</summary><p>配置只保存在本机的 .env 文件中，不会自动读取 settings.json。密钥不会回显；新密钥只发送给本机的设置接口。确认后才会替换配置，并保留含旧密钥的本地备份和不含密钥的记录；不会自动调用外部服务。任务停止后当前模型请求可能先返回；离开页面后迟到的界面结果不再处理，但这不代表没有任何写入。</p></details>
+          </div>
+        </section>
+        <section class="settings-pane" id="settings-pane-skills" aria-labelledby="tab-skills" hidden>
+          <details id="skills-panel" class="settings-panel" open>
+            <summary class="settings-panel-summary">工作区技能</summary>
+            <div class="settings-form">
+            <p id="skills-scope">打开文档后，查看和管理该工作区的技能。</p>
+            <div class="skills-toolbar">
+              <label class="skills-search-label" for="skills-search">搜索已安装技能<input id="skills-search" type="search" maxlength="100" placeholder="名称或用途" autocomplete="off"></label>
+              <button id="skills-load" class="btn secondary" type="button">刷新</button>
+              <details id="skills-add-menu"><summary>添加</summary><div class="skills-add-actions"><button id="skills-new" class="btn secondary" type="button">新建技能</button><button id="skills-import" class="btn secondary" type="button" disabled>从文件夹导入…</button><p>当前仅支持 SKILL.md 单文件，不包含脚本和素材。</p></div></details>
+            </div>
+            <nav class="skills-views" aria-label="技能浏览范围"><button id="skills-installed" class="btn secondary" type="button" aria-pressed="true">已安装</button><button id="skills-discover" class="btn secondary" type="button" aria-pressed="false">发现</button></nav>
+            <p id="skills-status" role="status" aria-live="polite">打开技能页后读取当前工作区。</p>
+            <button id="skills-recover-draft" class="btn secondary" type="button" hidden>将保留内容恢复为新技能草稿</button>
+            <section id="skills-discovery" hidden><div class="actions"><button id="skills-public-search" class="btn" type="button">搜索公开技能</button><button id="skills-public-cancel" class="btn secondary" type="button" hidden>停止等待</button></div><details><summary>从 GitHub 检查</summary><label for="skills-github-url">固定版本的技能目录或 SKILL.md 链接</label><input id="skills-github-url" type="url" maxlength="700" placeholder="https://github.com/作者/仓库/tree/40位提交/技能目录"><button id="skills-github-check" class="btn secondary" type="button">检查来源与兼容性</button></details><p id="skills-public-status" role="status">搜索 skills.sh 已收录技能；仅发送查询词。</p><div id="skills-public-results"></div><section id="skills-public-detail" hidden></section><button id="skills-back-installed" class="btn secondary" type="button">查看已安装</button></section>
+            <div id="skills-list" aria-label="工作区技能列表"></div>
+            <section id="skills-detail" class="skills-subpage" aria-labelledby="skills-detail-title" hidden>
+              <button id="skills-detail-back" class="btn secondary" type="button">返回列表</button><h3 id="skills-detail-title"></h3><p id="skills-detail-description"></p><p id="skills-detail-meta"></p><p>启用代表可供 Agent 按需选择，不代表本轮已经使用。</p>
+              <details><summary>工作流正文（只读）</summary><pre id="skills-detail-body"></pre></details>
+              <div class="actions"><button id="skills-open-editor" class="btn secondary" type="button">编辑</button><button id="skills-toggle" class="btn secondary" type="button" disabled>启用 / 停用所选技能…</button><button id="skills-delete" class="btn danger" type="button" disabled>删除所选技能…</button></div>
+            </section>
+            <section id="skills-editor" class="skills-subpage" aria-labelledby="skills-editor-title" hidden>
+            <h3 id="skills-editor-title">新建技能</h3>
+            <label for="skills-name">技能名称</label><input id="skills-name" maxlength="100" autocomplete="off">
+            <label for="skills-description">用途描述（用于任务匹配）</label><textarea id="skills-description" maxlength="500" rows="2"></textarea>
+            <label for="skills-body">工作流指令（不会执行代码）</label><textarea id="skills-body" maxlength="60000" rows="6" spellcheck="false"></textarea>
+            <details><summary>高级：内部标识与存储</summary><label for="skills-slug">目录标识（小写英文、数字、连字符）</label><input id="skills-slug" maxlength="64" autocomplete="off"><p>新建时自动生成；已有技能不可改名迁移目录。保存仅写入当前工作区 skills 目录。</p></details>
+            <button id="skills-create" class="btn primary" type="button" disabled>新建技能…</button>
+            <button id="skills-edit" class="btn primary" type="button" disabled>保存修改…</button>
+            <button id="skills-editor-cancel" class="btn secondary" type="button">取消编辑</button>
+            </section>
+            <button id="skills-rollback" class="btn secondary" type="button" disabled>撤销本次修改…</button>
+            <details class="skills-boundary"><summary>安装范围与权限</summary><p>技能只是工作方法，不会增加工具、脚本或文件权限。导入仅复制 SKILL.md，不带资源；删除仅移除 SKILL.md。保存、删除和撤销各自需要确认。</p></details>
+            </div>
+          </details>
+        </section>
+        <section class="settings-pane" id="settings-pane-rag" aria-labelledby="tab-rag" hidden>
+          <details id="rag-panel" class="settings-panel" open>
+            <summary class="settings-panel-summary">文档内容检索</summary>
+            <div class="settings-form">
+            <p>默认检索当前文件；主动勾选“包含同目录文档”后才读取当前父目录，不递归。索引与结果保存在当前工作区，本机能访问该目录的账户可能共享这些文件。不同检索模型与维度分别保存索引，切回原配置且源文件未变时可复用；不会自动联网。</p>
+            <button id="rag-load" class="btn secondary" type="button">查看索引状态</button>
+            <p id="rag-snapshot" role="status"></p>
+            <button id="rag-index" class="btn primary" type="button" disabled>建立索引…</button>
+            <label><input id="rag-research" type="checkbox" disabled>当前文件专业检索：token 切块与精确标识 / BM25 / 向量融合</label>
+            <p id="rag-profile" role="status" aria-live="polite"></p>
+            <label><input id="rag-pdf-range" type="checkbox" disabled>显式选择当前 PDF 页段</label>
+            <label for="rag-pdf-start">起始页（从1开始）</label><input id="rag-pdf-start" type="number" min="1" max="2000" step="1" value="1" disabled>
+            <label for="rag-pdf-end">结束页（含该页）</label><input id="rag-pdf-end" type="number" min="1" max="2000" step="1" value="5" disabled>
+            <p>PDF 页段每次最多20页、总计10万字符、每页2万字符，仍受500块限制。整组替换该文件旧索引，不累加页段；检索时须选择同一页段。未选页段时保留最多5页的整份索引。扫描空页、截断或解析失败时整组拒绝，旧索引保留；不做OCR、不推断多栏阅读顺序。所选页段完整不代表全文或论点证据完整。PDF坐标原点左下；目录范围仍仅DOCX/XLSX。</p>
+            <p id="rag-research-detail" class="muted">查看索引状态可检查当前选择的范围；旧解析/切块版本需重新建立，未变索引直接复用。使用本地固定 cl100k tokenizer，每块最多384 token；它不代表所配模型的原生分词器。三路各取50个候选，最终1至10条；分数不代表事实正确率。确认保存后可查看命中上下文，每项最多768 token，原命中保持独立。目录同步和高级检索选项均需主动选择；尚无真实模型质量提升结论。</p>
+            <label for="rag-question">要检索的问题（最多200字符）</label><input id="rag-question" maxlength="200" autocomplete="off" disabled>
+            <label for="rag-topk">返回条数（1至10）</label><input id="rag-topk" type="number" min="1" max="10" step="1" value="5" disabled>
+            <label><input id="rag-directory" type="checkbox" disabled>包含同目录文档（最多20个）</label>
+            <details><summary>目录专业检索选项</summary>
+              <label><input id="rag-rerank" type="checkbox" disabled>使用已配置的本机离线重排（最多20项，失败保留融合排序）</label>
+              <label><input id="rag-expand" type="checkbox" disabled>有界拆分比较问题（最多3条查询，只使用原问题的文字）</label>
+              <p>同时勾选专业检索和同目录文档后，建立索引会先预览新增、更新及删除项，确认后仅嵌入变化的文档。不修改源文档。重排模型路径及超时从本机 .env 读取；未配置或依赖缺失时降级，不下载模型。重排子进程最多1GB内存、2个CPU线程。</p>
+            </details>
+            <button id="rag-query" class="btn primary" type="button" disabled>检索并保存结果…</button>
+            <div id="rag-hits" aria-label="已保存的检索结果摘录"></div>
+            <pre id="rag-context" aria-label="已保存命中的原文上下文"></pre>
+            <button id="rag-read" class="btn secondary" type="button" disabled>查看完整结果第一页</button>
+            <button id="rag-next" class="btn secondary" type="button" disabled>下一页</button>
+            <pre id="rag-evidence" aria-label="完整检索结果当前页"></pre>
+            <button id="rag-rollback-index" class="btn secondary" type="button" disabled>撤销本次索引…</button>
+            <button id="rag-rollback-evidence" class="btn secondary" type="button" disabled>撤销本次检索结果…</button>
+            <p id="rag-status" role="status" aria-live="polite">尚未读取索引。</p>
+            <p>检索会用到上面配置的通道；完整结果保存并校验通过后，才显示每条不超过 200 字的摘录。单页最多 2000 字，不会越翻越多。索引和检索结果可以各自撤销，原文件、备份和记录都会保留。</p>
+            </div>
+          </details>
+        </section>
+        <section class="settings-pane" id="settings-pane-machine" aria-labelledby="tab-machine" hidden>
+          <div class="settings-form">
+            <p>这里只影响这台电脑上的显示与检测，不改动任何文档。</p>
+            <button class="btn secondary" id="settings-probe" type="button">检测本机 Office 环境</button>
+            <p id="settings-probe-status" class="settings-hint">尚未检测。</p>
+            <label for="settings-theme-choice">界面主题</label><select id="settings-theme-choice"><option value="dark">深色</option><option value="light">浅色</option></select>
+            <button class="btn secondary" id="settings-theme" type="button" hidden>切换主题</button>
+            <p id="settings-theme-state" class="settings-hint"></p>
+          </div>
+        </section>
+        <section class="settings-pane" id="settings-pane-account" aria-labelledby="tab-account" hidden>
+          <div class="settings-form">
+            <p>这是无需注册登录的单机工作区。文件打开、模型发送和写副本分别授权；旧账户数据保留，不自动合并到当前本机记忆。</p>
+            <details id="memory-panel"><summary>记忆与个性化（默认关闭）</summary>
+              <p>当前本机工作区可查看和管理；数据为本地明文。仅从你直接输入的短句中发现重复偏好、工作背景或工作步骤候选，每条另行确认；不会从文档正文、工具结果或模型输出自动记录。候选记忆前 10 天满权重，此后渐降；手动长期项始终有效直到删除。启用并引用时可能发给已配置的模型服务；删除本地项不追溯清理旧检查点或已发送的请求。旧账户的记忆文件原样保留。</p>
+              <div class="memory-card">
+                <strong>对话记忆与本地工作习惯</strong>
+                <p>重复直接要求才生成待审候选；只在确认后跨文档使用，不自动创建技能或执行步骤。</p>
+                <button id="memory-load" class="btn secondary" type="button">查看本机记忆</button>
+                <button id="memory-toggle" class="btn secondary" type="button" disabled>开启记忆…</button>
+                <button id="memory-save" class="btn secondary" type="button" disabled>确认保存候选…</button>
+              </div>
+              <div class="memory-card">
+                <strong>人设设定与长期记忆</strong>
+                <p>主动填写并确认后保存；仅作为低信任背景资料，不改变工具权限或安全策略。每类保留最新一条，最多 300 字。</p>
+                <label for="memory-manual-kind">记忆分类</label>
+                <select id="memory-manual-kind"><option value="persona">人设设定</option><option value="work">工作背景</option><option value="personal">个人背景</option><option value="writing">长期写作约定</option><option value="skill">工作习惯与步骤</option></select>
+                <label for="memory-manual-text">内容（请勿填写凭据或敏感资料）</label>
+                <textarea id="memory-manual-text" maxlength="300" rows="4" placeholder="例如：写总结时偏好先列提纲，再检查标题层级。"></textarea>
+                <button id="memory-manual-save" class="btn secondary" type="button" disabled>预览并确认保存此类记忆…</button>
+              </div>
+              <div class="memory-card"><strong>管理记忆</strong>
+                <div id="memory-items" aria-label="已保存的记忆"></div>
+                <button id="memory-delete" class="btn secondary" type="button" disabled>删除所选记忆…</button>
+                <button id="memory-clear" class="btn secondary" type="button" disabled>删除本机全部记忆…</button>
+              </div>
+              <p id="memory-status" role="status" aria-live="polite">记忆默认关闭；请先查看。</p>
+            </details>
+            <details class="about-note"><summary>通用任务记忆</summary>
+              <p>明确保存后跨任务召回，最多20条、每次最多引用3条；仅为低信任背景，可能随任务传给当前模型。不会自动保存聊天或文档。删除会停止召回，事务备份仍保留在本机，未加密。</p>
+              <button id="general-load" class="btn secondary" type="button">查看通用记忆</button>
+              <select id="general-category" aria-label="通用记忆分类"><option value="task">长期任务</option><option value="summary">已确认的摘要</option><option value="preference">偏好</option></select>
+              <textarea id="general-content" maxlength="1000" rows="3" aria-label="通用记忆内容" placeholder="例如：长期任务是整理季度汇总。请勿填写敏感资料。"></textarea>
+              <button id="general-save" class="btn secondary" type="button">预览保存…</button>
+              <div id="general-items" aria-label="通用记忆列表"></div>
+              <button id="general-delete" class="btn secondary" type="button">删除所选…</button>
+              <button id="general-clear" class="btn secondary" type="button">清空召回内容…</button>
+              <p id="general-status" role="status"></p>
+            </details>
+            <details class="about-note"><summary>本次任务的多个文档</summary>
+              <p>逐行填写同目录2–5个DOCX/XLSX文件名，须包括当前文件。确认后先读取有界摘要；之后的任务可访问这些文件，每个写计划仍须逐一确认。切换文件或退出会清除范围。</p>
+              <textarea id="multi-names" rows="5" aria-label="多文件任务的文件名"></textarea>
+              <button id="multi-select" class="btn secondary" type="button">预览读取范围…</button>
+              <button id="multi-clear" class="btn secondary" type="button">恢复单文件任务</button>
+              <button id="multi-load" class="btn secondary" type="button">查看范围与待确认计划</button>
+              <div id="multi-plans"></div><p id="multi-status" role="status"></p>
+            </details>
+            <button id="auth-logout" class="btn danger" type="button">清空当前工作区会话…</button>
+            <p id="auth-workspace-status" class="auth-error" role="status" aria-live="polite"></p>
+            <details id="nav-about" class="about-note"><summary>关于 LiX</summary><p>LiX：读取文档、预览修改，确认后才保存新副本，原文件不动。数据保存在本机。打开文档、向模型发送片段与写入副本保持各自的授权边界。</p></details>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+  <div class="modal-backdrop" id="modal" style="display:none;">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-body">
+      <h3 id="modal-title">确认</h3><div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions"><button class="btn secondary" id="modal-cancel">取消</button><button class="btn confirm" id="modal-ok">确认</button></div>
+    </div>
+  </div>
+  <script src="auth.js"></script>
+  <script src="images.js"></script>
+  <script src="imagegen.js"></script>
+  <script src="app.js"></script>
+  <script src="settings_dialog.js"></script>
+  <script src="updates.js"></script>
+  <script src="diagram_preview.js"></script>
+  <script src="settings_editor.js"></script>
+  <script src="settings.js"></script>
+  <script src="skills.js"></script>
+  <script src="rag.js"></script>
+  <script src="memory_preferences.js"></script>
+  <script src="phase3.js"></script>
+  <script src="professional.js"></script>
+  <script src="range_edits.js"></script>
+  <script src="document_tasks.js"></script>
+  <script src="pdf_preview.js"></script>
+  <script src="continuous_research.js"></script>
+  <script src="literature.js"></script>
+  <script src="evidence_page.js"></script>
+  <script src="grounded.js"></script>
+  <script src="research_assist.js"></script>
+  <script src="citations.js"></script>
+  <script src="workbench.js"></script>
+  <script src="diagram_export.js"></script>
+  <script src="workspace_layout.js"></script>
+  <script src="model_connections.js"></script>
+  <script src="chat_markdown.js"></script>
+  <script src="daily.js"></script>
+  <script src="workbench_ui.js"></script>
+  <script src="settings_workspace.js"></script>
+  <script src="skill_discovery.js"></script>
+  <script src="editor_adapter_contract.js"></script>
+  <script src="document_editor_adapter.js"></script>
+  <script src="agent_elements.js"></script>
+  <script src="window_chrome.js"></script>
+  <script src="paged_workspace.js"></script>
+  <script src="presentation_workspace.js"></script>
+  <script src="floating_shell.js"></script>
+  <script src="canvas_grid_selection.js"></script>
+  <script src="office_canvas.js"></script>
+</body>
+</html>

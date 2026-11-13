@@ -1,0 +1,10 @@
+{
+  "style": "IEEE",
+  "repository": "citation-style-language/styles",
+  "commit": "6ba2e9c6aa6e0dab87d3a20b833ed8ff6500f698",
+  "file": "ieee.csl",
+  "sha256": "b4c7619fc16c45a31e4cc3271eab94ffe83192d3b4c7fc729470a3b459448de3",
+  "processor": "citeproc-py==0.11.1",
+  "license": "CC-BY-SA-3.0",
+  "source_url": "https://github.com/citation-style-language/styles/blob/6ba2e9c6aa6e0dab87d3a20b833ed8ff6500f698/ieee.csl"
+}

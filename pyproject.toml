@@ -1,0 +1,75 @@
+[project]
+name = "agent-quickstart"
+version = "0.7.11"
+description = "LiX Windows 桌面文档编辑助手"
+license = "AGPL-3.0-only"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain>=1.0",
+    "langgraph>=1.0",
+    "langchain-openai>=1.0",
+    "langchain-ollama>=1.0",
+    "langchain-mcp-adapters>=0.2",
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "python-docx>=1.2",
+    "lxml>=5,<7",
+    "openpyxl>=3.1",
+    "python-pptx>=1,<2",
+    "pillow>=10.4,<13",
+    "pypdfium2>=5.0,<6",
+    "olefile>=0.47,<0.50",
+    "openai>=3.17,<4",
+    "httpx2>=2.13,<3",
+    "pywin32>=306; sys_platform == 'win32'",
+    "pywebview>=5.0",
+    # Verified native Edge/netfx combination; pythonnet 3.2 fails on this netfx host.
+    "pythonnet==3.0.5; sys_platform == 'win32'",
+    "PySide6>=6.6",
+    "qtpy>=2.4",
+    "sqlite-vec>=0.1.6,<0.2",
+    "tiktoken==0.14.0",
+    "regex==2026.9.10",
+    "citeproc-py==0.11.1",
+    "cryptography>=46,<51",
+    "mcp==1.30.0",
+]
+
+[project.optional-dependencies]
+local-embedding = [
+    "sentence-transformers>=3,<6",
+]
+research-local = [
+    "onnx>=1.18,<2",
+    "onnxruntime>=1.22,<2",
+    "tokenizers>=0.22,<1",
+]
+research-ocr = [
+    "winrt-windows-foundation>=3,<4",
+    "winrt-windows-foundation-collections>=3,<4",
+    "winrt-windows-globalization>=3,<4",
+    "winrt-windows-graphics-imaging>=3,<4",
+    "winrt-windows-media-ocr>=3,<4",
+    "winrt-windows-storage-streams>=3,<4",
+]
+research-parser = [
+    "docling-parse>=7,<8",
+]
+
+[dependency-groups]
+dev = [
+    "playwright>=1.50,<2",
+    "pytest>=8",
+]
+
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

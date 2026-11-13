@@ -1,0 +1,20 @@
+{
+  "name": "LiX",
+  "source": "User-supplied artwork, 2026-11-12",
+  "transform": "Original retained; imagegen orange background with enlarged artwork and transparent exterior, 2026-11-13; PNG Lanczos, ICO Hamming to avoid alpha ringing",
+  "icon_sizes": [
+    16,
+    24,
+    32,
+    48,
+    64,
+    128,
+    256
+  ],
+  "files": {
+    "lix-source.png": "21f3f60c17095e1932b6826a235c506fe704fa8f6015f05b2a26f8198e39625f",
+    "lix-transparent.png": "37fb81771031fb9e73041d6d459497aa57b419e18201a67466056b823d8504dd",
+    "lix.png": "ca70434def917a6b015cff438a76dcb1c427363fb6e7fd89967b8a51ba39b557",
+    "lix.ico": "6fd818475b60a4e81d831ce763e73e7e82533554b4869fd129726400926dfc0a"
+  }
+}

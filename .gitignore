@@ -36,18 +36,5 @@ dist/
 /SOURCE_MANIFEST.json
 
 /LiX.exe
-
-/.idea/
-/.office-settings-*/
-/office-smoke/
-/%SystemDrive%/
-/_runlog.txt
-/check_key.py
-/*.docx
-/*.xlsx
-/*.pptx
-*.pfx
-*.p12
-*.private.pem
-.DS_Store
-Thumbs.db
+/office_agent/webui/static/vendor/superdoc/superdoc.min.js
+/office_agent/webui/static/vendor/superdoc/style.css

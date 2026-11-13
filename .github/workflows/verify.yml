@@ -1,0 +1,50 @@
+name: Windows source verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      OFFICE_AGENT_REAL_COM: '0'
+      PYTHONNET_RUNTIME: netfx
+      OFFICE_WEBVIEW_GUI: edgechromium
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: '0.12.18'
+          python-version: '3.12.14'
+          enable-cache: false
+      - name: Locked dependencies
+        shell: pwsh
+        run: |
+          uv lock --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv sync --locked --python 3.12.14
+          exit $LASTEXITCODE
+      - name: Public files and secret patterns
+        shell: pwsh
+        run: |
+          uv run python tools/release_source.py manifest --manifest SOURCE_MANIFEST.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv run python tools/release_source.py check --manifest SOURCE_MANIFEST.json --require-git
+          exit $LASTEXITCODE
+      - name: Prepare pinned frontend assets
+        shell: pwsh
+        run: uv run python tools/install_frontend_assets.py
+      - name: Prepare pinned renderer
+        shell: pwsh
+        run: ./tools/Install-DocumentRuntime.ps1
+      - name: Required browser and Node checks
+        shell: pwsh
+        run: uv run python tools/ci_preflight.py
+      - name: Full regression
+        shell: pwsh
+        run: uv run pytest -q

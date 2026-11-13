@@ -1,0 +1,3155 @@
+{
+  "schema": 1,
+  "scope": "locked package metadata inventory, not a legal compatibility determination; installed wheels are not exported",
+  "packages": [
+    {
+      "name": "annotated-doc",
+      "version": "0.0.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/fastapi/annotated-doc",
+        "Documentation, https://github.com/fastapi/annotated-doc",
+        "Repository, https://github.com/fastapi/annotated-doc",
+        "Issues, https://github.com/fastapi/annotated-doc/issues",
+        "Changelog, https://github.com/fastapi/annotated-doc/release-notes.md"
+      ],
+      "license_files_in_distribution": [
+        "annotated_doc-0.0.5.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/annotated-types/annotated-types",
+        "Source, https://github.com/annotated-types/annotated-types",
+        "Changelog, https://github.com/annotated-types/annotated-types/releases"
+      ],
+      "license_files_in_distribution": [
+        "annotated_types-0.8.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "anyio",
+      "version": "4.15.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://anyio.readthedocs.io/en/latest/",
+        "Changelog, https://anyio.readthedocs.io/en/stable/versionhistory.html",
+        "Source code, https://github.com/agronholm/anyio",
+        "Issue tracker, https://github.com/agronholm/anyio/issues"
+      ],
+      "license_files_in_distribution": [
+        "anyio-4.15.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "attrs",
+      "version": "26.1.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://www.attrs.org/",
+        "Changelog, https://www.attrs.org/en/stable/changelog.html",
+        "GitHub, https://github.com/python-attrs/attrs",
+        "Funding, https://github.com/sponsors/hynek",
+        "Tidelift, https://tidelift.com/subscription/pkg/pypi-attrs?utm_source=pypi-attrs&utm_medium=pypi"
+      ],
+      "license_files_in_distribution": [
+        "attrs-26.1.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "bottle",
+      "version": "0.13.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Source, https://github.com/bottlepy/bottle"
+      ],
+      "license_files_in_distribution": [
+        "bottle-0.13.4.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MPL-2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)"
+      ],
+      "project_urls": [
+        "Source, https://github.com/certifi/python-certifi"
+      ],
+      "license_files_in_distribution": [
+        "certifi-2026.7.22.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT-0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://cffi.readthedocs.io/",
+        "Changelog, https://cffi.readthedocs.io/en/latest/whatsnew.html",
+        "Download, https://github.com/python-cffi/cffi/releases",
+        "Contact, https://groups.google.com/forum/#!forum/python-cffi",
+        "Source Code, https://github.com/python-cffi/cffi",
+        "Issue Tracker, https://github.com/python-cffi/cffi/issues"
+      ],
+      "license_files_in_distribution": [
+        "cffi-2.1.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changelog, https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md",
+        "Documentation, https://charset-normalizer.readthedocs.io/",
+        "Code, https://github.com/jawah/charset_normalizer",
+        "Issue tracker, https://github.com/jawah/charset_normalizer/issues"
+      ],
+      "license_files_in_distribution": [
+        "charset_normalizer-3.5.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "citeproc-py",
+      "version": "0.11.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-2-Clause-Views",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://github.com/citeproc-py/citeproc-py"
+      ],
+      "license_files_in_distribution": [
+        "citeproc_py-0.11.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "click",
+      "version": "8.5.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changes, https://click.palletsprojects.com/page/changes/",
+        "Chat, https://discord.gg/pallets",
+        "Documentation, https://click.palletsprojects.com/",
+        "Donate, https://palletsprojects.com/donate",
+        "Source, https://github.com/pallets/click/"
+      ],
+      "license_files_in_distribution": [
+        "click-8.5.0.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "cloudpickle",
+      "version": "3.1.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "clr-loader",
+      "version": "0.2.10",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Sources, https://github.com/pythonnet/clr-loader",
+        "Documentation, https://pythonnet.github.io/clr-loader/"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/tartley/colorama"
+      ],
+      "license_files_in_distribution": [
+        "colorama-0.4.6.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "coloredlogs",
+      "version": "15.0.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0 OR BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "changelog, https://cryptography.io/en/latest/changelog/",
+        "documentation, https://cryptography.io/",
+        "homepage, https://github.com/pyca/cryptography",
+        "issues, https://github.com/pyca/cryptography/issues",
+        "source, https://github.com/pyca/cryptography/"
+      ],
+      "license_files_in_distribution": [
+        "cryptography-50.0.1.dist-info/licenses/LICENSE",
+        "cryptography-50.0.1.dist-info/licenses/LICENSE.APACHE",
+        "cryptography-50.0.1.dist-info/licenses/LICENSE.BSD"
+      ]
+    },
+    {
+      "name": "cuda-bindings",
+      "version": "13.4.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "cuda-pathfinder",
+      "version": "1.8.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "cuda-toolkit",
+      "version": "13.0.3.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "PSFL",
+      "license_classifiers": [
+        "License :: OSI Approved :: Python Software Foundation License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "defusedxml-0.7.1.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "distro",
+      "version": "1.9.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache License, Version 2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "distro-1.9.0.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "doclang",
+      "version": "0.7.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://www.doclang.ai/",
+        "Documentation, https://github.com/doclang-project/doclang/blob/main/README.md",
+        "Repository, https://github.com/doclang-project/doclang",
+        "Changelog, https://github.com/doclang-project/doclang/blob/main/CHANGELOG.md",
+        "Issues, https://github.com/doclang-project/doclang/issues"
+      ],
+      "license_files_in_distribution": [
+        "doclang-0.7.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "docling-core",
+      "version": "2.101.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://github.com/docling-project",
+        "repository, https://github.com/docling-project/docling-core",
+        "issues, https://github.com/docling-project/docling-core/issues",
+        "changelog, https://github.com/docling-project/docling-core/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": [
+        "docling_core-2.101.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "docling-parse",
+      "version": "7.22.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/docling-project/docling-parse",
+        "Repository, https://github.com/docling-project/docling-parse"
+      ],
+      "license_files_in_distribution": [
+        "docling_parse-7.22.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "et-xmlfile",
+      "version": "2.0.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Documentation, https://openpyxl.pages.heptapod.net/et_xmlfile/",
+        "Source, https://foss.heptapod.net/openpyxl/et_xmlfile",
+        "Tracker, https://foss.heptapod.net/openpyxl/et_xmfile/-/issues"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "exceptiongroup",
+      "version": "1.3.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "filelock",
+      "version": "4.0.12",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Documentation, https://py-filelock.readthedocs.io",
+        "Homepage, https://github.com/tox-dev/py-filelock",
+        "Source, https://github.com/tox-dev/py-filelock",
+        "Tracker, https://github.com/tox-dev/py-filelock/issues"
+      ],
+      "license_files_in_distribution": [
+        "filelock-4.0.12.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache 2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Documentation, https://google.github.io/flatbuffers/",
+        "Source, https://github.com/google/flatbuffers"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.9.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changelog, https://filesystem-spec.readthedocs.io/en/latest/changelog.html",
+        "Documentation, https://filesystem-spec.readthedocs.io/en/latest/",
+        "Homepage, https://github.com/fsspec/filesystem_spec"
+      ],
+      "license_files_in_distribution": [
+        "fsspec-2026.9.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "greenlet",
+      "version": "3.5.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT AND PSF-2.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://greenlet.readthedocs.io",
+        "Documentation, https://greenlet.readthedocs.io",
+        "Repository, https://github.com/python-greenlet/greenlet",
+        "Issues, https://github.com/python-greenlet/greenlet/issues",
+        "Changelog, https://greenlet.readthedocs.io/en/latest/changes.html"
+      ],
+      "license_files_in_distribution": [
+        "greenlet-3.5.6.dist-info/licenses/LICENSE",
+        "greenlet-3.5.6.dist-info/licenses/LICENSE.PSF"
+      ]
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "h11-0.16.0.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.7.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Documentation, https://huggingface.co/docs/hub/xet/index",
+        "Homepage, https://github.com/huggingface/xet-core",
+        "Issues, https://github.com/huggingface/xet-core/issues",
+        "Repository, https://github.com/huggingface/xet-core.git"
+      ],
+      "license_files_in_distribution": [
+        "hf_xet-1.7.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Documentation, https://www.encode.io/httpcore",
+        "Homepage, https://www.encode.io/httpcore/",
+        "Source, https://github.com/encode/httpcore"
+      ],
+      "license_files_in_distribution": [
+        "httpcore-1.0.9.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "httpcore2",
+      "version": "2.13.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Changelog, https://github.com/pydantic/httpx2/blob/main/src/httpcore2/CHANGELOG.md",
+        "Homepage, https://github.com/pydantic/httpx2",
+        "Source, https://github.com/pydantic/httpx2/blob/main/src/httpcore2"
+      ],
+      "license_files_in_distribution": [
+        "httpcore2-2.13.0.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD-3-Clause",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Changelog, https://github.com/encode/httpx/blob/master/CHANGELOG.md",
+        "Documentation, https://www.python-httpx.org",
+        "Homepage, https://github.com/encode/httpx",
+        "Source, https://github.com/encode/httpx"
+      ],
+      "license_files_in_distribution": [
+        "httpx-0.28.1.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "httpx-sse",
+      "version": "0.4.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/florimondmanca/httpx-sse"
+      ],
+      "license_files_in_distribution": [
+        "httpx_sse-0.4.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "httpx2",
+      "version": "2.13.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Changelog, https://github.com/pydantic/httpx2/blob/main/src/httpx2/CHANGELOG.md",
+        "Homepage, https://github.com/pydantic/httpx2",
+        "Source, https://github.com/pydantic/httpx2"
+      ],
+      "license_files_in_distribution": [
+        "httpx2-2.13.0.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "httpx2-jsfetch",
+      "version": "1.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "1.33.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache-2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "huggingface_hub-1.33.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "humanfriendly",
+      "version": "10.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "idna",
+      "version": "3.20",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changelog, https://github.com/kjd/idna/blob/master/HISTORY.md",
+        "Issue tracker, https://github.com/kjd/idna/issues",
+        "Source, https://github.com/kjd/idna"
+      ],
+      "license_files_in_distribution": [
+        "idna-3.20.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/pytest-dev/iniconfig"
+      ],
+      "license_files_in_distribution": [
+        "iniconfig-2.3.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "jinja2",
+      "version": "3.1.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "jiter",
+      "version": "0.17.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "jiter-0.17.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "joblib",
+      "version": "1.6.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "jsonpatch",
+      "version": "1.33",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Modified BSD License",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Website, https://github.com/stefankoegl/python-json-patch",
+        "Repository, https://github.com/stefankoegl/python-json-patch.git",
+        "Documentation, https://python-json-patch.readthedocs.org/",
+        "PyPI, https://pypi.org/pypi/jsonpatch",
+        "Tests, https://travis-ci.org/stefankoegl/python-json-patch",
+        "Test Coverage, https://coveralls.io/r/stefankoegl/python-json-patch"
+      ],
+      "license_files_in_distribution": [
+        "jsonpatch-1.33.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "jsonpointer",
+      "version": "3.1.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Modified BSD License",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "jsonpointer-3.1.1.dist-info/licenses/AUTHORS",
+        "jsonpointer-3.1.1.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "jsonref",
+      "version": "1.1.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [],
+      "project_urls": [
+        "documentation, https://jsonref.readthedocs.io/en/latest/",
+        "repository, https://github.com/gazpachoking/jsonref"
+      ],
+      "license_files_in_distribution": [
+        "jsonref-1.1.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/python-jsonschema/jsonschema",
+        "Documentation, https://python-jsonschema.readthedocs.io/",
+        "Issues, https://github.com/python-jsonschema/jsonschema/issues/",
+        "Funding, https://github.com/sponsors/Julian",
+        "Tidelift, https://tidelift.com/subscription/pkg/pypi-jsonschema?utm_source=pypi-jsonschema&utm_medium=referral&utm_campaign=pypi-link",
+        "Changelog, https://github.com/python-jsonschema/jsonschema/blob/main/CHANGELOG.rst",
+        "Source, https://github.com/python-jsonschema/jsonschema"
+      ],
+      "license_files_in_distribution": [
+        "jsonschema-4.26.0.dist-info/licenses/COPYING"
+      ]
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://jsonschema-specifications.readthedocs.io/",
+        "Homepage, https://github.com/python-jsonschema/jsonschema-specifications",
+        "Issues, https://github.com/python-jsonschema/jsonschema-specifications/issues/",
+        "Funding, https://github.com/sponsors/Julian",
+        "Tidelift, https://tidelift.com/subscription/pkg/pypi-jsonschema-specifications?utm_source=pypi-jsonschema-specifications&utm_medium=referral&utm_campaign=pypi-link",
+        "Source, https://github.com/python-jsonschema/jsonschema-specifications"
+      ],
+      "license_files_in_distribution": [
+        "jsonschema_specifications-2025.9.1.dist-info/licenses/COPYING"
+      ]
+    },
+    {
+      "name": "langchain",
+      "version": "1.4.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://docs.langchain.com/",
+        "Documentation, https://reference.langchain.com/python/langchain/langchain/",
+        "Repository, https://github.com/langchain-ai/langchain",
+        "Issues, https://github.com/langchain-ai/langchain/issues",
+        "Changelog, https://github.com/langchain-ai/langchain/releases?q=tag%3A%22langchain%3D%3D1%22",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langchain-1.4.2.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langchain-core",
+      "version": "1.6.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://docs.langchain.com/",
+        "Documentation, https://reference.langchain.com/python/langchain_core/",
+        "Repository, https://github.com/langchain-ai/langchain",
+        "Issues, https://github.com/langchain-ai/langchain/issues",
+        "Changelog, https://github.com/langchain-ai/langchain/releases?q=%22langchain-core%3D%3D1%22",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langchain_core-1.6.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langchain-mcp-adapters",
+      "version": "0.3.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "repository, https://www.github.com/langchain-ai/langchain-mcp-adapters"
+      ],
+      "license_files_in_distribution": [
+        "langchain_mcp_adapters-0.3.2.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langchain-ollama",
+      "version": "1.1.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://docs.langchain.com/oss/python/integrations/providers/ollama",
+        "Documentation, https://reference.langchain.com/python/integrations/langchain_ollama/",
+        "Repository, https://github.com/langchain-ai/langchain",
+        "Issues, https://github.com/langchain-ai/langchain/issues",
+        "Changelog, https://github.com/langchain-ai/langchain/releases?q=%22langchain-ollama%22",
+        "Twitter, https://x.com/LangChain",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langchain_ollama-1.1.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langchain-openai",
+      "version": "1.6.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://docs.langchain.com/oss/python/integrations/providers/openai",
+        "Documentation, https://reference.langchain.com/python/integrations/langchain_openai/",
+        "Repository, https://github.com/langchain-ai/langchain",
+        "Issues, https://github.com/langchain-ai/langchain/issues",
+        "Changelog, https://github.com/langchain-ai/langchain/releases?q=%22langchain-openai%22",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langchain_openai-1.6.2.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langchain-protocol",
+      "version": "0.0.19",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/langchain-ai/agent-protocol/tree/main/streaming",
+        "Repository, https://github.com/langchain-ai/agent-protocol",
+        "Issues, https://github.com/langchain-ai/agent-protocol/issues"
+      ],
+      "license_files_in_distribution": [
+        "langchain_protocol-0.0.19.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langgraph",
+      "version": "1.2.11",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://docs.langchain.com/oss/python/langgraph/overview",
+        "Documentation, https://reference.langchain.com/python/langgraph/",
+        "Source, https://github.com/langchain-ai/langgraph/tree/main/libs/langgraph",
+        "Changelog, https://github.com/langchain-ai/langgraph/releases",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langgraph-1.2.11.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langgraph-checkpoint",
+      "version": "4.2.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Source, https://github.com/langchain-ai/langgraph/tree/main/libs/checkpoint",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langgraph_checkpoint-4.2.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langgraph-prebuilt",
+      "version": "1.1.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Source, https://github.com/langchain-ai/langgraph/tree/main/libs/prebuilt",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langgraph_prebuilt-1.1.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langgraph-sdk",
+      "version": "0.4.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Source, https://github.com/langchain-ai/langgraph/tree/main/libs/sdk-py",
+        "Twitter, https://x.com/langchain_oss",
+        "Slack, https://www.langchain.com/join-community",
+        "Reddit, https://www.reddit.com/r/LangChain/"
+      ],
+      "license_files_in_distribution": [
+        "langgraph_sdk-0.4.4.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "langsmith",
+      "version": "0.14.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://smith.langchain.com/",
+        "Documentation, https://docs.smith.langchain.com/",
+        "Repository, https://github.com/langchain-ai/langsmith-sdk"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "latex2mathml",
+      "version": "3.81.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [],
+      "project_urls": [
+        "repository, https://github.com/roniemartinez/latex2mathml",
+        "Donate, https://www.buymeacoffee.com/roniemartinez"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "lxml",
+      "version": "6.1.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD-3-Clause",
+      "license_classifiers": [],
+      "project_urls": [
+        "Source, https://github.com/lxml/lxml",
+        "Bug Tracker, https://bugs.launchpad.net/lxml"
+      ],
+      "license_files_in_distribution": [
+        "lxml-6.1.3.dist-info/licenses/LICENSE.txt",
+        "lxml-6.1.3.dist-info/licenses/LICENSES.txt"
+      ]
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Documentation, https://markdown-it-py.readthedocs.io",
+        "Homepage, https://github.com/executablebooks/markdown-it-py"
+      ],
+      "license_files_in_distribution": [
+        "markdown_it_py-4.2.0.dist-info/licenses/LICENSE",
+        "markdown_it_py-4.2.0.dist-info/licenses/LICENSE.markdown-it"
+      ]
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "mcp",
+      "version": "1.30.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://modelcontextprotocol.io",
+        "Documentation, https://py.sdk.modelcontextprotocol.io/v1/",
+        "Repository, https://github.com/modelcontextprotocol/python-sdk",
+        "Issues, https://github.com/modelcontextprotocol/python-sdk/issues"
+      ],
+      "license_files_in_distribution": [
+        "mcp-1.30.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/executablebooks/mdurl"
+      ],
+      "license_files_in_distribution": [
+        "mdurl-0.1.2.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "ml-dtypes",
+      "version": "0.6.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://github.com/jax-ml/ml_dtypes",
+        "repository, https://github.com/jax-ml/ml_dtypes"
+      ],
+      "license_files_in_distribution": [
+        "ml_dtypes-0.6.0.dist-info/licenses/LICENSE",
+        "ml_dtypes-0.6.0.dist-info/licenses/LICENSE.eigen"
+      ]
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "narwhals",
+      "version": "2.26.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "networkx",
+      "version": "3.4.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "networkx",
+      "version": "3.6.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "networkx",
+      "version": "3.7",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "numpy",
+      "version": "2.2.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://numpy.org",
+        "documentation, https://numpy.org/doc/",
+        "source, https://github.com/numpy/numpy",
+        "download, https://pypi.org/project/numpy/#files",
+        "tracker, https://github.com/numpy/numpy/issues",
+        "release notes, https://numpy.org/doc/stable/release"
+      ],
+      "license_files_in_distribution": [
+        "numpy-2.5.3.dist-info/licenses/LICENSE.txt",
+        "numpy-2.5.3.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt",
+        "numpy-2.5.3.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING",
+        "numpy-2.5.3.dist-info/licenses/numpy/_core/src/highway/LICENSE",
+        "numpy-2.5.3.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt",
+        "numpy-2.5.3.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE",
+        "numpy-2.5.3.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt",
+        "numpy-2.5.3.dist-info/licenses/numpy/ma/LICENSE",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/src/distributions/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/src/philox/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md",
+        "numpy-2.5.3.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md"
+      ]
+    },
+    {
+      "name": "nvidia-cublas",
+      "version": "13.1.1.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cuda-cupti",
+      "version": "13.0.85",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cuda-nvrtc",
+      "version": "13.0.88",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cuda-runtime",
+      "version": "13.0.96",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cudnn-cu13",
+      "version": "9.24.0.43",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cufft",
+      "version": "12.0.0.61",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cufile",
+      "version": "1.15.1.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-curand",
+      "version": "10.4.0.35",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cusolver",
+      "version": "12.0.4.66",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cusparse",
+      "version": "12.6.3.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-cusparselt-cu13",
+      "version": "0.8.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-nccl-cu13",
+      "version": "2.30.7",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-nvjitlink",
+      "version": "13.4.92",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-nvshmem-cu13",
+      "version": "3.4.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "nvidia-nvtx",
+      "version": "13.0.85",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "olefile",
+      "version": "0.47",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "olefile-0.47.dist-info/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "ollama",
+      "version": "0.6.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://ollama.com",
+        "repository, https://github.com/ollama/ollama-python",
+        "issues, https://github.com/ollama/ollama-python/issues"
+      ],
+      "license_files_in_distribution": [
+        "ollama-0.6.2.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "onnx",
+      "version": "1.23.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://onnx.ai/",
+        "Repository, https://github.com/onnx/onnx"
+      ],
+      "license_files_in_distribution": [
+        "onnx-1.23.2.dist-info/licenses/LICENSE",
+        "onnx-1.23.2.dist-info/licenses/NOTICE"
+      ]
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.23.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.31.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT License",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "openai",
+      "version": "3.17.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/openai/openai-python",
+        "Repository, https://github.com/openai/openai-python"
+      ],
+      "license_files_in_distribution": [
+        "openai-3.17.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "openpyxl",
+      "version": "3.1.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Documentation, https://openpyxl.readthedocs.io/en/stable/",
+        "Source, https://foss.heptapod.net/openpyxl/openpyxl",
+        "Tracker, https://foss.heptapod.net/openpyxl/openpyxl/-/issues"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "orjson",
+      "version": "3.12.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MPL-2.0 AND (Apache-2.0 OR MIT)",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License",
+        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)"
+      ],
+      "project_urls": [
+        "changelog, https://github.com/ijl/orjson/blob/master/CHANGELOG.md",
+        "documentation, https://github.com/ijl/orjson",
+        "source, https://github.com/ijl/orjson"
+      ],
+      "license_files_in_distribution": [
+        "orjson-3.12.0.dist-info/licenses/LICENSE-APACHE",
+        "orjson-3.12.0.dist-info/licenses/LICENSE-MIT",
+        "orjson-3.12.0.dist-info/licenses/LICENSE-MPL-2.0"
+      ]
+    },
+    {
+      "name": "ormsgpack",
+      "version": "1.12.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0 OR MIT",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License",
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/ormsgpack/ormsgpack"
+      ],
+      "license_files_in_distribution": [
+        "ormsgpack-1.12.2.dist-info/licenses/LICENSE-APACHE",
+        "ormsgpack-1.12.2.dist-info/licenses/LICENSE-MIT"
+      ]
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0 OR BSD-2-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://packaging.pypa.io/",
+        "Source, https://github.com/pypa/packaging"
+      ],
+      "license_files_in_distribution": [
+        "packaging-26.3.dist-info/licenses/LICENSE",
+        "packaging-26.3.dist-info/licenses/LICENSE.APACHE",
+        "packaging-26.3.dist-info/licenses/LICENSE.BSD"
+      ]
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pandas",
+      "version": "3.0.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD 3-Clause License",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "homepage, https://pandas.pydata.org",
+        "documentation, https://pandas.pydata.org/docs/",
+        "repository, https://github.com/pandas-dev/pandas"
+      ],
+      "license_files_in_distribution": [
+        "pandas-3.0.6.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT-CMU",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Release notes, https://pillow.readthedocs.io/en/stable/releasenotes/index.html",
+        "Changelog, https://github.com/python-pillow/Pillow/releases",
+        "Documentation, https://pillow.readthedocs.io",
+        "Funding, https://tidelift.com/subscription/pkg/pypi-pillow?utm_source=pypi-pillow&utm_medium=pypi",
+        "Homepage, https://python-pillow.github.io",
+        "Mastodon, https://fosstodon.org/@pillow",
+        "Source, https://github.com/python-pillow/Pillow"
+      ],
+      "license_files_in_distribution": [
+        "pillow-12.3.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "playwright",
+      "version": "1.63.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://github.com/Microsoft/playwright-python",
+        "Release notes, https://github.com/microsoft/playwright-python/releases"
+      ],
+      "license_files_in_distribution": [
+        "playwright-1.63.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "pluggy-1.6.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "protobuf",
+      "version": "7.36.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "3-Clause BSD License",
+      "license_classifiers": [],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "protobuf-7.36.2.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "proxy-tools",
+      "version": "0.1.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/eliben/pycparser"
+      ],
+      "license_files_in_distribution": [
+        "pycparser-3.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/pydantic/pydantic",
+        "Documentation, https://docs.pydantic.dev",
+        "Funding, https://github.com/sponsors/samuelcolvin",
+        "Source, https://github.com/pydantic/pydantic",
+        "Changelog, https://docs.pydantic.dev/latest/changelog/"
+      ],
+      "license_files_in_distribution": [
+        "pydantic-2.13.5.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.46.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Funding, https://github.com/sponsors/samuelcolvin",
+        "Homepage, https://github.com/pydantic",
+        "Source, https://github.com/pydantic/pydantic/tree/main/pydantic-core"
+      ],
+      "license_files_in_distribution": [
+        "pydantic_core-2.46.5.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pydantic-settings",
+      "version": "2.15.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/pydantic/pydantic-settings",
+        "Funding, https://github.com/sponsors/samuelcolvin",
+        "Source, https://github.com/pydantic/pydantic-settings",
+        "Changelog, https://github.com/pydantic/pydantic-settings/releases",
+        "Documentation, https://docs.pydantic.dev/dev-v2/concepts/pydantic_settings/"
+      ],
+      "license_files_in_distribution": [
+        "pydantic_settings-2.15.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pyee",
+      "version": "13.0.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Repository, https://github.com/jfhbrook/pyee",
+        "Documentation, https://pyee.readthedocs.io"
+      ],
+      "license_files_in_distribution": [
+        "pyee-13.0.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pygments",
+      "version": "2.21.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-2-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://pygments.org",
+        "Documentation, https://pygments.org/docs",
+        "Source, https://github.com/pygments/pygments",
+        "Bug Tracker, https://github.com/pygments/pygments/issues",
+        "Changelog, https://github.com/pygments/pygments/blob/master/CHANGES"
+      ],
+      "license_files_in_distribution": [
+        "pygments-2.21.0.dist-info/licenses/AUTHORS",
+        "pygments-2.21.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pyjwt",
+      "version": "2.14.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/jpadilla/pyjwt"
+      ],
+      "license_files_in_distribution": [
+        "pyjwt-2.14.0.dist-info/licenses/AUTHORS.rst",
+        "pyjwt-2.14.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pyobjc-core",
+      "version": "12.2.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pyobjc-framework-cocoa",
+      "version": "12.2.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pyobjc-framework-quartz",
+      "version": "12.2.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pyobjc-framework-security",
+      "version": "12.2.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pyobjc-framework-uniformtypeidentifiers",
+      "version": "12.2.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pyobjc-framework-webkit",
+      "version": "12.2.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pypdfium2",
+      "version": "5.14.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD-3-Clause, Apache-2.0, dependency licenses",
+      "license_classifiers": [],
+      "project_urls": [
+        "Source, https://github.com/pypdfium2-team/pypdfium2",
+        "Tracker, https://github.com/pypdfium2-team/pypdfium2/issues",
+        "Documentation, https://pypdfium2.readthedocs.io",
+        "Changelog, https://pypdfium2.readthedocs.io/en/stable/changelog.html"
+      ],
+      "license_files_in_distribution": [
+        "pypdfium2-5.14.0.dist-info/licenses/LICENSES/Apache-2.0.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/LICENSES/BSD-3-Clause.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/LICENSES/CC-BY-4.0.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/abseil.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/agg23.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/fast_float.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/freetype.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/icu.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/lcms.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libjpeg_turbo.ijg",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libjpeg_turbo.md",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libopenjpeg.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libpng.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/llvm-libc.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/pdfium-binaries.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/pdfium.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/simdutf.txt",
+        "pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/zlib.txt"
+      ]
+    },
+    {
+      "name": "pyreadline3",
+      "version": "3.5.6",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pyside6",
+      "version": "6.11.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://pyside.org",
+        "Documentation, https://doc.qt.io/qtforpython",
+        "Repository, https://code.qt.io/cgit/pyside/pyside-setup.git/",
+        "Changelog, https://code.qt.io/cgit/pyside/pyside-setup.git/tree/doc/changelogs",
+        "Tracker, https://qt-project.atlassian.net/browse/PYSIDE"
+      ],
+      "license_files_in_distribution": [
+        "pyside6-6.11.2.dist-info/licenses/LicenseRef-Qt-Commercial.txt"
+      ]
+    },
+    {
+      "name": "pyside6-addons",
+      "version": "6.11.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://pyside.org",
+        "Documentation, https://doc.qt.io/qtforpython",
+        "Repository, https://code.qt.io/cgit/pyside/pyside-setup.git/",
+        "Changelog, https://code.qt.io/cgit/pyside/pyside-setup.git/tree/doc/changelogs",
+        "Tracker, https://qt-project.atlassian.net/browse/PYSIDE"
+      ],
+      "license_files_in_distribution": [
+        "pyside6_addons-6.11.2.dist-info/licenses/LicenseRef-Qt-Commercial.txt"
+      ]
+    },
+    {
+      "name": "pyside6-essentials",
+      "version": "6.11.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://pyside.org",
+        "Documentation, https://doc.qt.io/qtforpython",
+        "Repository, https://code.qt.io/cgit/pyside/pyside-setup.git/",
+        "Changelog, https://code.qt.io/cgit/pyside/pyside-setup.git/tree/doc/changelogs",
+        "Tracker, https://qt-project.atlassian.net/browse/PYSIDE"
+      ],
+      "license_files_in_distribution": [
+        "pyside6_essentials-6.11.2.dist-info/licenses/LicenseRef-Qt-Commercial.txt"
+      ]
+    },
+    {
+      "name": "pytest",
+      "version": "9.1.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changelog, https://docs.pytest.org/en/stable/changelog.html",
+        "Contact, https://docs.pytest.org/en/stable/contact.html",
+        "Funding, https://docs.pytest.org/en/stable/sponsor.html",
+        "Homepage, https://docs.pytest.org/en/latest/",
+        "Source, https://github.com/pytest-dev/pytest",
+        "Tracker, https://github.com/pytest-dev/pytest/issues"
+      ],
+      "license_files_in_distribution": [
+        "pytest-9.1.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Dual License",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License",
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Documentation, https://dateutil.readthedocs.io/en/stable/",
+        "Source, https://github.com/dateutil/dateutil"
+      ],
+      "license_files_in_distribution": [
+        "python_dateutil-2.9.0.post0.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "python-docx",
+      "version": "1.2.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Changelog, https://github.com/python-openxml/python-docx/blob/master/HISTORY.rst",
+        "Documentation, https://python-docx.readthedocs.org/en/latest/",
+        "Homepage, https://github.com/python-openxml/python-docx",
+        "Repository, https://github.com/python-openxml/python-docx"
+      ],
+      "license_files_in_distribution": [
+        "python_docx-1.2.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD-3-Clause",
+      "license_classifiers": [],
+      "project_urls": [
+        "Source, https://github.com/theskumar/python-dotenv"
+      ],
+      "license_files_in_distribution": [
+        "python_dotenv-1.2.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "python-multipart",
+      "version": "0.0.32",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0",
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/Kludex/python-multipart",
+        "Documentation, https://kludex.github.io/python-multipart/",
+        "Changelog, https://github.com/Kludex/python-multipart/blob/master/CHANGELOG.md",
+        "Source, https://github.com/Kludex/python-multipart"
+      ],
+      "license_files_in_distribution": [
+        "python_multipart-0.0.32.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "python-pptx",
+      "version": "1.0.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Changelog, https://github.com/scanny/python-pptx/blob/master/HISTORY.rst",
+        "Documentation, https://python-pptx.readthedocs.io/en/latest/",
+        "Homepage, https://github.com/scanny/python-pptx",
+        "Repository, https://github.com/scanny/python-pptx"
+      ],
+      "license_files_in_distribution": [
+        "python_pptx-1.0.2.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "pythonnet",
+      "version": "3.0.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Homepage, https://pythonnet.github.io/",
+        "Sources, https://github.com/pythonnet/pythonnet"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "pytz",
+      "version": "2026.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "pywebview",
+      "version": "6.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD 3-Clause License",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [
+        "Homepage, https://pywebview.flowrl.com/",
+        "Repository, https://github.com/r0x0r/pywebview"
+      ],
+      "license_files_in_distribution": [
+        "pywebview-6.2.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pywin32",
+      "version": "312",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "PSF",
+      "license_classifiers": [
+        "License :: OSI Approved :: Python Software Foundation License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/mhammond/pywin32",
+        "Changes, https://github.com/mhammond/pywin32/blob/main/CHANGES.md",
+        "Docs, https://mhammond.github.io/pywin32/",
+        "Bugs, https://github.com/mhammond/pywin32/issues",
+        "Support Requests, https://github.com/mhammond/pywin32/discussions",
+        "Mailing List, https://mail.python.org/mailman/listinfo/python-win32"
+      ],
+      "license_files_in_distribution": [
+        "pywin32-312.dist-info/licenses/adodbapi/license.txt",
+        "pywin32-312.dist-info/licenses/com/License.txt",
+        "pywin32-312.dist-info/licenses/com/win32comext/mapi/src/MAPIStubLibrary/LICENSE",
+        "pywin32-312.dist-info/licenses/isapi/README.txt",
+        "pywin32-312.dist-info/licenses/pythonwin/License.txt",
+        "pywin32-312.dist-info/licenses/pythonwin/Scintilla/License.txt",
+        "pywin32-312.dist-info/licenses/pythonwin/pywin/idle/LICENSE.txt",
+        "pywin32-312.dist-info/licenses/win32/License.txt"
+      ]
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Bug Tracker, https://github.com/yaml/pyyaml/issues",
+        "CI, https://github.com/yaml/pyyaml/actions",
+        "Documentation, https://pyyaml.org/wiki/PyYAMLDocumentation",
+        "Mailing lists, http://lists.sourceforge.net/lists/listinfo/yaml-core",
+        "Source Code, https://github.com/yaml/pyyaml"
+      ],
+      "license_files_in_distribution": [
+        "pyyaml-6.0.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "qtpy",
+      "version": "2.4.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Github, https://github.com/spyder-ide/qtpy",
+        "Bug Tracker, https://github.com/spyder-ide/qtpy/issues",
+        "Parent Project, https://www.spyder-ide.org/"
+      ],
+      "license_files_in_distribution": [
+        "QtPy-2.4.3.dist-info/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://referencing.readthedocs.io/",
+        "Homepage, https://github.com/python-jsonschema/referencing",
+        "Issues, https://github.com/python-jsonschema/referencing/issues/",
+        "Funding, https://github.com/sponsors/Julian",
+        "Tidelift, https://tidelift.com/subscription/pkg/pypi-referencing?utm_source=pypi-referencing&utm_medium=referral&utm_campaign=pypi-link",
+        "Changelog, https://referencing.readthedocs.io/en/stable/changes/",
+        "Source, https://github.com/python-jsonschema/referencing"
+      ],
+      "license_files_in_distribution": [
+        "referencing-0.37.0.dist-info/licenses/COPYING"
+      ]
+    },
+    {
+      "name": "regex",
+      "version": "2026.9.10",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "Apache-2.0 AND CNRI-Python",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/mrabarnett/mrab-regex"
+      ],
+      "license_files_in_distribution": [
+        "regex-2026.9.10.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache-2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Documentation, https://requests.readthedocs.io",
+        "Source, https://github.com/psf/requests"
+      ],
+      "license_files_in_distribution": [
+        "requests-2.34.2.dist-info/licenses/LICENSE",
+        "requests-2.34.2.dist-info/licenses/NOTICE"
+      ]
+    },
+    {
+      "name": "requests-toolbelt",
+      "version": "1.0.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache 2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Changelog, https://github.com/requests/toolbelt/blob/master/HISTORY.rst",
+        "Source, https://github.com/requests/toolbelt"
+      ],
+      "license_files_in_distribution": [
+        "requests_toolbelt-1.0.0.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "rich",
+      "version": "15.0.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [
+        "Documentation, https://rich.readthedocs.io/en/latest/",
+        "Homepage, https://github.com/Textualize/rich"
+      ],
+      "license_files_in_distribution": [
+        "rich-15.0.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "rpds-py",
+      "version": "0.30.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "rpds-py",
+      "version": "2026.6.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://rpds.readthedocs.io/",
+        "Funding, https://github.com/sponsors/Julian",
+        "Homepage, https://github.com/crate-py/rpds",
+        "Issues, https://github.com/crate-py/rpds/issues/",
+        "Source, https://github.com/crate-py/rpds",
+        "Tidelift, https://tidelift.com/subscription/pkg/pypi-rpds-py?utm_source=pypi-rpds-py&utm_medium=referral&utm_campaign=pypi-link",
+        "Upstream, https://github.com/orium/rpds"
+      ],
+      "license_files_in_distribution": [
+        "rpds_py-2026.6.3.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "safetensors",
+      "version": "0.8.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.7.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.9.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "scipy",
+      "version": "1.15.3",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "scipy",
+      "version": "1.17.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "scipy",
+      "version": "1.18.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "sentence-transformers",
+      "version": "5.7.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "setuptools",
+      "version": "84.0.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "shellingham",
+      "version": "1.5.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "ISC License",
+      "license_classifiers": [
+        "License :: OSI Approved :: ISC License (ISCL)"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "shellingham-1.5.4.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "shiboken6",
+      "version": "6.11.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://pyside.org",
+        "Documentation, https://doc.qt.io/qtforpython",
+        "Repository, https://code.qt.io/cgit/pyside/pyside-setup.git/",
+        "Changelog, https://code.qt.io/cgit/pyside/pyside-setup.git/tree/doc/changelogs",
+        "Tracker, https://qt-project.atlassian.net/browse/PYSIDE"
+      ],
+      "license_files_in_distribution": [
+        "shiboken6-6.11.2.dist-info/licenses/LicenseRef-Qt-Commercial.txt"
+      ]
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "six-1.17.0.dist-info/LICENSE"
+      ]
+    },
+    {
+      "name": "sniffio",
+      "version": "1.3.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT OR Apache-2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/python-trio/sniffio",
+        "Documentation, https://sniffio.readthedocs.io/",
+        "Changelog, https://sniffio.readthedocs.io/en/latest/history.html"
+      ],
+      "license_files_in_distribution": [
+        "sniffio-1.3.1.dist-info/LICENSE",
+        "sniffio-1.3.1.dist-info/LICENSE.APACHE2",
+        "sniffio-1.3.1.dist-info/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "sqlite-vec",
+      "version": "0.1.9",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT License, Apache License, Version 2.0",
+      "license_classifiers": [],
+      "project_urls": [],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "sse-starlette",
+      "version": "3.4.11",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/sysid/sse-starlette",
+        "Repository, https://github.com/sysid/sse-starlette",
+        "Issues, https://github.com/sysid/sse-starlette/issues",
+        "Source, https://github.com/sysid/sse-starlette"
+      ],
+      "license_files_in_distribution": [
+        "sse_starlette-3.4.11.dist-info/licenses/AUTHORS",
+        "sse_starlette-3.4.11.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "starlette",
+      "version": "1.6.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/Kludex/starlette",
+        "Documentation, https://starlette.dev/",
+        "Changelog, https://starlette.dev/release-notes/",
+        "Funding, https://github.com/sponsors/Kludex",
+        "Source, https://github.com/Kludex/starlette"
+      ],
+      "license_files_in_distribution": [
+        "starlette-1.6.0.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "tabulate",
+      "version": "0.10.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/astanin/python-tabulate"
+      ],
+      "license_files_in_distribution": [
+        "tabulate-0.10.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "tenacity",
+      "version": "9.1.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache 2.0",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "tenacity-9.1.4.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "threadpoolctl",
+      "version": "3.7.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "tiktoken",
+      "version": "0.14.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MIT License",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://github.com/openai/tiktoken",
+        "repository, https://github.com/openai/tiktoken",
+        "changelog, https://github.com/openai/tiktoken/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": [
+        "tiktoken-0.14.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.2",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "",
+      "license_classifiers": [
+        "License :: OSI Approved :: Apache Software License"
+      ],
+      "project_urls": [
+        "Homepage, https://github.com/huggingface/tokenizers",
+        "Source, https://github.com/huggingface/tokenizers"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "tomli",
+      "version": "2.4.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "torch",
+      "version": "2.14.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "MPL-2.0 AND MIT",
+      "license_classifiers": [],
+      "project_urls": [
+        "homepage, https://tqdm.github.io",
+        "repository, https://github.com/tqdm/tqdm",
+        "changelog, https://tqdm.github.io/releases",
+        "wiki, https://github.com/tqdm/tqdm/wiki"
+      ],
+      "license_files_in_distribution": [
+        "tqdm-4.70.1.dist-info/licenses/LICENCE"
+      ]
+    },
+    {
+      "name": "transformers",
+      "version": "5.19.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "triton",
+      "version": "3.8.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": false,
+      "reason": "This locked optional or platform distribution not present at the pinned version; review before redistribution"
+    },
+    {
+      "name": "truststore",
+      "version": "0.10.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://truststore.readthedocs.io",
+        "Source, https://github.com/sethmlarson/truststore"
+      ],
+      "license_files_in_distribution": [
+        "truststore-0.10.4.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "typer",
+      "version": "0.26.8",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/fastapi/typer",
+        "Documentation, https://typer.tiangolo.com",
+        "Repository, https://github.com/fastapi/typer",
+        "Issues, https://github.com/fastapi/typer/issues",
+        "Changelog, https://typer.tiangolo.com/release-notes/"
+      ],
+      "license_files_in_distribution": [
+        "typer-0.26.8.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "PSF-2.0",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Bug Tracker, https://github.com/python/typing_extensions/issues",
+        "Changes, https://github.com/python/typing_extensions/blob/main/CHANGELOG.md",
+        "Documentation, https://typing-extensions.readthedocs.io/",
+        "Home, https://github.com/python/typing_extensions",
+        "Q & A, https://github.com/python/typing/discussions",
+        "Repository, https://github.com/python/typing_extensions"
+      ],
+      "license_files_in_distribution": [
+        "typing_extensions-4.16.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.4",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/pydantic/typing-inspection",
+        "Documentation, https://pydantic.github.io/typing-inspection/dev/",
+        "Source, https://github.com/pydantic/typing-inspection",
+        "Changelog, https://github.com/pydantic/typing-inspection/blob/main/HISTORY.md"
+      ],
+      "license_files_in_distribution": [
+        "typing_inspection-0.4.4.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "tzdata",
+      "version": "2026.5",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "Apache-2.0",
+      "license_classifiers": [],
+      "project_urls": [
+        "Bug Reports, https://github.com/python/tzdata/issues",
+        "Source, https://github.com/python/tzdata",
+        "Documentation, https://tzdata.python.org"
+      ],
+      "license_files_in_distribution": [
+        "tzdata-2026.5.dist-info/licenses/LICENSE",
+        "tzdata-2026.5.dist-info/licenses/licenses/LICENSE_APACHE"
+      ]
+    },
+    {
+      "name": "urllib3",
+      "version": "2.8.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changelog, https://github.com/urllib3/urllib3/blob/main/CHANGES.rst",
+        "Documentation, https://urllib3.readthedocs.io",
+        "Code, https://github.com/urllib3/urllib3",
+        "Issue tracker, https://github.com/urllib3/urllib3/issues",
+        "Security policy, https://urllib3.readthedocs.io/en/latest/security.html"
+      ],
+      "license_files_in_distribution": [
+        "urllib3-2.8.0.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "uuid-utils",
+      "version": "0.17.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://github.com/aminalaee/uuid-utils",
+        "Issues, https://github.com/aminalaee/uuid-utils/issues",
+        "Source, https://github.com/aminalaee/uuid-utils"
+      ],
+      "license_files_in_distribution": [
+        "uuid_utils-0.17.1.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.53.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Changelog, https://uvicorn.dev/release-notes",
+        "Funding, https://github.com/sponsors/Kludex",
+        "Homepage, https://uvicorn.dev/",
+        "Source, https://github.com/Kludex/uvicorn"
+      ],
+      "license_files_in_distribution": [
+        "uvicorn-0.53.0.dist-info/licenses/LICENSE.md"
+      ]
+    },
+    {
+      "name": "websockets",
+      "version": "16.1.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/python-websockets/websockets",
+        "Changelog, https://websockets.readthedocs.io/en/stable/project/changelog.html",
+        "Documentation, https://websockets.readthedocs.io/",
+        "Funding, https://tidelift.com/subscription/pkg/pypi-websockets?utm_source=pypi-websockets&utm_medium=referral&utm_campaign=readme",
+        "Tracker, https://github.com/python-websockets/websockets/issues"
+      ],
+      "license_files_in_distribution": [
+        "websockets-16.1.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "winrt-runtime",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "winrt-windows-foundation",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "winrt-windows-foundation-collections",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "winrt-windows-globalization",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "winrt-windows-graphics-imaging",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "winrt-windows-media-ocr",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "winrt-windows-storage-streams",
+      "version": "3.2.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "MIT",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Documentation, https://pywinrt.readthedocs.io",
+        "Repository, https://github.com/pywinrt/pywinrt",
+        "Changelog, https://github.com/pywinrt/pywinrt/blob/main/CHANGELOG.md"
+      ],
+      "license_files_in_distribution": []
+    },
+    {
+      "name": "xlsxwriter",
+      "version": "3.2.9",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD-2-Clause",
+      "license_classifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "xlsxwriter-3.2.9.dist-info/LICENSE.txt"
+      ]
+    },
+    {
+      "name": "xxhash",
+      "version": "4.0.1",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": null,
+      "license_summary": "BSD-2-Clause",
+      "license_classifiers": [],
+      "project_urls": [],
+      "license_files_in_distribution": [
+        "xxhash-4.0.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "zstandard",
+      "version": "0.25.0",
+      "source": {
+        "registry": "https://mirrors.aliyun.com/pypi/simple/"
+      },
+      "metadata_verified": true,
+      "license_expression": "BSD-3-Clause",
+      "license_summary": "",
+      "license_classifiers": [],
+      "project_urls": [
+        "Homepage, https://github.com/indygreg/python-zstandard",
+        "Documentation, https://python-zstandard.readthedocs.io/en/latest/"
+      ],
+      "license_files_in_distribution": [
+        "zstandard-0.25.0.dist-info/licenses/LICENSE"
+      ]
+    }
+  ]
+}

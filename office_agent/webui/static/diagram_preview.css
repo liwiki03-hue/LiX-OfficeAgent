@@ -1,0 +1,10 @@
+/* Only the passive diagram card; inherit existing theme colors and focus rules. */
+#diagram-card { min-width: 0; }
+#diagram-card img { max-width: 100%; height: auto; }
+#diagram-card select,
+#diagram-card textarea { display: block; width: 100%; max-width: 100%; box-sizing: border-box; }
+#diagram-card .actions { flex-wrap: wrap; }
+#diagram-card .actions .btn { flex: 1 1 12rem; max-width: 100%; }
+#diagram-card #diagram-status { overflow-wrap: anywhere; }
+#diagram-card details { min-width: 0; }
+#diagram-card textarea { resize: vertical; }

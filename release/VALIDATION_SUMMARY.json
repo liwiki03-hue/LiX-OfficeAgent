@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "version": "0.7.11",
+  "status": "automated_only_native_and_release_open",
+  "recorded_utc": "2026-11-12T10:06:04.763434+00:00",
+  "evidence_origin_stage": "R5",
+  "R6_full_test_rerun": false,
+  "R6_changes_scope": "documentation and provenance metadata only",
+  "R5_manifest_sha256": "8ba5644ad2878d1bc749fc85d298a4447ca685213dbb2469ffc26b9ec640872c",
+  "R5_files": 655,
+  "unchanged_file_count": 648,
+  "unchanged_records_sha256": "8c66acf85b669b6444394143331c5895347ab19ab0d4f8c917c4bd29b9e341de",
+  "non_runtime_metadata_exclusions": [
+    "CHANGELOG.md",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "docs/LICENSING.md",
+    "docs/RELEASE.md",
+    "release/PUBLIC_FILES.json",
+    "release/SUPERDOC_SOURCE.json"
+  ],
+  "full_gate": {
+    "command": "uv run pytest -q",
+    "summary": "4126 passed, 5 skipped, 165 subtests passed in 2526.55s (0:42:06)",
+    "exit_code": 0,
+    "started_utc": "2026-11-12T09:06:15.2479392Z",
+    "finished_utc": "2026-11-12T09:48:23.3229346Z",
+    "skips": [
+      {
+        "category": "Windows symlink creation privilege unavailable",
+        "count": 4
+      },
+      {
+        "category": "Real Office COM disabled by existing explicit opt-in",
+        "count": 1
+      }
+    ],
+    "owned_processes_remaining": 0,
+    "peak_job_memory_bytes": 1858363392
+  },
+  "environment": {
+    "platform": "Windows-11-10.0.22631-SP0",
+    "python": "3.12.14",
+    "machine": "AMD64",
+    "uv": "uv 0.12.18 (01cb90c1a 2026-09-22 x86_64-pc-windows-msvc)",
+    "node": "v24.21.0",
+    "edge_version": "131.0.2903.70",
+    "webview2_registered_versions": [
+      "131.0.2903.70"
+    ]
+  },
+  "renderer": {
+    "name": "LibreOffice",
+    "version": "26.2.6.2",
+    "binary_sha256": "e3e06a68c05b94b9f333ead258f0df6f288e22002287896f21e9bad2821ff122"
+  },
+  "not_verified": [
+    "same-candidate native desktop journey",
+    "real model calls and provider billing",
+    "Microsoft Office",
+    "physical IME/DPI/multiple displays",
+    "independent human quality",
+    "new Windows computer",
+    "GitHub CI and public download",
+    "complete third-party source distribution"
+  ],
+  "publication_authorized": false,
+  "source_or_permissions_expanded": false,
+  "remaining_REL_conditions": 9,
+  "fixed_deadline": "2026-11-13T23:59:00+08:00"
+}

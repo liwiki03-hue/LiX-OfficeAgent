@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "package": "superdoc",
+  "version": "1.47.2",
+  "archive_url": "https://registry.npmjs.org/superdoc/-/superdoc-1.47.2.tgz",
+  "archive_sha256": "12d9ab6178b8082949bbe3171ab395e38b9eec3594ea28f782e9d8fdc18f2125",
+  "npm_published_at": "2026-10-08T09:51:17.417Z",
+  "license": "AGPL-3.0",
+  "assets": [
+    {
+      "path": "package/dist/superdoc.min.js",
+      "local": "superdoc.min.js",
+      "sha256": "5898d2a2f77e791841d540084b75d012a7005ed79e3b2293f9a6dafcfb908a8f",
+      "matches_vendored": true
+    },
+    {
+      "path": "package/dist/style.css",
+      "local": "style.css",
+      "sha256": "b3de90e9cd8923fab19ad0ef4f0bcf2a3c2ea19533a9ff861fc80c45368ac787",
+      "matches_vendored": true
+    },
+    {
+      "path": "package/LICENSE",
+      "local": "LICENSE",
+      "sha256": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+      "matches_vendored": true
+    }
+  ],
+  "npm_git_head": null,
+  "source_map": {
+    "path": "package/dist/superdoc.min.js.map",
+    "sha256": "3aa277f9b44baf15c97f515912535d6daf275463ba76d7b46b9abd80fc8bc5ec",
+    "sources": 2386,
+    "missing_sources_content": 0
+  },
+  "build_scripts_declared": {
+    "pack": "node ./scripts/pack-output.cjs clean && pnpm run build:es && pnpm pack && node ./scripts/pack-output.cjs finalize",
+    "build": "vite build && pnpm run build:cdn && pnpm run postbuild",
+    "pack:es": "node ./scripts/pack-output.cjs clean && pnpm run build:es && pnpm pack && node ./scripts/pack-output.cjs finalize",
+    "build:es": "pnpm run build",
+    "build:cdn": "vite build --config vite.config.cdn.js",
+    "build:dev": "SUPERDOC_SKIP_DTS=1 vite build",
+    "postbuild": "node ./scripts/check-tsconfig-type-surface.cjs && node ./scripts/ensure-types.cjs && node ./scripts/audit-bundle.cjs && node ./scripts/audit-declarations.cjs && node ./scripts/check-export-coverage.cjs && node ./scripts/verify-public-facade-emit.cjs && node ./scripts/report-declaration-reachability.cjs",
+    "pack:local": "pnpm run pack:es"
+  },
+  "build_materials_found_in_archive": [],
+  "fixed_corresponding_commit": null,
+  "rebuild_verified": false,
+  "distribution_status": "fixed_project_source_candidate_identified_complete_source_delivery_and_rebuild_pending",
+  "scope": "Read-only package inspection; source map content is not proof of complete corresponding source or reproducible build",
+  "checked_utc": "2026-11-12T10:06:04.763434+00:00",
+  "source_candidate": {
+    "commit": "66c22186c7c0735360ca4fd94f7499898415e903",
+    "branch_at_lookup": "v1",
+    "url": "https://github.com/superdoc/docx-editor/tree/66c22186c7c0735360ca4fd94f7499898415e903",
+    "embedded_project_source_candidates": 1764,
+    "exact_git_blob_matches": 1762,
+    "svg_xml_structure_equal": true,
+    "remaining_entry": "Vite browser-external virtual module",
+    "node": "22.21.1",
+    "package_manager": "pnpm@10.25.0",
+    "source_version": "1.46.2",
+    "npm_version": "1.47.2",
+    "catalog_declarations_match": true,
+    "controls": [
+      {
+        "path": "package.json",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/package.json",
+        "bytes": 10299,
+        "sha256": "8fda2ffd705c65aecaaa76e35b0ff838391b256ee398f2aeec549026bcbad215",
+        "git_blob": "9bb49fdb29c109fdc57dc0358b6122616f26f65f",
+        "expected_git_blob": "9bb49fdb29c109fdc57dc0358b6122616f26f65f"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/pnpm-lock.yaml",
+        "bytes": 1717015,
+        "sha256": "669c4ce2bb9e547831e65458145156393687d3ba48d979bd37c61a025da51e44",
+        "git_blob": "75777233b1f2406fe16869ea61e8c26575ebbfdc",
+        "expected_git_blob": "75777233b1f2406fe16869ea61e8c26575ebbfdc"
+      },
+      {
+        "path": "pnpm-workspace.yaml",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/pnpm-workspace.yaml",
+        "bytes": 3520,
+        "sha256": "120d6f301ad97d5ba3620d005c859d7542937d48b484801b7968a9cb18796aa9",
+        "git_blob": "7b29e4dd91a2d4ba980b6199b3ba81da9d3692b8",
+        "expected_git_blob": "7b29e4dd91a2d4ba980b6199b3ba81da9d3692b8"
+      },
+      {
+        "path": ".nvmrc",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/.nvmrc",
+        "bytes": 8,
+        "sha256": "0775c6feb7638122e8b68d611cd709bf270f7b5adb5d0d2baa9afab8a6c0fc42",
+        "git_blob": "5767036af0e22d666c657f59c5e7694a9991f898",
+        "expected_git_blob": "5767036af0e22d666c657f59c5e7694a9991f898"
+      },
+      {
+        "path": "LICENSE",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/LICENSE",
+        "bytes": 34523,
+        "sha256": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+        "git_blob": "0ad25db4bd1d86c452db3f9602ccdbe172438f52",
+        "expected_git_blob": "0ad25db4bd1d86c452db3f9602ccdbe172438f52"
+      },
+      {
+        "path": "THIRD_PARTY_LICENSES.md",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/THIRD_PARTY_LICENSES.md",
+        "bytes": 10481,
+        "sha256": "7f7ed015f59ccee59269545b08f7dd28706e4e87cd3ffdb968c0fa50ff2a7a90",
+        "git_blob": "93389c5d5e862787c06587440f2430c457056d17",
+        "expected_git_blob": "93389c5d5e862787c06587440f2430c457056d17"
+      },
+      {
+        "path": "packages/superdoc/package.json",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/package.json",
+        "bytes": 7735,
+        "sha256": "83164aa5c6f11ddd2f8a7f536ab9700672983c0422dab2b9124f41cdfba2ef29",
+        "git_blob": "439db91a7814def707f5e33628f2fb44c946c77d",
+        "expected_git_blob": "439db91a7814def707f5e33628f2fb44c946c77d"
+      },
+      {
+        "path": "packages/superdoc/vite.config.js",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/vite.config.js",
+        "bytes": 18445,
+        "sha256": "cd768539c2ea872e02a11cb67e330ba7f43e3255d1390fe18354c83d41be4d7d",
+        "git_blob": "da3e94eef10d6e620d6214d4832f6e5a7badb2d8",
+        "expected_git_blob": "da3e94eef10d6e620d6214d4832f6e5a7badb2d8"
+      },
+      {
+        "path": "packages/superdoc/vite.config.cdn.js",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/vite.config.cdn.js",
+        "bytes": 2835,
+        "sha256": "119de0de2420a361308fa225e66000dc0b7dd98708a4ccb8563f1cea60eb90f0",
+        "git_blob": "3629df5d58816113c586ae309e14d4065f8abf8a",
+        "expected_git_blob": "3629df5d58816113c586ae309e14d4065f8abf8a"
+      },
+      {
+        "path": "packages/superdoc/scripts/pack-output.cjs",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/scripts/pack-output.cjs",
+        "bytes": 2154,
+        "sha256": "cc2fbae5dd50e1f582cade760a3e16f0ee5557a47b5b00693dbdf54ce17eeb0b",
+        "git_blob": "766161f1d358c056ec1a747112919f2350e05b48",
+        "expected_git_blob": "766161f1d358c056ec1a747112919f2350e05b48"
+      },
+      {
+        "path": "packages/superdoc/scripts/audit-bundle.cjs",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/scripts/audit-bundle.cjs",
+        "bytes": 6166,
+        "sha256": "64b2c4021fa7d33e8be8270fc2c5683ab626fa1cba18def74ef2d297fddfe2e1",
+        "git_blob": "ab4558154c72ab73cdf07a093b6839138841daa7",
+        "expected_git_blob": "ab4558154c72ab73cdf07a093b6839138841daa7"
+      },
+      {
+        "path": "packages/superdoc/scripts/sanitize-pack-manifest.cjs",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/scripts/sanitize-pack-manifest.cjs",
+        "bytes": 3971,
+        "sha256": "b9ea8cb986620d9003bfe1a275b520a34ab3d074878621acc9aed0fc0960b673",
+        "git_blob": "fe267b0386ce61f158b4dc569f8b2983891455c1",
+        "expected_git_blob": null
+      },
+      {
+        "path": "packages/superdoc/scripts/type-surface.config.cjs",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/packages/superdoc/scripts/type-surface.config.cjs",
+        "bytes": 15077,
+        "sha256": "31df0b33e22c738c4d3dcccb155d4c8af96ca90f76aeabc8c8b190fb2d8bd4a9",
+        "git_blob": "e2d9beae74e2721b0fb9ba1f4bd6a9eb75741f8e",
+        "expected_git_blob": null
+      },
+      {
+        "path": "shared/common/icons/dots-loader.svg",
+        "url": "https://raw.githubusercontent.com/superdoc/docx-editor/66c22186c7c0735360ca4fd94f7499898415e903/shared/common/icons/dots-loader.svg",
+        "bytes": 2971,
+        "sha256": "619eba723dbb98ce830cfcc5e0143d47264e0139b8b705e4fc13e26a548e89ba",
+        "git_blob": "f83f4853ce4163c7c359d882ebe1d2a21dd37eb2",
+        "expected_git_blob": "f83f4853ce4163c7c359d882ebe1d2a21dd37eb2"
+      }
+    ]
+  },
+  "full_repository_archive_verified": false,
+  "repository_download_limit_bytes": 134217728
+}

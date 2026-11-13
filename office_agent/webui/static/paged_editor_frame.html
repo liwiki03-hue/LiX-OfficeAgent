@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <link rel="stylesheet" href="vendor/superdoc/style.css">
+  <link rel="stylesheet" href="design_tokens.css">
+  <link rel="stylesheet" href="paged_editor_frame.css">
+  <title>本机分页文档</title>
+</head>
+<body>
+  <div id="format-bar" aria-label="文档格式工具栏">
+    <label>样式 <select id="paragraph-style" aria-label="段落样式"></select></label>
+    <div id="engine-toolbar"></div>
+    <label>段后 <select id="paragraph-after" aria-label="段后间距"><option value="0">0 磅</option><option value="6">6 磅</option><option value="12">12 磅</option></select></label>
+    <button id="paragraph-layout" type="button" aria-label="段落布局" title="段落布局：间距与缩进"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h12M8 10h12M8 15h12M8 20h12M2 8l3 3-3 3"/></svg></button>
+    <span id="selection-format" role="status"></span>
+  </div>
+  <div id="table-body-actions" role="toolbar" aria-label="表格与正文" hidden>
+    <span>表格</span>
+    <button id="table-body-before" type="button" aria-label="在表格前插入正文" title="在表格前插入正文"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8V4m-3 3 3-3 3 3M4 12h16v8H4zM4 16h16m-8-4v8"/></svg><span>表前正文</span></button>
+    <button id="table-body-after" type="button" aria-label="在表格后继续正文" title="在表格后继续正文"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 16v4m-3-3 3 3 3-3M4 4h16v8H4zM4 8h16m-8-4v8"/></svg><span>表后正文</span></button>
+    <button type="button" data-table-command="addRowBefore" aria-label="在上方插入表格行" title="在上方插入表格行">上插行</button>
+    <button type="button" data-table-command="addRowAfter" aria-label="在下方插入表格行" title="在下方插入表格行">下插行</button>
+    <button type="button" data-table-command="deleteRow" aria-label="删除当前表格行" title="删除当前表格行">删行</button>
+    <button id="table-column-width" type="button" aria-label="表格列宽" title="表格列宽"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16M15 4v16M10 12h4m-3-2-2 2 2 2m2-4 2 2-2 2"/></svg></button>
+  </div>
+  <main id="page-scroll" aria-label="可编辑分页文档" tabindex="0"><div id="editor"></div></main>
+  <div id="frame-error" role="status"></div>
+  <script src="vendor/superdoc/superdoc.min.js"></script>
+  <script src="paragraph_layout.js"></script>
+  <script src="table_column_layout.js"></script>
+  <script src="paged_editor_frame.js"></script>
+</body>
+</html>

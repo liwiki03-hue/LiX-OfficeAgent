@@ -1,0 +1,38 @@
+:root { --surface-menu-radius: 10px; --surface-row-height: var(--control-height); --surface-reading-width: 860px; }
+#skills-public-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 8px; margin: 16px 0; }
+#skills-public-results[hidden], #skills-public-detail[hidden] { display: none; }
+#skills-public-detail { margin: 16px 0; padding: 16px; background: var(--card-inner); border-radius: 10px; }
+#skills-public-detail input { width: 100%; min-width: 0; font-size: var(--fs-body); }
+#skills-public-detail label { display: grid; gap: 8px; margin: 16px 0; }
+#skills-public-status { font-size: var(--fs-body); line-height: 1.6; overflow-wrap: anywhere; }
+#floating-root .floating-menu { width: min(264px, calc(100vw - 24px)); padding: 5px; border-radius: var(--surface-menu-radius); background: var(--card); box-shadow: var(--shadow-menu); z-index: 100; overscroll-behavior: contain; }
+#floating-root .floating-menu section { padding: 4px 0; margin: 0; }
+#floating-root .floating-menu section + section { border-top: 1px solid var(--border); }
+#floating-root .floating-menu button, .simple-menu-body > button.btn.secondary, #simple-assist-menu #tools-menu button { display: block; width: 100%; min-height: var(--surface-row-height); height: auto; margin: 0; padding: 7px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); text-align: left; font-size: var(--fs-body); font-weight: 400; line-height: 1.5; box-shadow: none; }
+#floating-root .floating-menu button:hover:not(:disabled), .simple-menu-body > button.btn.secondary:hover:not(:disabled) { background: var(--card-inner); }
+#floating-root .floating-menu button:focus-visible, .simple-menu-body > button:focus-visible, #simple-history-content button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+#floating-root .floating-menu pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; font-size: var(--fs-caption); }
+.simple-menu-body { padding: 8px; gap: 6px; border-radius: var(--surface-menu-radius); }
+.simple-menu-body > label, .simple-menu-body > p, .simple-menu-body > h3, .simple-menu-body > details { margin: 4px 6px; }
+.simple-menu-body button:disabled { opacity: .55; }
+#simple-session-list .simple-menu-body { width: min(360px, calc(100vw - 24px)); }
+#simple-history-kinds { gap: 4px; padding: 12px 24px; background: var(--card); }
+#simple-history-kinds button { border: 0; background: transparent; min-height: 36px; font-size: var(--fs-body-lg); font-weight: 500; border-radius: 7px; }
+#simple-history-kinds button[aria-pressed="true"] { background: var(--card-inner); color: var(--ink); box-shadow: inset 0 -2px var(--focus); }
+#simple-history-content { padding: 24px; scroll-padding: 20px; }
+#simple-history-content > section { max-width: var(--surface-reading-width); margin-inline: auto; }
+#simple-history-content h2 { font-size: var(--fs-h1); line-height: 1.35; font-weight: 600; margin: 0 0 20px; }
+#simple-history-chat-list { gap: 0; }
+#simple-history-chat-list button { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 12px; min-height: 48px; background: transparent; line-height: 1.6; font-size: var(--fs-body-lg); white-space: normal; overflow-wrap: anywhere; }
+#simple-history-chat-list button:hover { background: var(--card-inner); border-radius: 6px; }
+#simple-history-chats input, #history-search, #chat-search { min-height: 38px; border-radius: 8px; background: var(--card-inner); border: 1px solid var(--border); font-size: var(--fs-body-lg); }
+#simple-document-records .card { background: transparent; border: 0; box-shadow: none; padding: 0; }
+#simple-document-records #history-list { gap: 0; }
+#simple-document-records .history-item { border-radius: 0; border: 0; border-bottom: 1px solid var(--border); padding: 12px; }
+.floating-history-dialog { width: min(640px, calc(100vw - 32px)); padding: 24px; }
+.floating-history-dialog h2 { font-size: var(--fs-h1); margin-top: 0; }
+.floating-history-dialog h3 { font-size: var(--fs-body-lg); margin-top: 24px; }
+.floating-history-dialog p { color: var(--muted); font-size: var(--fs-body); line-height: 1.65; }
+.floating-history-dialog pre { font: inherit; font-size: var(--fs-body-lg); line-height: 1.7; padding: 12px; background: var(--card-inner); border-radius: 8px; }
+@media (max-width: 760px) { #simple-history-content { padding: 16px; } #simple-history-kinds { padding: 8px 12px; } .floating-history-dialog { padding: 16px; } }
+@media (forced-colors: active) { #floating-root .floating-menu, .simple-menu-body { border: 1px solid CanvasText; } #simple-history-kinds button[aria-pressed="true"] { outline: 2px solid Highlight; } }

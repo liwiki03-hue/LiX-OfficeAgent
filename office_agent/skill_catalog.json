@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "reviewed_at": "2026-11-13T08:21:05.560836+00:00",
+  "items": [
+    {
+      "name": "internal-comms",
+      "display_name": "内部通讯",
+      "description": "编写状态报告、内部简报与常见问题答复。",
+      "category": "writing",
+      "reason": "按写作任务选择参考格式；需要检查资料读取范围。",
+      "license": "Apache-2.0",
+      "license_files": [
+        {
+          "path": "skills/internal-comms/LICENSE.txt",
+          "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+        }
+      ],
+      "source_sha256": "067b7587a344a928fc6534ef66b1bcd591fc7c26d207ea7ca3334aeb678d6475",
+      "author": "Anthropic",
+      "url": "https://github.com/anthropics/skills/blob/2c5958ecac7cee2b583967a2c4981d0f4a75c579/skills/internal-comms/SKILL.md"
+    },
+    {
+      "name": "grill-me",
+      "display_name": "方案追问",
+      "description": "通过逐步追问检查报告或方案中的决策。",
+      "category": "review",
+      "reason": "固定旧版本的纯指令；明确不是上游最新版本。",
+      "license": "MIT",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+        }
+      ],
+      "source_sha256": "74147eb6010a65957efef2b9e0f0b3ff935c1def7fc117697151b1d0f3610556",
+      "author": "Matt Pocock",
+      "url": "https://github.com/mattpocock/skills/blob/a6bdfd9fed6c17d21b306aeb7ff6a0de8b72ef3c/grill-me/SKILL.md"
+    },
+    {
+      "name": "theme-factory",
+      "display_name": "文档主题",
+      "description": "参考已有主题的字体与配色规则。",
+      "category": "style",
+      "reason": "适合查看主题设计方法；随包资源需要兼容检查。",
+      "license": "Apache-2.0",
+      "license_files": [
+        {
+          "path": "skills/theme-factory/LICENSE.txt",
+          "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+        }
+      ],
+      "source_sha256": "c35893e221e28895c52143cc11bf30e41a44817796b39d4b15727dadc9796552",
+      "author": "Anthropic",
+      "url": "https://github.com/anthropics/skills/blob/2c5958ecac7cee2b583967a2c4981d0f4a75c579/skills/theme-factory/SKILL.md"
+    },
+    {
+      "name": "docx",
+      "display_name": "Word 文档",
+      "description": "了解 Word 文档的结构化处理工作流。",
+      "category": "document",
+      "reason": "来源包含专用工具和脚本；不能直接授予 LiX 这些能力。",
+      "license": "Apache-2.0",
+      "license_files": [
+        {
+          "path": "skills/docx/LICENSE.txt",
+          "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+        }
+      ],
+      "source_sha256": "9e8202e2524a9ed87da67a5b3eaa76e8e6038f4171f8251ad6aaefd34e82a3df",
+      "author": "Anthropic",
+      "url": "https://github.com/anthropics/skills/blob/2c5958ecac7cee2b583967a2c4981d0f4a75c579/skills/docx/SKILL.md"
+    },
+    {
+      "name": "xlsx",
+      "display_name": "Excel 表格",
+      "description": "参考表格清理、公式与格式检查流程。",
+      "category": "table",
+      "reason": "原技能包含专用脚本与较长描述；安装前需检查。",
+      "license": "Apache-2.0",
+      "license_files": [
+        {
+          "path": "skills/xlsx/LICENSE.txt",
+          "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+        }
+      ],
+      "source_sha256": "caa1e1c29cf974c8d874bf3d0a70838445e7342b570f856ddb3e4a21ef7c7e8b",
+      "author": "Anthropic",
+      "url": "https://github.com/anthropics/skills/blob/2c5958ecac7cee2b583967a2c4981d0f4a75c579/skills/xlsx/SKILL.md"
+    },
+    {
+      "name": "pptx",
+      "display_name": "演示文稿",
+      "description": "参考演示文稿创建与修改工作流。",
+      "category": "presentation",
+      "reason": "较长指令和专用资源仍有限制；仅来源核对不代表可用。",
+      "license": "Apache-2.0",
+      "license_files": [
+        {
+          "path": "skills/pptx/LICENSE.txt",
+          "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+        }
+      ],
+      "source_sha256": "b60bd282c6e01297f0eefe71594d1756dbf60a584f524c04a803ec6950b7fba2",
+      "author": "Anthropic",
+      "url": "https://github.com/anthropics/skills/blob/2c5958ecac7cee2b583967a2c4981d0f4a75c579/skills/pptx/SKILL.md"
+    }
+  ]
+}
