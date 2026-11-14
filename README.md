@@ -1,8 +1,8 @@
 # LiX
 
-**[下载 Windows x64 联网预览版](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/download/v0.7.11-preview/LiX-Setup-0.7.11-preview-x64.exe)** · [发行说明、源码与校验](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)
+**[下载 Q 修复预览 · Windows x64](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/download/v0.7.11-q-repair-20261114-preview/LiX-Setup-0.7.11-q-final-20261114-renderer-preview-x64.exe)** · [发行说明、对应源码与校验](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview) · [旧预览版](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)
 
-主下载已包含固定原版渲染器，其余环境首次准备仍需联网。此预览未签名，完整 CI 尚未通过；当前机器已有安装、首次准备、悬浮球与工作台的限定证据。本地未发布的修改不能视为已进入该安装包。
+本次 q-final-20261114 包含固定原版渲染器，其余环境首次准备仍需联网。安装器未签名，最终安装和完整首次准备尚未验收；前一诊断候选出现 uv 缓存访问拒绝。本机源码完整回归已通过，GitHub CI 以运行页面为准；旧预览的安装证据不代表本候选。
 
 项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。本仓库提供0.7.11开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
 
@@ -10,11 +10,11 @@ LiX 是原 Office Agent 的正式名称，面向 Windows 的本机文档助手�
 
 Windows 桌面文档编辑助手：打开文档，在本机编辑或提出修改要求，查看实际差异与验证副本。
 
-当前公开提供 **0.7.11 Windows 联网预览包及对应开发源码**。本地未发布工作树已补齐 Q 系列的异步确认、配置候选、有界表格协作、网络和诊断；最终标准隔离环境完整回归已通过：4266 passed, 2 skipped, 165 subtests passed in 3297.90s (0:54:57)，exit 0，自有 Job 清空。正常流水线诊断安装候选已构建，其首次依赖准备仍被缓存访问拒绝阻断；标准入口/真实 DeepSeek/普通 Word 表格已有一次验证副本限定证据。真实 Office、物理设备、完整服务与发行条件仍开放。项目自有代码采用 AGPL-3.0-only，不捆绑 SuperDoc 编译 JS/CSS，准备时使用固定上游归档。详见[验证范围](docs/VALIDATION.md)及[第三方来源](docs/SUPERDOC_SOURCE.md)。
+当前公开提供 **0.7.11 Q 修复预览包及准确对应源码**。构建 q-final-20261114 已独立发布，标签绑定提交 `1beb85d` 的754项源码；其后 main 的发布说明更新不改变安装包内容。Q系列覆盖异步确认、配置候选、有界表格协作、网络和诊断。本机最终完整回归：4266 passed, 2 skipped, 165 subtests passed，exit 0，自有 Job 清空。Q1、Q2、Q6仍有安装、真实服务或发行缺项；真实Office、物理设备、签名和360判定等保持开放。项目自有代码采用 AGPL-3.0-only，SuperDoc编译JS/CSS在准备时使用固定上游归档。详见[本次发行说明](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)、[验证范围](docs/VALIDATION.md)及[第三方来源](docs/SUPERDOC_SOURCE.md)。
 
 ## 三步上手
 
-Windows 联网预览安装包已在[Releases](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)提供，默认按用户安装并由用户主动准备运行环境；干净机器验收仍未完成。构建、数据位置与卸载保留规则见[安装包说明](docs/WINDOWS_INSTALLER.md)。下方为源码运行方式。
+Windows 联网修复预览安装包已在[Releases](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)提供，默认按用户安装并由用户主动准备运行环境；最终安装、首次准备和干净机器验收仍未完成。构建、数据位置与卸载保留规则见[安装包说明](docs/WINDOWS_INSTALLER.md)。下方为源码运行方式。
 
 1. 在项目目录准备依赖（本机基线 Windows 11 x64、Python 3.12）：
 
@@ -69,7 +69,7 @@ Windows 联网预览安装包已在[Releases](https://github.com/liwiki03-hue/Li
 
 [安装](docs/INSTALL.md) · [故障处理](docs/TROUBLESHOOTING.md) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md) · [变更](CHANGELOG.md) · [合成样例](examples/README.md)
 
-最终完整门禁为 `uv run pytest -q`。R5历史冻结成绩不适用于当前改动。本轮Q1–Q6的实际结果和限制见[验证记录](docs/VALIDATION.md)，最终结果生成前不能称为完整通过。公开预览安装包已存在，10 MiB代码更新ZIP是另一条交付路径；应用内自动更新的仓库和公钥仍未配置。
+最终完整门禁为 `uv run pytest -q`。Q修复源码在本机标准隔离环境已完成完整回归，R5历史成绩不替代本轮结果；实际范围和限制见[验证记录](docs/VALIDATION.md)与[本次发行说明](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)。GitHub CI 单独核对，安装器仍为预览候选。10 MiB代码更新ZIP是另一条交付路径；应用内自动更新的仓库和公钥仍未配置。
 
 网络、官方PyPI候选锁与缓存隔离方式见[网络与诊断](docs/NETWORK.md)。默认保留原锁和现有环境，不自动切换来源或安装依赖。
 
