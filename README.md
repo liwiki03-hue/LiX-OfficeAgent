@@ -10,7 +10,7 @@ LiX 是原 Office Agent 的正式名称，面向 Windows 的本机文档助手�
 
 Windows 桌面文档编辑助手：打开文档，在本机编辑或提出修改要求，查看实际差异与验证副本。
 
-当前公开提供 **0.7.11 Q 修复预览包及准确对应源码**。构建 q-final-20261114 已独立发布，标签绑定提交 `1beb85d` 的754项源码；其后 main 的发布说明更新不改变安装包内容。Q系列覆盖异步确认、配置候选、有界表格协作、网络和诊断。本机最终完整回归：4266 passed, 2 skipped, 165 subtests passed，exit 0，自有 Job 清空。Q1、Q2、Q6仍有安装、真实服务或发行缺项；真实Office、物理设备、签名和360判定等保持开放。项目自有代码采用 AGPL-3.0-only，SuperDoc编译JS/CSS在准备时使用固定上游归档。详见[本次发行说明](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)、[验证范围](docs/VALIDATION.md)及[第三方来源](docs/SUPERDOC_SOURCE.md)。
+当前公开提供 **0.7.11 Q 修复预览包及准确对应源码**。构建 q-final-20261114 已独立发布，标签绑定提交 `1beb85d` 的754项源码；其后 main 的发布说明更新不改变安装包内容。Q系列覆盖异步确认、配置候选、有界表格协作、网络和诊断。项目自有代码采用 AGPL-3.0-only，SuperDoc编译JS/CSS在准备时使用固定上游归档。详见[本次发行说明](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)、[验证范围](docs/VALIDATION.md)及[第三方来源](docs/SUPERDOC_SOURCE.md)。
 
 ## 三步上手
 
