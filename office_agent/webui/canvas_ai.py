@@ -26,6 +26,20 @@ class CanvasSuggestion(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class CanvasCellChange(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    target: str = Field(min_length=2, max_length=12)
+    old: str = Field(max_length=4000)
+    new: str = Field(max_length=4000)
+
+
+class CanvasRangeSuggestion(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    reference_id: str = Field(min_length=1, max_length=100)
+    edits: list[CanvasCellChange] = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class CanvasAI:
     def __init__(self, canvas):
         self.canvas = canvas
@@ -51,13 +65,13 @@ class CanvasAI:
 
     def state(self):
         runtime = self.runtime
-        return {'protocol': 1, 'sequence': self.sequence, 'document_id': self.canvas.document_id, 'draft_revision': self.canvas.revision,
+        return {'protocol': 1, 'access':self.floating.access.state(), 'sequence': self.sequence, 'document_id': self.canvas.document_id, 'draft_revision': self.canvas.revision,
                 'running': self.running is not None, 'error': self.error,
                 'session_id': runtime.session_id if runtime else '',
                 'instruction_revision': runtime.revision if runtime else 0,
                 'requirements': active_requirements(runtime) if runtime else [],
                 'reference': deepcopy(self.reference), 'proposals': deepcopy(list(self.proposals.values())),
-                'scope': '一个普通单元格或已有文字片段；建议采用不等于发布副本'}
+                'scope': '当前宿主引用；公式和保护格只读，修改与副本由当前文档授权控制'}
 
     def _guard(self, document_id, revision):
         self.canvas.guard(document_id, revision)
@@ -99,6 +113,8 @@ class CanvasAI:
             from ..rag import SECRET
             if SECRET.search(old):
                 raise GuardError('目标疑似包含凭据，请移除敏感内容后再生成建议')
+            from ..model_content import check_scope
+            check_scope(old)
             for proposal in self.proposals.values():
                 if proposal['status'] == 'pending':
                     proposal['status'] = 'stale'
@@ -116,9 +132,73 @@ class CanvasAI:
         return (self.canvas.active() and self.reference is not None and self.reference['id'] == reference['id'] and
                 self.canvas.revision == reference['draft_revision'] and sha(self.canvas.data) == reference['draft_sha256'])
 
+    def select_range(self, document_id, revision, item_id, start, end, numeric_targets=None):
+        from ..canvas_ranges import read_range
+        from ..rag import SECRET
+        with self.canvas.lock:
+            self._guard(document_id, revision)
+            if self.canvas.source.suffix.lower() != '.xlsx':
+                raise GuardError('多格引用仅适用于当前工作表')
+            if numeric_targets is None:
+                numeric_targets = []
+            if not isinstance(numeric_targets, list) or len(numeric_targets) > 100 or any(not isinstance(value, str) for value in numeric_targets) or len(set(numeric_targets)) != len(numeric_targets):
+                raise GuardError('数值修改范围无效')
+            region = read_range(self.canvas.data, item_id, start, end, readonly_context=True)
+            item = engine.item_for(engine.load(self.canvas.data, '.xlsx'), '.xlsx', item_id)
+            cells = []
+            for row in region['cells']:
+                for value in row:
+                    old = str(value.get('value', ''))
+                    if len(old) > 4000 or SECRET.search(old) or SECRET.search(value.get('formula') or ''):
+                        raise GuardError('选区包含超长文字或疑似凭据，请缩小或移除敏感内容')
+                    from ..model_content import check_scope
+                    check_scope(old, value.get('formula') or '')
+                    protected = (item['name'], value['id']) in self.floating.protected_cells
+                    numeric = value.get('type') == 'n'
+                    editable = bool(value.get('editable') and not value.get('formula') and not value.get('merged') and not protected)
+                    if value['id'] in numeric_targets and (not numeric or not editable):
+                        raise GuardError('数值许可包含非数值、公式、合并或受保护位置')
+                    cells.append({'target': value['id'], 'cell_id': item_id + '!' + value['id'], 'old': old,
+                                  'action': 'number' if numeric else 'text', 'allow_numeric_change': value['id'] in numeric_targets,
+                                  'editable': editable and (not numeric or value['id'] in numeric_targets),
+                                  'protected': protected, 'formula': value.get('formula'), 'merged': bool(value.get('merged')),
+                                  'sha256': sha(old.encode('utf-8'))})
+            if set(numeric_targets) - {cell['target'] for cell in cells}:
+                raise GuardError('数值许可超出当前选区')
+            if sum(len(row['old']) + len(row.get('formula') or '') for row in cells) > 12000:
+                raise GuardError('AI 选区文字超过12000字符，请缩小范围')
+            for proposal in self.proposals.values():
+                if proposal['status'] == 'pending':
+                    proposal['status'] = 'stale'
+            while len(self.proposals) >= 16:
+                self.proposals.pop(next(iter(self.proposals)))
+            self.reference = {'id': uuid.uuid4().hex, 'kind': 'range', 'document_id': document_id,
+                              'draft_revision': revision, 'source_version': sha(self.canvas.original),
+                              'draft_sha256': sha(self.canvas.data), 'item_id': item_id, 'item_name': item['name'],
+                              'start': region['start'], 'end': region['end'], 'location': region['start'] + ':' + region['end'],
+                              'cells': cells, 'numeric_targets': list(numeric_targets), 'old': region['tsv'],
+                              'allow_numeric_change': False}
+            self.sequence += 1
+            return {'ok': True, 'reference': deepcopy(self.reference), 'ai': self.state()}
+
+    def _range_operations(self, reference, edits):
+        from ..rag import SECRET
+        cells = {cell['target']: cell for cell in reference['cells']}
+        operations, seen = [], set()
+        for edit in edits:
+            cell = cells.get(edit.target)
+            if not cell or edit.target in seen or not cell['editable'] or edit.old != cell['old'] or SECRET.search(edit.new):
+                raise GuardError('批次包含重复、越界、只读、原文不符或疑似凭据的目标')
+            seen.add(edit.target)
+            operations.append(self._operation({**cell, 'item_id': reference['item_id']}, edit.new))
+        self.canvas._build_group(operations)
+        return operations
+
     def submit(self, document_id, revision, reference_id, session_id, client_id, text):
         with self.canvas.lock:
             self._guard(document_id, revision)
+            from ..model_content import check_scope
+            check_scope(text)
             reference = self.reference
             if not reference or reference['id'] != reference_id or not self._current(reference):
                 raise GuardError('引用已失效；请重新选择当前草稿目标，输入保留')
@@ -166,6 +246,7 @@ class CanvasAI:
             self.error = '模型配置不可用；要求已保留，请修复后主动处理'
             return False
         runtime, reference = self.runtime, deepcopy(self.reference)
+        self.floating.access.for_instruction()
         owner = uuid.uuid4().hex
         self.running = owner
         self.sequence += 1
@@ -195,22 +276,27 @@ class CanvasAI:
             with self.canvas.lock:
                 if not current() or runtime.request_revision != runtime.revision:
                     raise StaleInstruction('旧提案已失效')
-                parsed = CanvasSuggestion.model_validate(args)
+                batch = reference.get('kind') == 'range'
+                parsed = (CanvasRangeSuggestion if batch else CanvasSuggestion).model_validate(args)
                 from ..rag import SECRET
                 if SECRET.search(parsed.reason): raise GuardError('修改原因疑似包含凭据')
-                if name != 'propose_canvas_edit' or parsed.reference_id != reference['id'] or parsed.old != reference['old']:
+                if name != ('propose_canvas_range' if batch else 'propose_canvas_edit') or parsed.reference_id != reference['id'] or not batch and parsed.old != reference['old']:
                     raise GuardError('提案引用或原文不符')
                 if self.floating.api._connections.capture('agent').public() != route.public():
                     raise GuardError('模型配置已变化，请重新核对')
-                operation = self._operation(reference, parsed.new)
+                operation = self._range_operations(reference, parsed.edits) if batch else self._operation(reference, parsed.new)
                 self.canvas.guard(reference['document_id'], reference['draft_revision'])
-                engine.transform(self.canvas.data, self.canvas.source.suffix.lower(), operation)
+                if not batch:
+                    engine.transform(self.canvas.data, self.canvas.source.suffix.lower(), operation)
                 if len(self.proposals) >= 16: raise GuardError('提案达到16项，请结束本轮后重新开始')
-                proposal = {'id': uuid.uuid4().hex, 'reference_id': reference['id'], 'old': parsed.old,
-                            'new': parsed.new, 'reason': parsed.reason, 'status': 'pending',
+                proposal = {'id': uuid.uuid4().hex, 'reference_id': reference['id'], 'old': reference['old'],
+                            'new': json.dumps([edit.model_dump() for edit in parsed.edits], ensure_ascii=False) if batch else parsed.new, 'reason': parsed.reason, 'status': 'pending',
                             'draft_revision': reference['draft_revision'], 'instruction_revision': runtime.revision,
                             'session_id': runtime.session_id, 'model': route.public(), 'operation': operation,
                             'expires': time.monotonic() + 300}
+                if batch:
+                    proposal['operations'] = proposal.pop('operation')
+                    proposal['edits'] = [edit.model_dump() for edit in parsed.edits]
                 self.proposals[proposal['id']] = proposal
                 self.sequence += 1
                 self.floating.notice('canvas_ai_proposal', deepcopy(proposal))
@@ -218,15 +304,19 @@ class CanvasAI:
         try:
             model = self.floating.api._connections.build_model(route)
             limit = configured_decision_limit()
-            tool = ToolSpec(name='propose_canvas_edit', description='为宿主当前选定单元格或文字片段提出修改；不采用、不写文件，old必须与引用一致。', schema_model=CanvasSuggestion)
+            batch = reference.get('kind') == 'range'
+            tool = ToolSpec(name='propose_canvas_range' if batch else 'propose_canvas_edit', description='为宿主引用范围提出修改；只读格仅供分析，旧值必须完全一致，不写文件。', schema_model=CanvasRangeSuggestion if batch else CanvasSuggestion)
             from ..skills_backend import workspace_skill_context
             skill_context = workspace_skill_context(self.canvas.source.parent, on_load=lambda receipt:self.floating.notice('skill_loaded',receipt))
             agent = OfficeAgent(model, dispatch, [tool], self.canvas.source.parent, persist=False,
                                 decision_limit=min(8, limit) if limit is not None else 8, context_tokens=route.context_window,
                                 reply_tokens=int(os.getenv('OFFICE_REPLY_BUDGET', '512')), runtime_boundary=boundary,
                                 stop_requested=lambda: not current(), skill_context=skill_context)
-            state = agent.run(agent.new_state(json.dumps(reference, ensure_ascii=False), constraints=['仅提出当前目标的修改建议', '源文件不变，采用和发布由用户分别决定']))
-            if current() and not any(row['status'] == 'pending' and row['instruction_revision'] == runtime.revision for row in self.proposals.values()):
+            state = agent.run(agent.new_state(json.dumps(reference, ensure_ascii=False), constraints=['仅分析或修改宿主当前引用范围', '公式、合并与保护格保持只读；原稿不变，采用与副本发布由宿主按当前授权处理']))
+            if current() and reference.get('kind') == 'range' and state.answer:
+                self.error = ''
+                self.floating.notice('canvas_ai_answer', {'text': state.answer, 'model': route.public()})
+            elif current() and not any(row['status'] == 'pending' and row['instruction_revision'] == runtime.revision for row in self.proposals.values()):
                 self.error = '未形成可采用的建议；请核对保护要求、范围和模型回复后主动处理'
                 self.sequence += 1
                 self.floating.notice('canvas_ai_failed', {'text': self.error})
@@ -246,7 +336,8 @@ class CanvasAI:
                 if getattr(app, '_canvas_ai_owner', None) == owner:
                     app._canvas_ai_owner = None
                     app.busy = app._model_task_active = False
-                if valid and runtime.applied < runtime.revision:
+                rebound = self.runtime is runtime and not runtime.closed and self.reference is not None and self._current(self.reference)
+                if (valid or rebound) and not self.error and runtime.applied < runtime.revision:
                     self.start()
 
     def _operation(self, reference, value):
@@ -264,9 +355,10 @@ class CanvasAI:
         return {'item_id': reference['item_id'], 'target': reference['target'], 'action': reference['action'],
                 'value': value, 'expected': reference['old']}
 
-    def adopt(self, document_id, revision, proposal_id):
+    def adopt(self, document_id, revision, proposal_id, access_id=None):
         with self.canvas.lock:
             self._guard(document_id, revision)
+            authorization = self.floating.access.require(access_id, 'edit', document_id) if access_id is not None else None
             proposal = self.proposals.get(proposal_id)
             runtime, reference = self.runtime, self.reference
             if self.running is not None or not proposal or not runtime or runtime.closed or not reference or not self._current(reference):
@@ -277,11 +369,14 @@ class CanvasAI:
                 raise GuardError('提案已过期或要求已改变')
             if self.floating.api._connections.capture('agent').public() != proposal['model']:
                 raise GuardError('模型配置已变化，请重新生成建议')
-            result = self.canvas.apply(document_id, revision, proposal['operation'])
+            operations = proposal.get('operations')
+            result = self.canvas.apply_many(document_id, revision, operations) if operations else self.canvas.apply(document_id, revision, proposal['operation'])
             proposal['status'] = 'adopted'
             self.sequence += 1
-            self.canvas.summaries[-1]['ai'] = {key: deepcopy(proposal[key]) for key in
-                                             ('id', 'reason', 'model', 'session_id', 'instruction_revision')}
+            for summary in self.canvas.summaries[-len(operations) if operations else -1:]:
+                summary['ai'] = {key: deepcopy(proposal[key]) for key in ('id', 'reason', 'model', 'session_id', 'instruction_revision')}
+                if authorization:
+                    summary['ai']['authorization'] = authorization
             return {**result, 'proposal_id': proposal_id, 'ai': self.state()}
 
     def reject(self, document_id, revision, proposal_id):
@@ -305,6 +400,7 @@ class CanvasAI:
     def stop(self, document_id, revision):
         with self.canvas.lock:
             self._guard(document_id, revision)
+            self.floating.access.reset()
             self.invalidate()
             self.canvas.plans.clear()
             return {'ok': True, 'remote_cancelled': False, 'ai': self.state()}

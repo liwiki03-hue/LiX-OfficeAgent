@@ -1,6 +1,7 @@
 /* Human-only local configuration; never put keys in output, storage, history or logs. */
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   if (window.OfficeSettingsEditor?.mounted) return;
   const node = id => document.getElementById(id);
   let epoch = 0, inflight = false, revision = 0, loaded = null, saveId = null;
@@ -112,7 +113,7 @@
     let confirmed = false;
     if (version === revision && current()) {
       const view = plan.settings || {};
-      confirmed = window.confirm('确认保存配置？\n改动的项：' + plan.changed_fields.join('、') +
+      confirmed = await ask('确认保存配置？\n改动的项：' + plan.changed_fields.join('、') +
         '\n提供方：' + (view.provider || '') + '\n模型：' + (view.model || '') +
         '\n地址：' + (view.base_url || '') + '\n上下文窗口：' + (view.context_window ?? '') +
         '\n检索通道：' + (view.embedding_channel || '') + ' / ' + (view.embedding_model || '') +
@@ -140,7 +141,7 @@
     if (!current()) return;
     if (!response?.ok || !opaque(response.plan?.rollback_id)) { saveId = null; status('撤销没能发起；配置可能已经变了，没有执行还原。'); return; }
     const note = response.plan.restores_absent_source_as_empty_env ? '\n原先没有 .env，将恢复为空 .env 文件。' : '';
-    const confirmed = window.confirm('确认撤销这次配置改动？\n会从备份还原配置，重启后生效；备份和记录都会保留。' + note) === true;
+    const confirmed = await ask('确认撤销这次配置改动？\n会从备份还原配置，重启后生效；备份和记录都会保留。' + note) === true;
     if (!current() || target !== saveId) return;
     const result = await api.confirm_settings_rollback(response.plan.rollback_id, confirmed);
     if (!current()) return;

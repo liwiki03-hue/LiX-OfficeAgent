@@ -27,7 +27,7 @@ const api=new Proxy({}, {get:(_,name)=>(...args)=>{calls.push([name,args]);
  const expected=queue.shift();assert(expected,'unexpected API');assert.equal(name,expected[0]);
  assert.deepEqual(args,expected[1]);return Promise.resolve(expected[2]);}});
 const window={OfficeAuth:{isAuthenticated:()=>true,wrapApi:x=>x},pywebview:{api},
- addEventListener(){},confirm:()=>true};
+ addEventListener(){},OfficeConfirm:{ask:async()=>true}};
 const document={readyState:'complete',getElementById:get,createElement:()=>new Element(),addEventListener(){}};
 vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{window,document,MutationObserver:class{observe(){}}});
 async function click(name){assert.equal(get('rag-'+name).disabled,false,name+' disabled');await get('rag-'+name).events.click();}
@@ -93,7 +93,7 @@ const api={
  async plan_settings_rollback(){return {ok:true,plan:{rollback_id:id}};},
  async confirm_settings_rollback(){return {ok:true,result:mode==='rollback-uncertain'?{status:'uncertain',restored:null,wrote_nothing:false}:{status:'rolled_back',restored:true}};}
 };
-const window={OfficeAuth:{isAuthenticated:()=>true,wrapApi:x=>x},pywebview:{api},confirm:()=>true,
+const window={OfficeAuth:{isAuthenticated:()=>true,wrapApi:x=>x},pywebview:{api},OfficeConfirm:{ask:async()=>true},
  addEventListener(k,v){(listeners[k]||=[]).push(v);},
  dispatchEvent(event){if(event.type==='officerag:invalidate')notifications.push(event.ragUncertain);(listeners[event.type]||[]).forEach(fn=>fn(event));}};
 const context={window,document:{readyState:'complete',getElementById:get,createElement:()=>new Element(),addEventListener(){}},MutationObserver:class{observe(){}},Event:class{constructor(type){this.type=type;}}};

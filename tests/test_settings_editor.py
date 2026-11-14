@@ -78,7 +78,7 @@ def test_probe_bounded_single_request(tmp_path, code, payload, expected):
     def handle(request):
         calls.append(request)
         return httpx2.Response(code, stream=httpx2.ByteStream(json.dumps(payload).encode()), headers={'Location': 'https://other.invalid/models'})
-    prepared = prepare_probe(store, {'provider': 'deepseek', 'model': 'alpha', 'base_url': 'https://example.invalid/v1'})
+    prepared = prepare_probe(store, {'provider': 'deepseek', 'model': 'alpha', 'base_url': 'https://example.invalid/v1', 'api_key': 'fixture-private-one'})
     result = probe_connection(prepared, httpx2.MockTransport(handle))
     assert result['status'] == expected
     assert len(calls) == 1 and calls[0].method == 'GET'
@@ -143,7 +143,9 @@ def test_probe_changed_session_does_not_claim_logout(tmp_path, monkeypatch):
     assert settings.test_connection({'provider': 'deepseek'}) == {'ok': False, 'reason': 'settings_session_invalid'}
 
 
-EDGE = Path('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+from office_agent.browser_runtime import find_edge
+
+EDGE = find_edge() or Path('__LiX_Edge_not_installed__')
 STATIC = Path(__file__).resolve().parents[1] / 'office_agent/webui/static'
 
 
@@ -184,6 +186,9 @@ def _editor(tmp_path, monkeypatch, initial=FIXTURE):
               window.OfficeAuth = {isAuthenticated: () => window.authenticated, ensure: async () => window.authenticated, wrapApi: api => api};
               window.pywebview = {api: new Proxy({}, {get: (_, method) => (...args) => window.settingsHost(method, args)})};
             }''')
+            page.add_script_tag(path=str(STATIC / 'confirm_dialog.js'))
+            from tests.ui_confirmation import drive_legacy_confirmations
+            drive_legacy_confirmations(page, monkeypatch)
             page.add_script_tag(path=str(STATIC / 'settings_dialog.js'))
             page.add_script_tag(path=str(STATIC / 'settings_editor.js'))
             page.add_script_tag(path=str(STATIC / 'settings.js'))
@@ -212,10 +217,14 @@ def test_browser_provider_drafts_close_discard_and_secret(editor):
     page.locator('#settings-key').fill('fixture-new-private')
     page.evaluate('window.approved = false')
     page.locator('#settings-provider').select_option('dashscope')
+    from tests.ui_confirmation import respond_to_confirmation
+    respond_to_confirmation(page, approved=False)
     assert page.locator('#settings-provider').input_value() == 'deepseek'
     page.keyboard.press('Escape')
+    respond_to_confirmation(page, approved=False)
     assert page.locator('#settings-dialog').is_visible()
     page.locator('#settings-load').click()
+    respond_to_confirmation(page, approved=False)
     assert calls == ['get_settings']
     page.locator('#settings-discard').click()
     assert page.locator('#settings-model').input_value() == 'alpha'
@@ -224,6 +233,7 @@ def test_browser_provider_drafts_close_discard_and_secret(editor):
     page.locator('#settings-model').fill('alpha-discard')
     page.evaluate('window.approved = true')
     page.keyboard.press('Escape')
+    respond_to_confirmation(page, approved=True)
     assert page.locator('#settings-dialog').is_hidden()
     page.evaluate('window.OfficeSettings.show()')
     assert page.locator('#settings-model').input_value() == 'alpha'
@@ -245,7 +255,7 @@ def test_browser_save_diff_cancel_reread_rollback_and_probe(editor):
     page.wait_for_function("document.getElementById('settings-status').dataset.state === 'saved_restart'")
     assert page.locator('#settings-save').is_disabled()
     assert page.locator('#settings-rollback').is_enabled()
-    page.evaluate('window.OfficeSettings.close(); window.OfficeSettings.show()')
+    page.evaluate('async()=>{await window.OfficeSettings.close();await window.OfficeSettings.show();}')
     assert page.locator('#settings-status').get_attribute('data-state') == 'saved_restart'
     assert calls.count('get_settings') == 2
     modals = page.evaluate('window.modalTexts')
@@ -316,7 +326,7 @@ def test_browser_validation_parity_and_keyboard(editor):
     page.keyboard.press('Tab')
     assert page.locator('#settings-close').evaluate('(node) => node === document.activeElement')
     page.locator('#nav-settings').evaluate('(node) => node.focus()')
-    page.evaluate('window.OfficeSettings.close(); window.OfficeSettings.show()')
+    page.evaluate('async()=>{await window.OfficeSettings.close();await window.OfficeSettings.show();}')
     page.locator('#tab-machine').click()
     assert page.locator('#tab-machine').get_attribute('aria-current') == 'true'
     assert page.locator('#settings-pane-model').is_hidden()

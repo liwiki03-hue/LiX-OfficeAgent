@@ -93,6 +93,8 @@ def test_select_current_material_chart_render_publish_cancel_and_rollback(chart_
         (folder/'SPEC.json').write_text(json.dumps(api._presentations.spec,ensure_ascii=False,indent=2),encoding='utf8')
         (folder/'VERIFICATION.json').write_text(json.dumps({'source':selected,'report':api._presentations.rendered['report'],'source_unchanged':source.read_bytes()==original,'saved_path':str(path),'native':False,'cloud_calls':0,'expected_chart_values':['120','105.5','98.25'],'unit':'ms'},ensure_ascii=False,indent=2),encoding='utf8')
     work.get_by_role('button',name='撤销本次发布',exact=True).click()
+    from tests.ui_confirmation import respond_to_confirmation
+    respond_to_confirmation(page)
     deadline=time.monotonic()+10
     while path.exists():
         if time.monotonic()>deadline:raise AssertionError('rollback did not remove owned output')
@@ -127,7 +129,10 @@ def test_chart_data_change_clears_review_and_materials_stay_reachable(chart_brow
     assert not review.is_checked();work.get_by_role('button',name='保存本页到大纲',exact=True).click()
     page.locator('[data-presentation-status]').filter(has_text='校验未通过').wait_for()
     assert rows.input_value().endswith('\t') and api._presentations.spec['revision']==1
-    work.get_by_role('button',name='关闭',exact=True).click();work.wait_for(state='detached')
+    work.get_by_role('button',name='关闭',exact=True).click()
+    from tests.ui_confirmation import respond_to_confirmation
+    respond_to_confirmation(page)
+    work.wait_for(state='detached')
     evidence=os.environ.get('OFFICE_PRESENTATION_CHART_EVIDENCE')
     if evidence:(Path(evidence)/'RESPONSIVE.json').write_text(json.dumps(matrix,indent=2),encoding='utf8')
     assert not errors and not list(source.parent.glob('.office-presentation-*'))

@@ -14,7 +14,8 @@ def test_account_settings_memory_controls_and_untrusted_text_render():
     assert '<script src="memory_preferences.js"></script>' in html
     assert 'radio.type = "radio"' in js and 'label.append(radio, document.createTextNode(' in js
     assert 'innerHTML' not in js and 'eval(' not in js
-    assert 'window.confirm(' in js
+    assert 'OfficeConfirm' in js
+    assert 'window.confirm(' not in js
     assert 'OfficeAuth.wrapApi(window.pywebview?.api)' in js
     assert 'officeauth:unauthenticated' in js
     assert 'await service.confirm_memory_change(planId, approved === true)' in js

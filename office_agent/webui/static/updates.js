@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('updates-' + id);
   if (!$('version')) return;
   let epoch = 0, busy = false, configured = false, available = false, plan = null, loaded = false, automatic = false, queued = false, loading = null;
@@ -70,19 +71,23 @@
     });
   }
   $('check').addEventListener('click', check); $('download').addEventListener('click', download);
-  $('install').addEventListener('click', () => {
+  $('install').addEventListener('click', async () => {
     if (!plan || busy) return;
-    const approved = window.confirm('确认安装 v' + plan.version + ' 并关闭、重启软件？仅替换受管程序文件；配置、文档、账户和模型目录保留。本地代码有改动或依赖不同会拒绝；安装失败会尝试恢复原版。');
-    run(async (api, current) => { const token = plan.plan_id; plan = null; const reply = await api.confirm_app_update(token, approved); if (!current()) return; if (!reply?.ok) { failure(reply); return; } queued = reply.result.status === 'queued'; say(queued ? '安装已安排，正在关闭软件；退出后安装并从原启动入口重启。' : '已取消安装，程序文件未改动。'); });
+    const target = plan, owner = epoch;
+    return run(async (api, current) => {
+      const approved = await ask('确认安装 v' + target.version + ' 并关闭、重启软件？仅替换受管程序文件；配置、文档、账户和模型目录保留。本地代码有改动或依赖不同会拒绝；安装失败会尝试恢复原版。') === true;
+      if (!current() || owner !== epoch || plan !== target) return;
+      const token = target.plan_id; plan = null; const reply = await api.confirm_app_update(token, approved); if (!current()) return; if (!reply?.ok) { failure(reply); return; } queued = reply.result.status === 'queued'; say(queued ? '安装已安排，正在关闭软件；退出后安装并从原启动入口重启。' : '已取消安装，程序文件未改动。');
+    });
   });
   $('auto-check').checked = readPreference('updates-auto-check'); $('auto-download').checked = readPreference('updates-auto-download');
-  $('auto-check').addEventListener('change', () => {
-    if ($('auto-check').checked && !window.confirm('启用后，每次登录会向配置的 GitHub 仓库检查一次稳定版本，不发送文档和密钥。是否启用？')) $('auto-check').checked = false;
+  $('auto-check').addEventListener('change', async () => {
+    if ($('auto-check').checked && !await ask('启用后，每次登录会向配置的 GitHub 仓库检查一次稳定版本，不发送文档和密钥。是否启用？')) $('auto-check').checked = false;
     if (!$('auto-check').checked) { $('auto-download').checked = false; writePreference('updates-auto-download', false); }
     writePreference('updates-auto-check', $('auto-check').checked); refresh();
   });
-  $('auto-download').addEventListener('change', () => {
-    if ($('auto-download').checked && !window.confirm('发现新版后自动下载并验证更新包，最多10MB；仍不会自动批准安装。是否启用？')) $('auto-download').checked = false;
+  $('auto-download').addEventListener('change', async () => {
+    if ($('auto-download').checked && !await ask('发现新版后自动下载并验证更新包，最多10MB；仍不会自动批准安装。是否启用？')) $('auto-download').checked = false;
     writePreference('updates-auto-download', $('auto-download').checked);
   });
   document.getElementById('tab-updates')?.addEventListener('click', () => { if (!loaded) load(); });

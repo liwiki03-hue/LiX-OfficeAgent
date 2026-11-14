@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('range-' + id);
   if (!$('panel')) return;
   const commentOption = document.createElement('option'); commentOption.value = 'comment'; commentOption.textContent = '给选区添加审阅批注'; $('action').append(commentOption);
@@ -131,8 +132,8 @@
     lines.push('\n数字、引用和公式使用当前勾选的保护规则；不证明语义等价。原文件保持，输出需重开、静态域渲染、审计后发布。Word人工及复杂视觉异常仍未验证。');
     return lines.join('\n');
   }
-  function load(offset) {
-    if (queue.length && !window.confirm('重新读取将放弃当前待修改清单，是否继续？')) return;
+  async function load(offset) {
+    if (queue.length && !await ask('重新读取将放弃当前待修改清单，是否继续？')) return;
     run(false, async (api, current) => {
       const reply = await api.read_edit_ranges(offset);
       if (!current()) return;
@@ -186,7 +187,7 @@
   });
   $('confirm').onclick = () => run(true, async (api, current) => {
     const target = plan; if (!target) return;
-    const approved = window.confirm('独立确认生成 DOCX 副本？请核对全部影响。原文件保持，取消不写入。\n' + $('preview').textContent) === true;
+    const approved = await ask('独立确认生成 DOCX 副本？请核对全部影响。原文件保持，取消不写入。\n' + $('preview').textContent) === true;
     if (!current()) return;
     plan = null;
     const reply = await api.confirm_professional_edit(target.id, approved);
@@ -207,17 +208,17 @@
     if (!reply?.ok) { status('模型辅助核对不可用或本计划已调用；确定性保护仍有效，没有写入批准。'); return; }
     $('assessment').textContent = '模型未审阅建议，不是写入批准或事实证明：\n' + JSON.stringify(reply.result.assessment, null, 2);
   });
-  $('compose').onclick = () => {
+  $('compose').onclick = async () => {
     if (!selected || !data || busy) return;
     const prompt = document.getElementById('prompt');
     const value = '请先读取当前DOCX宿主范围视图，只预览本选区修改，不执行写入。修改要求：' + $('reason').value + '\n宿主选区：' + JSON.stringify({source_sha256: data.document.source_sha256, locator_id: selected.locator_id, expected_text_sha256: selected.text_sha256, ...selection(), island_id: $('island').value || null});
-    if (prompt.value.trim() && !window.confirm('替换尚未发送的对话输入？')) return;
+    if (prompt.value.trim() && !await ask('替换尚未发送的对话输入？')) return;
     prompt.value = value; prompt.dispatchEvent(new Event('input', {bubbles: true})); prompt.focus();
     status('选区和要求已填入对话。请启用现有专业工具后主动发送；模型只能预览，写入仍需独立确认。');
   };
   $('undo').onclick = () => run(true, async (api, current) => {
     const removed = save;
-    const approved = window.confirm('独立确认撤销本次输出？保留源文件、备份及审计。') === true;
+    const approved = await ask('独立确认撤销本次输出？保留源文件、备份及审计。') === true;
     if (!current()) return;
     const reply = await api.rollback_professional_edit(save, approved);
     if (!current()) return;
@@ -226,7 +227,7 @@
     else if (reply.result.status !== 'cancelled') unknown();
   });
   ['mode', 'protect'].forEach(id => $(id).addEventListener('change', invalidate));
-  const consent = () => window.confirm('读取本回执对应的原稿和副本，生成有界静态页面对照？仅限当前明确选择的文档对，不联网、不刷新域、不恢复写入或撤销批准。') === true;
+  const consent = async () => await ask('读取本回执对应的原稿和副本，生成有界静态页面对照？仅限当前明确选择的文档对，不联网、不刷新域、不恢复写入或撤销批准。') === true;
   function showReview() {
     $('review-item').replaceChildren();
     const states = {unreviewed: '未审阅', viewed: '已查看', needs_review: '待复核', ignored: '明确忽略'};
@@ -272,8 +273,8 @@
   $('open-review').onclick = () => run(false, async (api, current) => {
     const target = $('delivery-id').value.trim() || save;
     if (target && !/^[a-f0-9]{32}$/.test(target)) { status('输出回执应为32位小写十六进制；请从完整任务的事务入口填入。'); return; }
-    if (reviewDirty && !window.confirm('当前审阅状态尚未存档，重新打开将放弃未保存状态，是否继续？')) return;
-    if (!consent() || !current()) return;
+    if (reviewDirty && !await ask('当前审阅状态尚未存档，重新打开将放弃未保存状态，是否继续？')) return;
+    if (!await consent() || !current()) return;
     if (target && target !== save) save = null;
     let identifier = target ? null : delivery?.review_id;
     delivery = null; ['before-pages', 'after-pages', 'review-item', 'review-note'].forEach(id => $(id).replaceChildren()); refresh();
@@ -296,7 +297,7 @@
     const response = await api.plan_range_review_archive(delivery.review_id, delivery.revision);
     if (!current()) return;
     if (!response?.ok) { fail(response); return; }
-    const approved = window.confirm('保存本次逐项审阅状态和来源摘要？不保存正文、不恢复任何写入或撤销批准。取消不写入。') === true;
+    const approved = await ask('保存本次逐项审阅状态和来源摘要？不保存正文、不恢复任何写入或撤销批准。取消不写入。') === true;
     if (!current()) return;
     const saved = await api.confirm_range_review_archive(response.result.plan_id, approved);
     if (!current()) return;
@@ -306,20 +307,20 @@
     else status('已取消审阅存档。');
   });
   $('restore-review').onclick = () => run(false, async (api, current) => {
-    if (reviewDirty && !window.confirm('恢复将放弃当前尚未存档的审阅状态，是否继续？')) return;
+    if (reviewDirty && !await ask('恢复将放弃当前尚未存档的审阅状态，是否继续？')) return;
     const response = await api.restore_range_review_archive($('archive-id').value.trim());
     if (!current()) return;
     if (!response?.ok) { fail(response); return; }
     delivery = {...response.result, opened: false}; reviewDirty = false; save = null;
     $('delivery-id').value = '';
     ['before-pages', 'after-pages'].forEach(id => $(id).replaceChildren()); showReview();
-    if (consent() && current()) await openDelivery(api, current, delivery.review_id);
+    if (await consent() && current()) await openDelivery(api, current, delivery.review_id);
   });
   $('remove-review').onclick = () => run(true, async (api, current) => {
     const response = await api.plan_remove_range_review_archive($('archive-id').value.trim());
     if (!current()) return;
     if (!response?.ok) { fail(response); return; }
-    const approved = window.confirm('独立撤销这份审阅存档？只删除该存档产物，保留备份和审计，不删除DOCX副本。') === true;
+    const approved = await ask('独立撤销这份审阅存档？只删除该存档产物，保留备份和审计，不删除DOCX副本。') === true;
     if (!current()) return;
     const removed = await api.confirm_remove_range_review_archive(response.result.rollback_id, approved);
     if (!current()) return;

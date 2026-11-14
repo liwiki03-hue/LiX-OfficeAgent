@@ -2,6 +2,7 @@ from copy import deepcopy
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import queue
 import re
@@ -16,6 +17,7 @@ from .bridge import Api, _reject_links, _read_bounded_json
 from .document_open import OPEN_FORMATS, read_local_view
 from .paged_editor import PagedEditor
 from .office_canvas import OfficeCanvas, OfficeCanvasApi
+from .document_access import DocumentAccess
 
 
 class FloatingSession:
@@ -53,6 +55,7 @@ class FloatingSession:
         self._open_cancel = None
         self._trace_dirty = False
         self.preferred_paged = False
+        self.access = DocumentAccess(self)
         self.paged = PagedEditor(self)
         self.canvas = OfficeCanvas(self)
 
@@ -61,6 +64,10 @@ class FloatingSession:
             raise ValueError('请先登录本机账户')
 
     def notice(self, kind, payload):
+        if kind in {'document_ready', 'admission_failed', 'draft_model_error', 'draft_publishing', 'draft_published', 'draft_publish_failed', 'stop_requested', 'stale_action_blocked'}:
+            from ..diagnostics import record
+            record('document', kind, 'failed' if kind.endswith(('failed', 'error')) else 'recorded',
+                   correlation=self.document['id'] if self.document else 'none')
         try:
             self.notifications.put_nowait((kind, payload))
         except queue.Full:
@@ -70,6 +77,7 @@ class FloatingSession:
 
     def reset(self, *, preserve_open=None):
         with self.lock:
+            self.access.reset(default=True)
             self.paged.close()
             self.canvas.close()
             if self.runtime is not None:
@@ -342,7 +350,12 @@ class FloatingSession:
             from webview import FileDialog
             selected = self.app.window.create_file_dialog(FileDialog.OPEN,
                 file_types=('文档 (*.docx;*.xlsx;*.pptx)',))
-            return self._admit(selected[0]) if selected else {'ok': False, 'reason': 'cancelled'}
+            if not selected:
+                return {'ok': False, 'reason': 'cancelled'}
+            result = self._admit(selected[0])
+            if result.get('ok') and self.document:
+                result = {**result, 'document_id': self.document['id'], 'epoch': self.epoch}
+            return result
         finally:
             self.admission_lock.release()
 
@@ -352,6 +365,7 @@ class FloatingSession:
         path = self.app.editor.space.file(str(self.app.path))
         info = path.lstat()
         if digest(path) != self.document['version'] or [info.st_dev, info.st_ino] != self.document['file_identity']:
+            self.access.reset()
             if self.runtime:
                 self.runtime.stop()
             self.app.pending_id = None
@@ -615,6 +629,7 @@ class FloatingSession:
         if self.paged.active():
             raise ValueError('分页编辑已启用，请引用当前草稿后发送；不会从磁盘原稿重启模型任务')
         self.check_source()
+        self.access.for_instruction()
         self.app._pending_clarification = None
         self.app.pending_id = None
         self.api._connections.state.mode = 'agent'
@@ -667,8 +682,11 @@ class FloatingSession:
                 self._start_ready_task()
             return {'ok': True, 'record': record, 'session_id': self.runtime.session_id}
 
-    def confirm(self, session_id, plan_id, revision, version, approved):
+    def confirm(self, session_id, plan_id, revision, version, approved, access_id=None):
         self.authenticated()
+        authorization = self.access.require(access_id, 'publish') if access_id is not None else None
+        if authorization:
+            approved = True
         if type(approved) is not bool or not self.runtime or session_id != self.runtime.session_id:
             raise ValueError('确认归属已失效')
         if not approved:
@@ -694,7 +712,9 @@ class FloatingSession:
             self.app.pending_id = plan_id
             self.stage = 'executing'
             self.executing_revision = revision
-            self._trace('human_confirmed')
+            self._trace('access_authorized' if authorization else 'human_confirmed')
+            if authorization:
+                self.notice('document_access_used', {'plan_id': plan_id, 'access': authorization})
             result = self.app.execute()
             if not result.get('ok'):
                 self.runtime.executing = False
@@ -702,6 +722,8 @@ class FloatingSession:
 
     def stop(self):
         self.authenticated()
+        had_access = bool(self.access.state()['id'])
+        self.access.reset()
         self.paged.stop()
         with self.canvas.lock:
             self.canvas.ai.invalidate()
@@ -724,7 +746,9 @@ class FloatingSession:
         self.stage = 'stopped'
         result = self.app.cancel_task()
         self.notice('stop_requested', {'text': '已停止后续派发；已发出的远端请求不保证取消或停止计费。副本事务若已开始将安全完成。'})
-        return {'ok': True, 'local_open_cancelled': True} if was_opening and result.get('reason') == 'no_active_model_task' else result
+        if result.get('reason') == 'no_active_model_task' and (was_opening or had_access):
+            return {'ok': True, 'local_open_cancelled': was_opening, 'stopped': True}
+        return result
 
     def start_again(self, fresh=False):
         if self.paged.active():
@@ -762,20 +786,36 @@ class FloatingSession:
         self.app.last_verified_id = output_id
         return self.app.undo()
 
-    def select_output(self, output_id):
+    def select_output(self, output_id, read_open=False, access_id=None):
         self.authenticated()
+        if type(read_open) is not bool:
+            raise ValueError('打开副本的读取选项无效')
         if not self.admission_lock.acquire(blocking=False):
             raise ValueError('已有文件正在选择或准入，请完成当前选择')
         try:
             row = self.outputs.get(output_id)
             if not row or row.get('undone') or digest(Path(row['output'])) != row.get('output_sha256'):
                 raise ValueError('副本不存在、已撤销或内容已改变，请重新选择文件')
+            access = self.access.require(access_id, 'open_copy') if access_id is not None else None
+            consent = row.get('continue_editing')
+            serial = self.access.serial
+            level = access['level'] if access and row.get('source_version') == self.document['version'] else None
+            if consent and consent['serial'] == serial and row.get('source_version') == self.document['version']:
+                level = consent['level']
+            if self.protected or self.protected_cells:
+                level = None
             saved = deepcopy(self.outputs)
             queued = [m['text'] for m in self.runtime.messages if m['revision'] > self.runtime.applied] if self.runtime else []
             result = self._admit(row['output'])
             if result.get('ok'):
                 self.outputs = saved
                 self.queued_for_next_version = queued
+                if self.document['version'] != row.get('output_sha256'):
+                    raise ValueError('副本在打开期间改变，未沿用修改权限，请重新选择文件')
+                if read_open:
+                    self.read(self.read_token, True)
+                    if level and self.access.serial == serial + 1:
+                        self.access.set(self.document['id'], self.document['version'], self.epoch, level, True)
             return result
         finally:
             self.admission_lock.release()
@@ -885,6 +925,7 @@ class FloatingSession:
                     bool(self.open_request and self.open_request.get('phase') in {'receiving','admission_pending','parsing'}),
                     bool(plans or any(p['status']=='pending' for p in self.paged.proposals.values()))))
             return {'ok': True, 'epoch': self.epoch, 'cursor': self.seq,
+                    'access': self.access.state(),
                     'gap': bool(self.events and cursor < self.events[0]['event_seq'] - 1),
                     'events': deepcopy([e for e in self.events if e['event_seq'] > cursor]),
                     'document': deepcopy(self.document), 'read_token': self.read_token,
@@ -915,12 +956,77 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
         super().__init__(app, **options)
         self._floating = FloatingSession(self)
         self._window_chrome = None
+        from ..download_cache import DownloadCache
+        self._download_cache = DownloadCache(self._settings._root)
+        from .window_preferences import WindowPreferences
+        self._ui_preferences = WindowPreferences(self._settings._root)
+
+    def floating_intro(self, remember=False):
+        def action():
+            self._floating.authenticated()
+            if type(remember) is not bool:
+                raise ValueError('引导偏好无效')
+            if remember:
+                self._ui_preferences.set_intro_seen()
+            return {'ok': True, 'intro_seen': self._ui_preferences.read().get('intro_seen', False)}
+        return self._floating_call(action)
+
+    def floating_download_cache(self, kind):
+        def action():
+            self._floating.authenticated()
+            if self._app.busy:
+                raise ValueError('请等待当前任务结束再检查缓存')
+            return {'ok': True, 'plan': self._download_cache.preview(kind)}
+        return self._floating_call(action)
+
+    def floating_quarantine_download(self, identifier, confirmed=False):
+        def action():
+            self._floating.authenticated()
+            if self._app.busy:
+                raise ValueError('请等待当前任务结束再处理缓存')
+            return {'ok': True, 'result': self._download_cache.quarantine(identifier, confirmed)}
+        return self._floating_call(action)
+
+    def floating_diagnostics(self):
+        def action():
+            self._floating.authenticated()
+            from ..diagnostics import get
+            preview = get().preview()
+            identifier = uuid.uuid4().hex
+            self._diagnostic_preview = (identifier, time.monotonic(), json.dumps({key: value for key, value in preview.items() if key != 'path'}, ensure_ascii=False).encode('utf-8'))
+            return {'ok': True, 'diagnostics': preview, 'preview_id': identifier}
+        return self._floating_call(action)
+
+    def floating_export_diagnostics(self, preview_id):
+        def action():
+            self._floating.authenticated()
+            preview = getattr(self, '_diagnostic_preview', None)
+            if not preview or preview[0] != preview_id or time.monotonic() - preview[1] > 300:
+                raise ValueError('诊断预览已失效，请重新查看')
+            import webview
+            from ..downloads import safe
+            selected = self._app.window.create_file_dialog(webview.SAVE_DIALOG, save_filename='LiX-diagnostics.json', file_types=('JSON (*.json)',))
+            if not selected:
+                return {'ok': True, 'cancelled': True}
+            target = safe(Path(selected if isinstance(selected, str) else selected[0]))
+            if target.suffix.lower() != '.json':
+                raise ValueError('请选择新的 JSON 文件')
+            with target.open('xb') as stream:
+                stream.write(preview[2])
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._diagnostic_preview = None
+            return {'ok': True, 'saved': True}
+        return self._floating_call(action)
 
     def floating_window_state(self):
         def action():
             self._floating.authenticated()
             return self._window_chrome.state() if self._window_chrome else {'ok': True, 'available': False}
         return self._floating_call(action)
+
+    def test_model_connection_draft(self, draft, refresh=False):
+        return self._connections.probe_draft(draft, refresh)
 
     def floating_window_action(self, action):
         def apply():
@@ -934,6 +1040,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
         return self._floating_call(apply)
 
     def _clear_private_state(self):
+        self._diagnostic_preview = None
         if hasattr(self,'_presentations'):
             self._presentations.invalidate()
         if hasattr(self, '_floating'):
@@ -952,6 +1059,9 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
 
     def floating_snapshot(self, cursor=0):
         return self._floating_call(self._floating.collect, cursor)
+
+    def floating_set_access(self, document_id, version, epoch, level, confirmed=False):
+        return self._floating_call(self._floating.access.set, document_id, version, epoch, level, confirmed)
 
     def floating_capabilities(self):
         def action():
@@ -1001,8 +1111,8 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def paged_submit(self, client_id, text, reference_id, document_id, source_version, session_id, inbox_id):
         return self._floating_call(self._floating.paged.submit,client_id,text,reference_id,document_id,source_version,session_id,inbox_id)
 
-    def paged_prepare_apply(self, proposal_id, document_id, revision):
-        return self._floating_call(self._floating.paged.prepare_apply,proposal_id,document_id,revision)
+    def paged_prepare_apply(self, proposal_id, document_id, revision, access_id=None):
+        return self._floating_call(self._floating.paged.prepare_apply,proposal_id,document_id,revision,access_id)
 
     def paged_applied(self, token, document_id, prior_revision, revision):
         return self._floating_call(self._floating.paged.applied,token,document_id,prior_revision,revision)
@@ -1022,14 +1132,14 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def paged_plan(self, document_id, revision):
         return self._floating_call(self._floating.paged.plan,document_id,revision)
 
-    def paged_publish(self, plan_id, document_id, revision, confirmed=False):
-        return self._floating_call(self._floating.paged.publish,plan_id,document_id,revision,confirmed)
+    def paged_publish(self, plan_id, document_id, revision, confirmed=False, access_id=None):
+        return self._floating_call(self._floating.paged.publish,plan_id,document_id,revision,confirmed,access_id)
 
     def paged_plan_editable_copy(self, document_id, revision):
         return self._floating_call(self._floating.paged.plan_editable_copy, document_id, revision)
 
-    def paged_publish_editable_copy(self, plan_id, document_id, revision, confirmed=False):
-        return self._floating_call(self._floating.paged.publish_editable_copy, plan_id, document_id, revision, confirmed)
+    def paged_publish_editable_copy(self, plan_id, document_id, revision, confirmed=False, continue_editing=False):
+        return self._floating_call(self._floating.paged.publish_editable_copy, plan_id, document_id, revision, confirmed, continue_editing)
 
     def paged_restore(self, document_id):
         return self._floating_call(self._floating.paged.restore,document_id)
@@ -1124,8 +1234,8 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def floating_submit(self, session_id, client_id, text, open_request_id=None, document_id=None, version=None):
         return self._floating_call(self._floating.submit, session_id, client_id, text, open_request_id, document_id, version)
 
-    def floating_confirm(self, session_id, plan_id, revision, version, approved=False):
-        return self._floating_call(self._floating.confirm, session_id, plan_id, revision, version, approved)
+    def floating_confirm(self, session_id, plan_id, revision, version, approved=False, access_id=None):
+        return self._floating_call(self._floating.confirm, session_id, plan_id, revision, version, approved, access_id)
 
     def floating_stop(self):
         return self._floating_call(self._floating.stop)
@@ -1141,8 +1251,8 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def floating_rollback(self, output_id, approved=False):
         return self._floating_call(self._floating.rollback, output_id, approved)
 
-    def floating_select_output(self, output_id):
-        return self._floating_call(self._floating.select_output, output_id)
+    def floating_select_output(self, output_id, read_open=False, access_id=None):
+        return self._floating_call(self._floating.select_output, output_id, read_open, access_id)
 
     def floating_select_history_output(self, identifier):
         return self._floating_call(self._floating.select_history_output, identifier)

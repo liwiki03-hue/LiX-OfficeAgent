@@ -136,7 +136,8 @@ class ResearchModel:
             headers['Authorization'] = 'Bearer ' + config.api_key
         started = time.monotonic()
         try:
-            transport = self.transport or httpx2.HTTPTransport(retries=0, trust_env=False)
+            from .network import transport as network_transport
+            transport = self.transport or network_transport(config.base_url)
             with httpx2.Client(transport=transport, trust_env=False, follow_redirects=False) as client:
                 with client.stream('POST', config.base_url.rstrip('/') + ('/api/chat' if local else '/chat/completions'),
                                    json=body, headers=headers, timeout=config.timeout) as response:

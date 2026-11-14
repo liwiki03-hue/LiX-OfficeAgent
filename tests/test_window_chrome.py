@@ -37,8 +37,9 @@ def test_drag_and_resize_accept_only_named_operations_and_keep_maximized_boundar
     chrome.action('resize-bottom-right')
     assert hits == [2, 17]
     window.maximized = True
-    with pytest.raises(ValueError, match='还原'):
-        chrome.action('drag')
+    window.restore = lambda: setattr(window, 'maximized', False)
+    chrome.action('drag')
+    assert not window.maximized
     with pytest.raises(ValueError, match='不支持'):
         chrome.action({'resize': [2000, 2000]})
-    assert hits == [2, 17]
+    assert hits == [2, 17, 2]

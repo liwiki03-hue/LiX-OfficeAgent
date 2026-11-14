@@ -52,7 +52,11 @@
       lastDown = {time:now,x:event.screenX,y:event.screenY};
       const doubleClick = prior && now-prior.time < 360 && Math.hypot(event.screenX-prior.x,event.screenY-prior.y) < 4;
       if (doubleClick) action('maximize');
-      else if (document.body.dataset.windowMaximized !== 'true') action('drag');
+      else action('drag');
+    });
+    document.addEventListener('pointerdown', event => {
+      if(event.button!==0||document.body.dataset.desktopWindow!=='true'||!event.target.closest('#settings-dialog .settings-head')||event.target.closest('button,input,select,textarea,a,label,summary,[contenteditable]'))return;
+      event.preventDefault();action('drag');
     });
     for (const edge of ['left','right','top','bottom','top-left','top-right','bottom-left','bottom-right']) {
       const handle = document.createElement('div'); handle.className = 'desktop-resize-handle'; handle.dataset.edge = edge;

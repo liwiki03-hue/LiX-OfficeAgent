@@ -47,7 +47,7 @@
       tooltip.style.top = (box.bottom + size.height + 14 < innerHeight ? box.bottom + 8 : Math.max(8, box.top - size.height - 8)) + 'px';
       node.setAttribute('aria-describedby', tooltip.id);
     };
-    if (immediate) show(); else timer = setTimeout(show, 240);
+    if (immediate) show(); else timer = setTimeout(show, 500);
   }
   document.addEventListener('pointerover', event => {
     const node = event.target.closest?.('.agent-icon-button');

@@ -1,4 +1,5 @@
 (() => {
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('literature-' + id);
   if (!$('panel')) return;
   let epoch = 0, busy = false, uncertain = false, writePending = false, records = new Map(), decisions = {}, reports = [], saved = new Map();
@@ -162,7 +163,7 @@
   }
   async function savePlan(host, current, plan, pdf=false) {
     if (!opaque(plan?.plan_id) || typeof plan.filename !== 'string' || !Number.isInteger(plan.byte_count)) throw Error();
-    const approved = window.confirm('确认保存 ' + plan.filename + '？\n大小：' + plan.byte_count + ' 字节；摘要：' + plan.payload_sha256 +
+    const approved = await ask('确认保存 ' + plan.filename + '？\n大小：' + plan.byte_count + ' 字节；摘要：' + plan.payload_sha256 +
       (pdf ? '\n来源：' + plan.source_url + '\n许可：' + plan.license : '\n仅保存明确选择的版本与本次记录，不代表完整系统综述。') +
       '\n备份、审计和本次撤销沿用现有链路，不修改原文档。') === true;
     if (!current()) return;
@@ -184,7 +185,7 @@
         '\n' + value.pages.map(page => '第 ' + (page.page + 1) + ' 页\n' + page.text).join('\n\n');
     }));
     button(output, '撤销本次保存…', () => run(true, async (host, current) => {
-      const approved = window.confirm('确认撤销本次未被外部修改的输出？备份和审计保留。') === true;
+      const approved = await ask('确认撤销本次未被外部修改的输出？备份和审计保留。') === true;
       if (!current()) return;
       writePending = approved;
       const reply = await host.rollback_literature_save(data.save_id, approved); if (!current()) return; const value = result(reply);

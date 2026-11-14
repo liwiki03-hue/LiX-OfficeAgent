@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   if (!$('workspace-document-bar') || !$('settings-pane-model')) return;
   const labels = {chat: '普通问答', agent: '文档 Agent', image: '生图'};
   const states = {verified: '实际调用已验证', unverified: '未验证', failed: '检测失败', changed: '配置已变更'};
@@ -16,10 +17,12 @@
   const probeLabels = {reachable: '模型列表已获取；不代表模型调用或工具能力已验证。', authentication_failed: '认证失败，请检查密钥。',
     models_unsupported: '无法通过模型列表验证；可以保留并手动配置模型。', timeout: '检测超时，没有重试。',
     redirect_refused: '服务返回重定向，未携带凭据跟随。', service_failed: '服务返回失败状态。', models_unverified: '服务未返回可验证的模型列表。',
-    response_too_large: '模型列表超过大小上限。', connection_failed: '连接失败，请核对服务地址和证书。'};
+    response_too_large: '模型列表超过大小上限。', connection_failed: '连接失败，请核对 API 地址和证书。'};
   let snapshot = null, draft = null, baseline = '', revision = '', mode = 'agent', epoch = 0, sequence = 0;
   let pending = false, selecting = false, editorId = null, saveId = null, uncertain = false;
   let selectionBlocked = false;
+  let modelProbeSequence=0, modelProbePending=false;
+  let chosenCandidate=null;
   const live = () => Boolean(window.OfficeAuth?.isAuthenticated());
   const api = () => window.OfficeAuth.wrapApi(window.pywebview.api);
   const copy = object => JSON.parse(JSON.stringify(object));
@@ -67,17 +70,44 @@
     return input;
   }
   field('connection-name', '连接自定义名称');
+  const providerChoice=field('connection-provider','模型提供方','select');
+  for(const [id,title] of [['custom','自定义兼容服务'],['deepseek','DeepSeek'],['dashscope','百炼'],['ollama','Ollama']]){const item=make('option','',title,providerChoice);item.value=id;}
   const protocol = field('connection-protocol', '接口协议', 'select');
   [['openai', 'OpenAI 兼容接口'], ['ollama', 'Ollama']].forEach(([id, name]) => { const option = make('option', '', name, protocol); option.value = id; });
-  field('connection-url', '服务地址');
+  field('connection-url', 'API 地址');
   const context = field('connection-context', '上下文窗口', 'number'); context.min = '1024'; context.max = '2097152';
   const enabled = field('connection-enabled', '启用连接', 'checkbox');
   const keyAction = field('connection-key-action', '密钥处理', 'select');
   [['keep', '留空保持旧密钥'], ['replace', '显式替换'], ['clear', '显式清除']].forEach(([id, name]) => { const option = make('option', '', name, keyAction); option.value = id; });
-  const key = field('connection-key', '新密钥（仅本次保存使用）', 'password'); key.autocomplete = 'new-password'; key.disabled = true;
+  const key = field('connection-key', 'API 密钥（仅本次保存使用）', 'password'); key.autocomplete = 'new-password'; key.disabled = true;
   keyAction.onchange = () => { key.value = ''; key.disabled = keyAction.value !== 'replace'; };
   make('p', 'connection-key-state', '', edit);
   const models = field('connection-models', '手动模型：每行 模型ID | 用途（chat,agent,image）', 'textarea'); models.rows = 5;
+  const modelName=field('connection-model-name','模型名称');modelName.setAttribute('list','connection-model-candidates');modelName.autocomplete='off';
+  const candidates=make('datalist','connection-model-candidates','',edit);
+  const purpose=field('connection-model-purpose','用途（配置声明，仍需实际验证）','select');
+  for(const [id,title] of [['chat','普通问答'],['chat,agent','问答与文档 Agent'],['image','图片生成']]){const item=make('option','',title,purpose);item.value=id;}
+  const probeState=make('p','connection-probe-state','可直接填写模型名称。',edit);probeState.setAttribute('role','status');
+  button('connection-probe-draft','刷新模型列表',edit,()=>probeDraft(true));
+  modelName.addEventListener('change',()=>{
+    const id=modelName.value.trim();if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(id)||!editorId)return;
+    const existing=models.value.split('\n').filter(Boolean),index=existing.findIndex(line=>line.split('|')[0].trim()===id);
+    const line=id+' | '+purpose.value;if(index<0)existing.push(line);else existing[index]=line;models.value=existing.join('\n');
+    for(const capability of purpose.value.split(','))draft.defaults[capability]={connection_id:editorId,model_id:id,capability};
+    chosenCandidate={connection_id:editorId,model_id:id,capability:purpose.value.split(',').includes(mode)?mode:purpose.value.split(',')[0]};
+    probeState.textContent='已填入配置草稿；保存后使用，能力尚未验证。';controls();
+  });
+  providerChoice.onchange=()=>{
+    const provider=providerChoice.value;
+    if(provider==='custom')return;
+    protocol.value=provider==='ollama'?'ollama':'openai';
+    $('connection-url').value=snapshot?.provider_defaults?.[provider]?.base_url||'';
+    if(!$('connection-name').value)$('connection-name').value=providerChoice.selectedOptions[0].textContent;
+    keyAction.value=provider==='ollama'?'clear':'replace';key.value='';key.disabled=provider==='ollama';
+    modelProbeSequence++;candidates.replaceChildren();controls();
+    if(provider==='ollama')probeDraft(false);
+  };
+  for(const node of [$('connection-url'),protocol,key,keyAction])node.addEventListener('input',()=>{modelProbeSequence++;candidates.replaceChildren();});
   make('p', '', '例如使用你的实际模型ID，加上 | chat,agent。生图单独使用 image；不会根据名称猜测能力。可追加第三列输出限制字段：auto（当前适配器默认）、max_tokens、max_completion_tokens；Ollama 使用 num_predict；unsupported 表示不支持受限回答。须按接口文档选择，不会失败后自动换参数。刷新列表不覆盖手动条目。', edit);
   button('connection-apply-draft', '保留到本次草稿', edit, applyEditor);
   const footer = make('div', '', '', manager); footer.className = 'actions';
@@ -100,7 +130,7 @@
       make('p', '', '请审阅全部差异。所有本机账户共享配置；确认后备份、写入、校验并审计，不会调用模型。新配置用于后续请求，运行中的任务保持原配置。', dialog);
       const content = make('div', 'connection-review-content', '', dialog); content.tabIndex = 0;
       content.setAttribute('aria-label', '完整接口配置差异');
-      const labels = {name:'连接名称', protocol:'协议', base_url:'服务地址', enabled:'启用状态', context_window:'上下文窗口', models:'模型、用途及输出字段'};
+      const labels = {name:'连接名称', protocol:'接口协议', base_url:'API 地址', enabled:'启用状态', context_window:'上下文窗口', models:'模型、用途及输出字段'};
       const display = value => value === undefined ? '未配置' : typeof value === 'string' ? value : JSON.stringify(value, null, 2);
       for (const item of plan.differences) {
         const section = make('section', '', '', content);
@@ -229,16 +259,38 @@
     window.OfficeSettings?.show(); window.OfficeSettings?.selectTab('tab-model'); manager.open = true;
     if (!draft) refresh(true); manager.scrollIntoView({block: 'start'});
   }
-  function openEditor(row) {
-    if (editorId && dirtyEditor() && !window.confirm('放弃当前接口表单中尚未保留的改动并清空新密钥？')) return;
+  async function openEditor(row) {
+    if (editorId && dirtyEditor() && !await ask('放弃当前接口表单中尚未保留的改动并清空新密钥？')) return;
     editorId = row.id; edit.hidden = false;
     $('connection-name').value = row.name; protocol.value = row.protocol; $('connection-url').value = row.base_url;
     context.value = row.context_window; enabled.checked = row.enabled;
     models.value = row.models.map(model => `${model.id} | ${model.capabilities.join(',')}${model.output_parameter ? ' | ' + model.output_parameter : ''}`).join('\n');
     key.value = ''; keyAction.value = 'keep'; key.disabled = true;
+    providerChoice.value=row.protocol==='ollama'?'ollama':Object.entries(snapshot.provider_defaults||{}).find(([id,item])=>id!=='ollama'&&item.base_url===row.base_url)?.[0]||'custom';
+    purpose.value=mode==='agent'?'chat,agent':mode==='image'?'image':'chat';modelName.value=row.models[0]?.id||'';candidates.replaceChildren();modelProbeSequence++;
     const saved = snapshot.catalog.connections.find(r => r.id === row.id);
     $('connection-key-state').textContent = saved?.api_key_configured ? '旧密钥已配置；不返回原文。' : '未配置密钥；Ollama 通常无需密钥。';
     editorBaseline = editorValue(); controls();
+    probeDraft(false);
+  }
+  async function probeDraft(refresh=false){
+    if(modelProbePending||!editorId||!live()||pending)return;
+    const previous=draft?.connections.find(row=>row.id===editorId),saved=snapshot?.catalog.connections.find(row=>row.id===editorId);
+    const action=keyAction.value==='keep'&&previous?.key_action==='replace'?'replace':keyAction.value;
+    const target={id:editorId,protocol:protocol.value,base_url:$('connection-url').value.trim(),key_action:action};
+    if(action==='replace')target.api_key=key.value||previous?.api_key||'';
+    if(!target.base_url||target.protocol!=='ollama'&&!(target.api_key||action==='keep'&&saved?.api_key_configured))return;
+    const own=++modelProbeSequence,owner=epoch,identity=JSON.stringify([editorId,protocol.value,$('connection-url').value,keyAction.value,key.value]);
+    modelProbePending=true;probeState.textContent='正在读取模型列表…';
+    try{
+      const result=await api().test_model_connection_draft(target,refresh);
+      if(owner!==epoch||own!==modelProbeSequence||identity!==JSON.stringify([editorId,protocol.value,$('connection-url').value,keyAction.value,key.value]))return;
+      if(!result?.ok){probeState.textContent=result?.field==='api_key'?'当前地址需要匹配的 API 密钥；模型名称可手填。':'未能读取列表，手动模型保留。';return;}
+      candidates.replaceChildren();
+      for(const id of result.result.models||[]){const option=make('option','',id,candidates);option.value=id;}
+      probeState.textContent=result.result.status==='reachable'?(result.result.models?.length?'模型列表已读取；选中即可填入草稿。':'接口可达，未返回候选；可手动填写。'):(probeLabels[result.result.status]||'模型列表不可用，保留手动名称。');
+    }catch(_){if(owner===epoch&&own===modelProbeSequence)probeState.textContent='列表暂不可用，可手动填写模型名称。';}
+    finally{delete target.api_key;modelProbePending=false;}
   }
   const dirtyEditor = () => editorValue() !== editorBaseline || key.value || keyAction.value !== 'keep';
   function applyEditor() {
@@ -281,8 +333,8 @@
         if (!row.enabled) Object.keys(draft.defaults).forEach(cap => { if (draft.defaults[cap].connection_id === row.id) delete draft.defaults[cap]; });
         renderConnections();
       });
-      button('', '删除到草稿', article, () => {
-        if (!window.confirm('从草稿移除此连接？保存确认后才从配置移除，当前会话选择会失效。')) return;
+      button('', '删除到草稿', article, async () => {
+        if (!await ask('从草稿移除此连接？保存确认后才从配置移除，当前会话选择会失效。')) return;
         draft.connections = draft.connections.filter(r => r.id !== row.id);
         Object.keys(draft.defaults).forEach(cap => { if (draft.defaults[cap].connection_id === row.id) delete draft.defaults[cap]; });
         if (editorId === row.id) { editorId = null; key.value = ''; edit.hidden = true; }
@@ -295,18 +347,18 @@
     controls();
     list.querySelectorAll('[data-requires-saved="no"]').forEach(node => { node.disabled = true; node.title = '请先保存接口'; });
   }
-  function discard() {
+  async function discard() {
     if (!snapshot || pending) return;
-    if (dirty() && !window.confirm('放弃全部接口草稿并清空新密钥？不会写入磁盘。')) return;
+    if (dirty() && !await ask('放弃全部接口草稿并清空新密钥？不会写入磁盘。')) return;
     cleanDraft(snapshot); controls(); message.textContent = '已恢复最近读取的配置，没有写入。';
   }
   async function reloadDraft() {
-    if (dirty() && !window.confirm('重新读取将丢弃接口草稿及新密钥，继续？')) return;
+    if (dirty() && !await ask('重新读取将丢弃接口草稿及新密钥，继续？')) return;
     key.value = ''; draft = null; await refresh(true);
   }
   async function savePayload(payload, expected) {
     if (pending || uncertain || !live()) return;
-    pending = true; const mine = epoch, entry = document.activeElement; let writeRequested = false; controls();
+    pending = true; const mine = epoch, entry = document.activeElement, chosen=chosenCandidate?copy(chosenCandidate):null; let writeRequested = false; controls();
     try {
       const planned = await api().plan_model_connections(payload, expected);
       payload.connections.forEach(row => { delete row.api_key; row.key_action = 'keep'; });
@@ -323,6 +375,9 @@
       if (!result?.ok || result.result?.status !== 'saved') { error(result); return; }
       saveId = result.result.save_id; draft = null; await refresh(true);
       if (mine !== epoch || !live()) return;
+      chosenCandidate=null;
+      const chosenRow=chosen&&snapshot.catalog.connections.find(row=>row.id===chosen.connection_id&&row.enabled&&row.models.some(model=>model.id===chosen.model_id&&model.capabilities.includes(chosen.capability)));
+      if(chosenRow)await selectModel(chosenRow,chosen.model_id,chosen.capability);
       message.textContent = '接口已保存。Web主界面后续请求可使用新配置；既有任务保持原配置。其他启动入口及检索配置仍按原规则，可能需重启。';
       showFeedback();
       window.dispatchEvent(new Event('officemodels:saved'));
@@ -336,7 +391,8 @@
       if (mine === epoch) { pending = false; controls(); if (document.activeElement === document.body && entry?.isConnected && !entry.disabled) entry.focus(); }
     }
   }
-  function save() {
+  async function save() {
+    await probeDraft(false);
     if (editorId && dirtyEditor() && !applyEditor()) return;
     if (!draft || !dirty()) return;
     return savePayload(draft, revision);
@@ -411,13 +467,13 @@
   }
   async function undo() {
     if (!saveId || pending || uncertain) return;
-    if (dirty() && !window.confirm('撤销将丢弃接口草稿和新密钥，继续？')) return;
+    if (dirty() && !await ask('撤销将丢弃接口草稿和新密钥，继续？')) return;
     key.value = ''; const mine = epoch; pending = true; controls();
     try {
       const result = await api().plan_settings_rollback(saveId);
       if (mine !== epoch || !live()) return;
       if (!result?.ok) { error(result); return; }
-      const approved = window.confirm('确认恢复本次保存前的完整配置备份？现有选择可能失效；不会调用模型。') === true;
+      const approved = await ask('确认恢复本次保存前的完整配置备份？现有选择可能失效；不会调用模型。') === true;
       const receipt = await api().confirm_settings_rollback(result.plan.rollback_id, approved);
       if (mine !== epoch || !live()) return;
       if (!receipt?.ok || receipt.result?.status !== 'rolled_back') { error(receipt); return; }
@@ -465,16 +521,16 @@
     selection: () => {
       const current = snapshot?.catalog.current[mode];
       const item = rowsForMode().find(({row, model}) => row.id === current?.connection_id && model.id === current?.model_id);
-      return current?.valid && !selectionBlocked ? {valid:true, model:current.model_id, connection:current.connection_name, state:states[item?.model.states[mode]] || '未验证'} : {valid:false};
+      return current?.valid && !selectionBlocked ? {valid:true, model:current.model_id, connection:current.connection_name, state:states[item?.model.states[mode]] || '未验证'} : {valid:false,reason:rowsForMode().length?'当前模型不可用，请检查连接':'尚未配置模型'};
     },
     refresh,
     readyForRequest: () => {
       if (!live() || pending || uncertain || selecting || selectionBlocked || !snapshot?.catalog.current[mode]?.valid) { status.textContent = '请先选择有效的已保存模型并核对配置状态；输入已保留。'; return false; }
       return true;
     },
-    requestClose: () => {
+    requestClose: async () => {
       if (pending) { message.textContent = '操作尚未结束，请先等待结果；没有自动重试。'; return false; }
-      if (dirty() && !window.confirm('关闭将放弃未保存的接口草稿并清空新密钥，是否继续？')) return false;
+      if (dirty() && !await ask('关闭将放弃未保存的接口草稿并清空新密钥，是否继续？')) return false;
       if (draft) draft.connections.forEach(row => { delete row.api_key; row.key_action = 'keep'; });
       key.value = ''; return true;
     }

@@ -23,6 +23,7 @@ class WindowChrome:
         self.window = window
         self._old_proc = self._proc = None
         self._hwnd = None
+        self._fallback = False
 
     def state(self):
         form = self.window.native
@@ -33,14 +34,16 @@ class WindowChrome:
             maximized = bool(form.Invoke(Func[Boolean](lambda: str(form.WindowState) == 'Maximized')))
         else:
             maximized = str(form.WindowState) == 'Maximized'
-        return {'ok': True, 'available': True, 'maximized': maximized}
+        return {'ok': True, 'available': True, 'maximized': maximized, 'standard_frame': self._fallback}
 
     def action(self, action):
         if type(action) is not str or action not in WINDOW_ACTIONS:
             raise ValueError('不支持的窗口操作')
         if action == 'drag' or action in SIZE_ACTIONS:
             if self.state()['maximized']:
-                raise ValueError('请先还原窗口，再拖动或调整大小')
+                if action != 'drag':
+                    return self.state()
+                self._restore_for_drag()
             self._move_size(2 if action == 'drag' else SIZE_ACTIONS[action])
         elif action == 'minimize':
             self.window.minimize()
@@ -77,8 +80,38 @@ class WindowChrome:
             started.append(True)
             user.SendMessageW(ctypes.c_void_p(int(form.Handle.ToInt64())), 0x00a1, hit, ((point.y & 0xffff) << 16) | (point.x & 0xffff))
         form.Invoke(Action(move))
-        if not started:
-            raise ValueError('已松开鼠标；请按住顶部文件名或窗口边缘拖动')
+        return bool(started)
+
+    def _restore_for_drag(self):
+        if sys.platform != 'win32' or self.window.native is None:
+            self.window.restore()
+            return
+        from System import Action
+        from System.Drawing import Point
+        from System.Windows.Forms import Cursor, FormWindowState, Screen
+        form = self.window.native
+        def restore():
+            point = Cursor.Position
+            ratio = max(0, min(1, (point.X - form.Left) / max(1, form.Width)))
+            form.WindowState = FormWindowState.Normal
+            area = Screen.FromPoint(point).WorkingArea
+            x = max(area.Left, min(int(point.X - form.Width * ratio), area.Right - form.Width))
+            y = max(area.Top, min(point.Y - int(20 * form.DeviceDpi / 96), area.Bottom - form.Height))
+            form.Location = Point(x, y)
+        form.Invoke(Action(restore))
+
+    def fallback(self):
+        self.dispose()
+        from System import Action
+        from System.Windows.Forms import FormBorderStyle
+        form = self.window.native
+        def apply():
+            form.FormBorderStyle = FormBorderStyle.Sizable
+            form.MaximizeBox = True
+            form.MinimizeBox = True
+        form.Invoke(Action(apply))
+        self._fallback = True
+        return self.state()
 
     def install(self):
         if sys.platform != 'win32':

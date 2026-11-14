@@ -1,5 +1,6 @@
 "use strict";
 (() => {
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   let ready = false, epoch = 0, pending = null;
   const wrappers = new WeakMap();
   const raw = () => window.pywebview?.api;
@@ -41,7 +42,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     const clear = document.getElementById('auth-logout');
     if (clear) clear.onclick = async () => {
-      if (!window.confirm('清空当前界面会话、文件读取许可和未执行计划？已保存文档及历史记录保留。')) return;
+      if (!await ask('清空当前界面会话、文件读取许可和未执行计划？已保存文档及历史记录保留。')) return;
       const result = await raw().logout();
       if (!result?.ok) { document.getElementById('auth-workspace-status').textContent = '当前任务未结束，暂不能清空会话。'; return; }
       epoch++; ready = false;

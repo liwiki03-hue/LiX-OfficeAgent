@@ -572,7 +572,7 @@
                 <p>按下面顺序核对当前提供方。引导只修改表单草稿，保存仍需独立确认；已填写不代表服务或模型能力已验证。</p>
                 <ol class="settings-setup-steps">
                   <li><strong>明确使用哪个提供方</strong><p id="settings-setup-provider-state"></p><button id="settings-setup-provider" class="btn secondary" type="button">选用当前提供方（仅草稿）</button></li>
-                  <li><strong>填写模型与服务地址</strong><p id="settings-setup-model-state"></p><p id="settings-setup-url-state"></p><button id="settings-setup-defaults" class="btn secondary" type="button">补齐缺失地址与模型（仅草稿）</button><p>只补空白，不覆盖自定义值；建议来自项目现有统一默认定义，仍需自行核对模型容量与能力。</p></li>
+                  <li><strong>填写模型名称与 API 地址</strong><p id="settings-setup-model-state"></p><p id="settings-setup-url-state"></p><button id="settings-setup-defaults" class="btn secondary" type="button">补齐缺失地址与模型（仅草稿）</button><p>只补空白，不覆盖自定义值；建议来自项目现有统一默认定义，仍需自行核对模型容量与能力。</p></li>
                   <li><strong>核对该提供方的密钥</strong><p id="settings-setup-key-state"></p><button id="settings-setup-key" class="btn secondary" type="button">前往填写密钥</button></li>
                   <li><strong>按需测试连接（可跳过）</strong><p id="settings-setup-test-state"></p><button id="settings-setup-test" class="btn secondary" type="button">前往测试连接</button></li>
                   <li><strong>查看真实差异并确认保存</strong><p id="settings-setup-save-state"></p><button id="settings-setup-save" class="btn secondary" type="button">前往保存确认</button></li>
@@ -585,11 +585,11 @@
                 </details>
               </div>
             </section>
-            <label for="settings-model">模型名</label><input id="settings-model" maxlength="200" autocomplete="off">
-            <label for="settings-url">服务地址</label><input id="settings-url" maxlength="2048" autocomplete="off">
-            <label for="settings-key">替换访问密钥（留空保留原值）</label><input id="settings-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
+            <label for="settings-model">模型名称</label><input id="settings-model" maxlength="200" autocomplete="off">
+            <label for="settings-url">API 地址</label><input id="settings-url" maxlength="2048" autocomplete="off">
+            <label for="settings-key">API 密钥（留空保留原值）</label><input id="settings-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
             <label><input id="settings-clear-key" type="checkbox">清除当前提供方的密钥</label><p id="settings-key-state"></p>
-            <p>输入框提示来自统一配置定义，模型名也可手动填写。字段未配置时由启动入口取值；磁盘已有空值不等同于未配置，需填入替换值。新密钥只用于当前提供方。</p>
+            <p>输入框提示来自统一配置定义，模型名称可手动填写。字段未配置时由启动入口取值；磁盘已有空值不等同于未配置，需填入替换值。新密钥只用于当前提供方。</p>
             <button id="settings-test" class="btn secondary" type="button" disabled>测试连接（当前草稿）</button>
             <p id="settings-test-status" role="status" aria-live="polite">仅在点击后联网；不发送生成请求，不证明工具调用成功。</p>
             <details class="settings-advanced"><summary>高级参数：上下文窗口</summary>
@@ -599,7 +599,7 @@
             <label for="settings-embedding-channel">内容检索用的通道</label><select id="settings-embedding-channel"><option value="local">本地离线</option><option value="api">联网接口</option></select>
             <p id="settings-embedding-api">联网检索固定使用百炼及其 DASHSCOPE_API_KEY，与当前对话提供方独立；现有后端仅接受官方兼容地址和受支持的检索模型、维度组合。</p>
             <p id="settings-embedding-local">本地检索不使用 API 密钥，只使用已经准备好的离线模型目录。</p>
-            <label id="settings-embedding-model-label" for="settings-embedding-model">检索模型名</label><input id="settings-embedding-model" maxlength="200" autocomplete="off">
+            <label id="settings-embedding-model-label" for="settings-embedding-model">检索模型名称</label><input id="settings-embedding-model" maxlength="200" autocomplete="off">
             <details class="settings-advanced"><summary>高级参数：检索维度与时限</summary>
             <label for="settings-embedding-dimension">检索向量维度（1至4096）</label><input id="settings-embedding-dimension" type="number" min="1" max="4096" step="1" autocomplete="off" disabled>
             <label for="settings-embedding-timeout">单次检索超时（1至20秒）</label><input id="settings-embedding-timeout" type="number" min="1" max="20" step="any" autocomplete="off" disabled>
@@ -754,6 +754,7 @@
       <div class="modal-actions"><button class="btn secondary" id="modal-cancel">取消</button><button class="btn confirm" id="modal-ok">确认</button></div>
     </div>
   </div>
+  <script src="confirm_dialog.js"></script>
   <script src="auth.js"></script>
   <script src="images.js"></script>
   <script src="imagegen.js"></script>
@@ -784,6 +785,7 @@
   <script src="chat_markdown.js"></script>
   <script src="daily.js"></script>
   <script src="workbench_ui.js"></script>
+  <script src="system_settings.js"></script>
   <script src="settings_workspace.js"></script>
   <script src="skill_discovery.js"></script>
   <script src="editor_adapter_contract.js"></script>

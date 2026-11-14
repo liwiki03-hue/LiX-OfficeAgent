@@ -36,7 +36,12 @@ def launch_floating(webview, gui, ocr_provider=None):
             try:
                 api._window_chrome.install()
             except Exception:
-                api._floating.notice('native_warning', {'text': '原生边缘缩放未就绪；窗口控制仍可用，请查看启动诊断'})
+                try:
+                    api._window_chrome.fallback()
+                    text = '自定义边界未加载，已使用系统窗框；拖动与缩放可使用系统边框'
+                except Exception:
+                    text = '窗口边界与系统窗框回退未就绪；请通过托盘恢复并查看诊断'
+                api._floating.notice('native_warning', {'text': text})
             try:
                 native.install()
             except Exception:

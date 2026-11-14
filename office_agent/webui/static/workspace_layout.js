@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById(id);
   if (!$('workspace') || $('document-workspace')) return;
   const make = (tag, id, text, parent) => {
@@ -188,8 +189,8 @@
   });
   const quick = make('div', 'workspace-quick-actions', '', request);
   quick.setAttribute('role', 'group'); quick.setAttribute('aria-label', '准备任务，不自动执行');
-  for (const [title, text] of [['统一术语', '将全文所有“旧术语”替换为“规范术语”，保留数字、单位、公式和引文'], ['润色', '润色所选章节，保留事实、数字、单位、公式、引文和限定条件']]) button('', title, quick, () => {
-    const input = $('doc-task-request'); if (input.value && !window.confirm('替换尚未提交的修改要求？不读取、不调用模型、不写入。')) return;
+  for (const [title, text] of [['统一术语', '将全文所有“旧术语”替换为“规范术语”，保留数字、单位、公式和引文'], ['润色', '润色所选章节，保留事实、数字、单位、公式、引文和限定条件']]) button('', title, quick, async () => {
+    const input = $('doc-task-request'); if (input.value && !await ask('替换尚未提交的修改要求？不读取、不调用模型、不写入。')) return;
     input.value = text; input.dispatchEvent(new Event('input', {bubbles: true})); input.focus();
     if (title === '润色') { modelActions.open = true; scope.open = true; }
   });

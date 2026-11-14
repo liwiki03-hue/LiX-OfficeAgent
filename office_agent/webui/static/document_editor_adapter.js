@@ -41,7 +41,7 @@
       return result;
     }
     open(data){return this.openDocument(data);}
-    async getSelectionReference(){const value=await this.request('selection');return {node_id:value.node_id,start:value.start,end:value.end};}
+    async getSelectionReference(allowParagraph=false,table=false){const value=await this.request('selection',{allowParagraph,table});return value.nodes?{nodes:value.nodes,whole_table:value.whole_table}:{node_id:value.node_id,start:value.start,end:value.end};}
     getSelection(){return this.request('selection');}
     getSnapshot(expectedDraftRevision){
       const revision=expectedDraftRevision??this.revision;

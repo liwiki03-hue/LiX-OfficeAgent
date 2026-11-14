@@ -10,7 +10,9 @@ from office_agent.writes import Editor, digest
 from test_professional_edits import fake_render
 
 STATIC = Path(__file__).resolve().parents[1] / 'office_agent/webui/static'
-EDGE = Path('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+from office_agent.browser_runtime import find_edge
+
+EDGE = find_edge() or Path('__LiX_Edge_not_installed__')
 
 
 def _browser(tmp_path, monkeypatch, *, real_render=False):
@@ -58,9 +60,11 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             page.set_default_timeout(65000 if real_render else 15000)
             page.route('**/*', lambda route: route.abort())
             page.expose_function('professionalHost', invoke)
-            html = re.sub(r'<script\b[^>]*>.*?</script>', '', (STATIC / 'index.html').read_text(encoding='utf-8'), flags=re.S)
+            markup = (STATIC / 'index.html').read_text(encoding='utf-8')
+            html = re.sub(r'<script\b[^>]*>.*?</script>', '', markup, flags=re.S)
             page.set_content(html)
-            page.add_style_tag(content=(STATIC / 'design_tokens.css').read_text(encoding='utf-8'))
+            if 'href="design_tokens.css"' in html:
+                page.add_style_tag(content=(STATIC / 'design_tokens.css').read_text(encoding='utf-8'))
             page.add_style_tag(content=(STATIC / 'theme.css').read_text(encoding='utf-8'))
             page.evaluate('''() => {
               document.getElementById('workspace').hidden = false; document.getElementById('workspace').inert = false;
@@ -72,7 +76,12 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
               window.OfficeAuth = {isAuthenticated: () => window.authenticated, wrapApi: value => value};
               window.pywebview = {api: new Proxy({}, {get: (_, method) => (...args) => window.professionalHost(method, args)})};
             }''')
+            if 'src="confirm_dialog.js"' in markup:
+                page.add_script_tag(path=str(STATIC / 'confirm_dialog.js'))
             page.add_script_tag(path=str(STATIC / 'professional.js'))
+            from tests.ui_confirmation import drive_legacy_confirmations
+            page._lix_real_render = real_render
+            drive_legacy_confirmations(page, monkeypatch)
             yield page, api, app, calls, receipts
         finally:
             browser.close()

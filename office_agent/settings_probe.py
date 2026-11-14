@@ -30,7 +30,8 @@ def prepare_probe(store, draft):
     if provider == 'ollama' and parsed.scheme == 'http' and parsed.hostname not in ('127.0.0.1', 'localhost', '::1'):
         raise SettingsError()
     source = store._values(store._read(store.root / '.env', True))
-    key = '' if clear or provider == 'ollama' else values.get('api_key') or source.get(provider.upper() + '_API_KEY') or ''
+    saved_url = source.get(provider.upper() + '_BASE_URL') or defaults['base_url']
+    key = '' if clear or provider == 'ollama' else values.get('api_key') or (source.get(provider.upper() + '_API_KEY') if url.rstrip('/') == saved_url.rstrip('/') else '') or ''
     if key:
         _validate({'api_key': key})
     return provider, url, values.get('model') or defaults['model'], key
@@ -43,9 +44,10 @@ def probe_connection(prepared, transport=None, *, include_models=False):
         headers['Authorization'] = 'Bearer ' + key
     endpoint = url.rstrip('/') + ('/api/tags' if provider == 'ollama' else '/models')
     started = time.monotonic()
+    from .network import transport as network_transport
     try:
         with httpx2.Client(timeout=TIMEOUT, follow_redirects=False, trust_env=False,
-                           transport=transport or httpx2.HTTPTransport(retries=0, trust_env=False)) as client:
+                           transport=transport or network_transport(endpoint)) as client:
             with client.stream('GET', endpoint, headers=headers) as response:
                 code = response.status_code
                 if code in (401, 403):

@@ -75,7 +75,13 @@ class NativeOrb:
         self.mode = 'orb'
         self.exiting = False
         self.hidden = False
-        self.topmost = True
+        from .window_preferences import WindowPreferences
+        self._preferences = WindowPreferences()
+        self._bounds = self._preferences.read()
+        self.topmost = self._bounds.get('topmost', False)
+        self._last_panel_mode = 'compact'
+        self._maximized_modes = {}
+        self._positioning = False
         self._drag = None
         self._moved = False
         self._accept = False
@@ -121,13 +127,17 @@ class NativeOrb:
         self.orb.FormBorderStyle = getattr(FormBorderStyle, 'None')
         self.orb.ShowInTaskbar = True
         self.orb.StartPosition = FormStartPosition.Manual
-        self.orb.TopMost = True
+        self.orb.TopMost = self.topmost
         self.orb.AllowDrop = True
         self.orb.BackColor = Color.FromArgb(28, 31, 36)
         self.orb.Cursor = Cursors.Hand
         self.font = Font('Microsoft YaHei UI', 9)
         self.tooltip = ToolTip()
-        self.tooltip.SetToolTip(self.orb, '拖入DOCX/XLSX后在本机打开解析；发送才调用模型，写副本需另行确认')
+        self.tooltip.ShowAlways = True
+        self.tooltip.InitialDelay = 500
+        self.tooltip.ReshowDelay = 500
+        self.tooltip.AutoPopDelay = 10000
+        self.tooltip.SetToolTip(self.orb, '打开助手；右键展开快捷菜单，拖动可移动，拖入文档可打开')
         self._shape()
         from .orb_morph import MorphVisual
         self.visual = MorphVisual(self)
@@ -138,6 +148,7 @@ class NativeOrb:
             self.visual.redraw()
 
         def down(sender, event):
+            self.tooltip.Hide(self.orb)
             if event.Button == MouseButtons.Left:
                 self._drag = (self.orb.PointToScreen(event.Location), self.orb.Location)
                 self._moved = False
@@ -173,7 +184,7 @@ class NativeOrb:
             elif self.visual.expanded:
                 self.visual.hide_actions(focus=True)
             else:
-                self.present('compact')
+                self.restore()
 
         def enter(sender, event):
             try:
@@ -187,6 +198,7 @@ class NativeOrb:
 
         def leave(sender, event):
             self._accept = False
+            self.tooltip.SetToolTip(self.orb, '收起快捷菜单' if self.visual.expanded else '打开助手；右键展开快捷菜单，拖动可移动，拖入文档可打开')
             self.visual.refresh()
 
         def drop(sender, event):
@@ -224,7 +236,7 @@ class NativeOrb:
             self._handlers.append(handler)
             return item
 
-        add('打开助手', lambda: self.present('compact'))
+        add('打开助手', lambda: self.restore())
         add('选择文档…', lambda: self._action(self.choose))
         add('最近文档', lambda: self._action(self.recent))
         self.menu.Items.Add('-')
@@ -232,7 +244,7 @@ class NativeOrb:
         self.ball_item = add('显示悬浮球', self.toggle_ball, ball_menu)
         self.ball_item.Checked = not self.hidden
         self.pin = add('置顶', self.toggle_topmost, ball_menu)
-        self.pin.Checked = True
+        self.pin.Checked = self.topmost
         self.motion_item = add('减少动态效果', self.toggle_motion, ball_menu)
         self.motion_item.ToolTipText = '系统减少动态、高对比度或节电模式始终优先；不写入配置文件'
         add('设置', lambda: self._action(self.settings))
@@ -256,10 +268,11 @@ class NativeOrb:
         def restore(sender, event):
             if event.Button == MouseButtons.Left:
                 self.observation('tray_restore_requested', {'mode': self.mode})
-                self.present('compact')
+                self.restore()
         self._handlers.append(restore)
         self.tray.MouseClick += restore
         self.form.FormClosing += self._closing
+        self.form.ResizeEnd += lambda sender, event: self._remember_panel()
         self.timer = Timer()
         self.timer.Interval = 1500
         self.timer.Tick += self._screens_changed
@@ -294,7 +307,7 @@ class NativeOrb:
         def procedure(hwnd, message, wparam, lparam):
             if message == 0x0312 and wparam == 0x4F41:
                 try:
-                    self.present('compact')
+                    self.restore()
                 except Exception:
                     self.warning('快捷键唤出失败；请使用托盘。')
                 return 0
@@ -341,7 +354,7 @@ class NativeOrb:
         if self.exiting or self.orb is None:
             return
         if self.wake():
-            self.present('compact')
+            self.restore()
         self.visual.check_environment()
         self._motion_menu()
         area = self._Screen.FromControl(self.orb).WorkingArea
@@ -429,8 +442,29 @@ class NativeOrb:
             self._ui(self.visual.toggle_actions)
 
     def _action(self, callback):
-        self.present('compact')
+        if callback is not self.choose:
+            self.restore()
         threading.Thread(target=callback, daemon=True).start()
+
+    def restore(self):
+        self.present(self._last_panel_mode)
+
+    def _remember_panel(self):
+        if self._positioning or self.mode not in {'compact', 'review'}:
+            return
+        maximum = str(self.form.WindowState) == 'Maximized'
+        if str(self.form.WindowState) == 'Minimized':
+            return
+        bounds = self.form.RestoreBounds if maximum else self.form.Bounds
+        self._bounds[self.mode] = {'x': int(bounds.X), 'y': int(bounds.Y), 'width': int(bounds.Width),
+                                  'height': int(bounds.Height), 'dpi': int(self.form.DeviceDpi),
+                                  'screen': str(self._Screen.FromControl(self.form).DeviceName)}
+        self._maximized_modes[self.mode] = maximum
+        try:
+            self._preferences.write(self._bounds)
+        except (OSError, ValueError):
+            from ..diagnostics import record
+            record('window', 'save_bounds', 'failed', code='preference_io')
 
     def present(self, mode):
         if mode not in {'orb', 'compact', 'review', 'hidden'}:
@@ -438,6 +472,10 @@ class NativeOrb:
         def apply():
             if self.exiting:
                 return
+            if mode in {'compact', 'review'} and mode == self.mode and self.form.Visible:
+                self.form.Activate()
+                return
+            self._remember_panel()
             self.mode = mode
             if mode in {'orb', 'hidden'}:
                 self.form.Hide()
@@ -447,18 +485,27 @@ class NativeOrb:
                     self.orb.Hide()
             else:
                 from System.Windows.Forms import FormWindowState
+                self._positioning = True
+                self._last_panel_mode = mode
                 self.orb.Hide()
-                area = self._Screen.FromControl(self.orb).WorkingArea
+                saved = self._bounds.get(mode)
+                screen = next((screen for screen in self._Screen.AllScreens if saved and screen.DeviceName == saved['screen']), self._Screen.FromControl(self.orb))
+                area = screen.WorkingArea
                 scale = max(1.0, float(self.form.DeviceDpi) / 96)
                 width, height = ((1280, 820) if getattr(self, 'paged_document', False) else (1120, 760)) if mode == 'review' else (420, 640)
-                width, height = min(int(width * scale), area.Width), min(int(height * scale), area.Height)
+                ratio = float(self.form.DeviceDpi) / saved['dpi'] if saved else scale
+                width, height = min(int((saved['width'] if saved else width) * ratio), area.Width), min(int((saved['height'] if saved else height) * ratio), area.Height)
                 self.form.MinimumSize = self._Size(min(int(360 * scale), area.Width), min(int(440 * scale), area.Height))
+                self.form.WindowState = FormWindowState.Normal
                 self.form.Size = self._Size(width, height)
-                x, y = clamp_position(self.orb.Left - width - 12, self.orb.Top - 40, width, height,
+                x, y = clamp_position(saved['x'] if saved else self.orb.Left - width - 12, saved['y'] if saved else self.orb.Top - 40, width, height,
                                       (area.Left, area.Top, area.Right, area.Bottom))
                 self.form.Location = self._Point(x, y)
                 self.form.Show()
-                self.form.WindowState = FormWindowState.Normal
+                self.form.TopMost = self.topmost
+                if self._maximized_modes.get(mode):
+                    self.form.WindowState = FormWindowState.Maximized
+                self._positioning = False
                 self.form.Activate()
                 self.observation('panel_visible', {'visible': bool(self.form.Visible),
                     'state': str(self.form.WindowState), 'mode': mode})
@@ -474,7 +521,13 @@ class NativeOrb:
         self.topmost = not self.topmost
         def apply():
             self.orb.TopMost = self.topmost
+            self.form.TopMost = self.topmost
             self.pin.Checked = self.topmost
+            self._bounds['topmost'] = self.topmost
+            try:
+                self._preferences.write(self._bounds)
+            except (OSError, ValueError):
+                pass
         self._ui(apply)
 
     def _closing(self, sender, event):

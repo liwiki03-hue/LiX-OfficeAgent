@@ -28,6 +28,8 @@ def exercise_assist_browser(session, capture=None, *, tracked=False):
     page.locator('#assist-targets input').first.check()
     page.locator('#assist-question').fill('Clarify the original observation while preserving measurements.')
     page.locator('#assist-start').click()
+    from tests.ui_confirmation import respond_to_confirmation
+    respond_to_confirmation(page)
     page.locator('#assist-suggestions fieldset textarea').wait_for()
     assert len(model.inputs) == 1
     text = page.locator('#assist-suggestions fieldset textarea').first

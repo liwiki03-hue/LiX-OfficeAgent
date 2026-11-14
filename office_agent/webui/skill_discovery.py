@@ -36,7 +36,8 @@ class DiscoveryError(Exception):
 
 def fetch(query):
     started = time.monotonic()
-    with httpx2.Client(timeout=8, follow_redirects=False, trust_env=False) as client:
+    from ..network import transport
+    with httpx2.Client(timeout=8, follow_redirects=False, trust_env=False, transport=transport(SEARCH_URL)) as client:
         with client.stream('GET', SEARCH_URL, params={'q': query, 'limit': MAX_RESULTS},
                            headers={'Accept': 'application/json', 'User-Agent': 'LiX-SkillDiscovery/1'}) as response:
             if response.status_code == 429:

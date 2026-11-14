@@ -154,15 +154,17 @@ def normalize_generated_image(raw: bytes) -> GeneratedImage:
 
 
 class OpenAIImageGenProvider:
-    """One request, no retries/redirects/proxies. Host must obtain approval first."""
+    """One request, no retries/redirects. Host must obtain approval first."""
     def __init__(self, *, transport_factory=None):
-        self._transport_factory = transport_factory or (lambda: httpx2.HTTPTransport(retries=0, trust_env=False))
+        self._transport_factory = transport_factory
 
     def generate(self, request: ImageRequest, config: ImageGenConfig) -> bytes:
         if not isinstance(request, ImageRequest) or not isinstance(config, ImageGenConfig):
             raise ImageGenError("image_provider_invalid_arguments")
         try:
-            with httpx2.Client(transport=_BoundedTransport(self._transport_factory(), config.timeout, config.api_key),
+            from .network import transport
+            inner = self._transport_factory() if self._transport_factory else transport(config.base_url)
+            with httpx2.Client(transport=_BoundedTransport(inner, config.timeout, config.api_key),
                                timeout=config.timeout, follow_redirects=False, trust_env=False,
                                headers={"Accept-Encoding": "identity"}) as http:
                 with OpenAI(api_key=config.api_key, base_url=config.base_url, max_retries=0,

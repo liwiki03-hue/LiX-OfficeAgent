@@ -19,7 +19,8 @@ def test_export_controls_are_mounted_per_message_and_human_only():
     assert 'id="diagram-save"' not in html and 'id="diagram-rollback"' not in html
     assert 'mount(host)' in js
     assert '保存这张图' in js and '撤销已保存的图' in js
-    assert 'window.confirm' in js
+    assert 'OfficeConfirm' in js
+    assert 'window.confirm' not in js
     assert 'plan_diagram_save(expected.source_sha256, expected.svg_sha256)' in js
     assert 'window.OfficeDiagramExport?.mount?.(exportActions)' in app
     for forbidden in ('innerHTML', 'fetch(', 'localStorage', 'response.svg', 'eval('):
@@ -40,7 +41,7 @@ function mk(){return {children:[],className:'',textContent:'',disabled:false,han
  addEventListener(n,f){this.handlers[n]=f},fire(n){return this.handlers[n]?.()},
  setAttribute(n,v){this.attrs[n]=v},removeAttribute(n){delete this.attrs[n]},
  append(...n){this.children.push(...n)}}}
-const window={OfficeAuth:{isAuthenticated:()=>active},addEventListener:(n,f)=>events.set(n,f),confirm:()=>mode!=='deny_save'};
+const window={OfficeAuth:{isAuthenticated:()=>active},addEventListener:(n,f)=>events.set(n,f),OfficeConfirm:{ask:async()=>mode!=='deny_save'}};
 const plan={ok:true,plan:{plan_id:token,selected_document:'C:\\owned\\selected.docx',destination_basename:'office-diagram-'+token+'.svg'}};
 const api={
 plan_diagram_save:(...args)=>{assert.deepEqual(args,[sha,svg]);plans++;if(['logout_pending','double_click'].includes(mode))return new Promise(r=>resolvePlan=r);return Promise.resolve(mode==='malformed_plan'?{ok:true,plan:{...plan.plan,destination_basename:'../foreign.svg'}}:plan)},
@@ -67,7 +68,7 @@ if(mode==='deny_save'){assert.equal(confirms[0][1],false);assert(status.textCont
 assert.equal(confirms[0][1],true);
 if(mode==='unknown_after_approval'){assert(status.textContent.includes('结果没法确认'));assert(!status.textContent.includes('PRIVATE FAILURE'));assert(undo.disabled);return}
 assert(!undo.disabled);
-if(mode==='deny_rollback')window.confirm=()=>false;
+if(mode==='deny_rollback')window.OfficeConfirm.ask=async()=>false;
 await undo.fire('click');assert.equal(undoConfirms.length,1);assert.equal(undoConfirms[0][0],rollback);
 if(mode==='deny_rollback'){assert.equal(undoConfirms[0][1],false);assert(status.textContent.includes('已取消，文件没有删除'));return}
 assert.equal(undoConfirms[0][1],true);
@@ -91,7 +92,7 @@ function mk(){return {children:[],className:'',textContent:'',disabled:false,han
  addEventListener(n,f){this.handlers[n]=f},fire(n){return this.handlers[n]?.()},
  setAttribute(n,v){this.attrs[n]=v},removeAttribute(n){delete this.attrs[n]},
  append(...n){this.children.push(...n)}}}
-const window={OfficeAuth:{isAuthenticated:()=>true},addEventListener(){},confirm:()=>true};
+const window={OfficeAuth:{isAuthenticated:()=>true},addEventListener(){},OfficeConfirm:{ask:async()=>true}};
 const api={plan_diagram_save:async()=>({ok:true,plan:{plan_id:'1'.repeat(32),selected_document:'C:\\x.docx',destination_basename:'office-diagram-'+'1'.repeat(32)+'.svg'}}),
 confirm_diagram_save:async()=>({ok:true,result:{saved:true,save_id:'1'.repeat(32),path:'C:\\out.svg'}}),
 plan_diagram_rollback:async()=>({ok:true,plan:{rollback_id:'2'.repeat(32)}}),confirm_diagram_rollback:async()=>({ok:true,result:{removed:true,audit_updated:true}})};

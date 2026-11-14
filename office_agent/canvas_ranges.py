@@ -42,7 +42,7 @@ def parse_tsv(text):
     return rows
 
 
-def read_range(data, item_id, start, end):
+def read_range(data, item_id, start, end, *, readonly_context=False):
     top, left, bottom, right = rectangle(start, end)
     first = engine.view(data, '.xlsx', item_id, top, left)
     for ref in first['merges']:
@@ -56,19 +56,28 @@ def read_range(data, item_id, start, end):
         (r1, c1), (r2, c2) = points
         if r1>r2 or c1>c2:
             raise GuardError('工作表合并范围顺序无效')
-        if max(top, r1) <= min(bottom, r2) and max(left, c1) <= min(right, c2):
+        if not readonly_context and max(top, r1) <= min(bottom, r2) and max(left, c1) <= min(right, c2):
             raise GuardError('区域包含合并单元格；区域复制/粘贴暂不开放，请使用承载格的单格编辑')
-    windows = {}
+    windows = {cell['id']: cell for cell in first['cells']}
+    raw = engine.load(data, '.xlsx')
+    item = engine.item_for(raw, '.xlsx', item_id)
+    existing = {cell.get('r') for cell in engine.xml(raw[item['part']]).findall('.//' + engine.S + 'sheetData/' + engine.S + 'row/' + engine.S + 'c')}
     rows = []
     for row in range(top, bottom+1):
         values = []
         for col in range(left, right+1):
-            key = (top+(row-top)//30*30, left+(col-left)//16*16)
-            if key not in windows:
-                current = first if key == (top, left) else engine.view(data, '.xlsx', item_id, *key)
-                windows[key] = {cell['id']:cell for cell in current['cells']}
             target = engine.column(col)+str(row)
-            values.append(windows[key].get(target, {'id':target,'value':'','type':'inlineStr','formula':None,'editable':not first['protected']}))
+            if target not in windows:
+                current = engine.view(data, '.xlsx', item_id, row, col)
+                windows.update({cell['id']:cell for cell in current['cells']})
+            if target not in windows and target in existing:
+                raise GuardError('当前已用单元格无法可靠读取；请缩小范围，未以空值替代')
+            cell = dict(windows.get(target, {'id':target,'value':'','type':'inlineStr','formula':None,'editable':not first['protected']}))
+            cell['merged'] = any(max(top, int(re.search(r'\d+', ref.split(':')[0])[0])) <= row <= int(re.search(r'\d+', ref.split(':')[-1])[0])
+                                 and engine.col_number(re.match('[A-Z]+', ref.split(':')[0])[0]) <= col <= engine.col_number(re.match('[A-Z]+', ref.split(':')[-1])[0]) for ref in first['merges'])
+            if cell['merged']:
+                cell['editable'] = False
+            values.append(cell)
         rows.append(values)
     stream = io.StringIO(newline='')
     csv.writer(stream, delimiter='\t', lineterminator='\n').writerows([
@@ -79,6 +88,24 @@ def read_range(data, item_id, start, end):
     return {'item_id':item_id, 'start':engine.column(left)+str(top), 'end':engine.column(right)+str(bottom),
             'rows':bottom-top+1, 'cols':right-left+1, 'cells':rows, 'tsv':tsv,
             'copy_scope':'原始文字、数值及公式表达式；不是显示格式或旧公式缓存'}
+
+
+def used_selection(data, item_id, axis, index):
+    if axis not in {'row', 'column'} or type(index) is not int or index < 1:
+        raise GuardError('请选择当前工作表的行或列标题')
+    raw = engine.load(data, '.xlsx')
+    item = engine.item_for(raw, '.xlsx', item_id)
+    root = engine.xml(raw[item['part']])
+    addresses = [cell.get('r') for cell in root.findall('.//' + engine.S + 'sheetData/' + engine.S + 'row/' + engine.S + 'c')]
+    points = [engine.address(value) for value in addresses]
+    last_row = max((point[0] for point in points), default=1)
+    last_col = max((point[1] for point in points), default=1)
+    if axis == 'row' and index > last_row or axis == 'column' and index > last_col:
+        raise GuardError('该标题超出当前已用范围，请选择明确单元格')
+    start, end = (('A' + str(index), engine.column(last_col) + str(index)) if axis == 'row'
+                  else (engine.column(index) + '1', engine.column(index) + str(last_row)))
+    rectangle(start, end)
+    return {'start': start, 'end': end, 'scope': '当前已用范围内的整行' if axis == 'row' else '当前已用范围内的整列', 'max_cells': MAX_CELLS}
 
 
 def paste_operations(data, item_id, start, text, mode):

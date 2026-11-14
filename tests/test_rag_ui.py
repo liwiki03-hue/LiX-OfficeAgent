@@ -67,7 +67,7 @@ def test_controller_text_and_native_api_only():
                       "sessionStorage", "fetch(", "XMLHttpRequest", "eval(", "new Function",
                       "console.", "document.write", "execute_script", "run_script"):
         assert forbidden not in source
-    for required in ("textContent", "createElement", "OfficeAuth.wrapApi", "window.confirm",
+    for required in ("textContent", "createElement", "OfficeAuth.wrapApi", "OfficeConfirm",
                      "get_rag_snapshot", "plan_rag_index", "confirm_rag_index", "plan_rag_query",
                      "confirm_rag_query", "get_rag_evidence", "plan_rag_rollback", "confirm_rag_rollback",
                      "officeauth:authenticated", "officeauth:unauthenticated", "officediagram:invalidate",
@@ -101,7 +101,7 @@ const snapshot=()=>({ok:true,snapshot:{exists:true,model:'fixture',dimension:2,r
 const read=()=>({ok:true,evidence:{text:'json plaintext',offset:0,has_more:true}});
 const methods={get_rag_snapshot:async()=>snapshot(),plan_rag_index:async()=>ip(),confirm_rag_index:async()=>saved(),plan_rag_query:async()=>qp(),confirm_rag_query:async()=>evidence(),get_rag_evidence:async()=>read(),plan_rag_rollback:async(kind)=>({ok:true,plan:kind==='index'?{rollback_id:RID,operation:'rollback',confirmation_required:true,revision:1,chunk_count:1,first_absent_restored_empty:false}:{rollback_id:ERID,operation:'remove_evidence',confirmation_required:true,wrote_nothing:true,expires_in_seconds:300}}),confirm_rag_rollback:async()=>({ok:true,result:{status:'rolled_back',restored:true,verified:true,wrote_nothing:false}})};
 const raw=Object.fromEntries(Object.keys(methods).map(k=>[k,async(...a)=>{calls.push([k,...a]);return methods[k](...a);} ]));
-const window={pywebview:{api:raw},OfficeAuth:{isAuthenticated:()=>authenticated,wrapApi:a=>a,ensure:async()=>{ensured++;authenticated=true;}},addEventListener:(n,f)=>(events[n] ||= []).push(f),confirm:()=>{calls.push(['modal']);modalHook();return modal;}};
+const window={pywebview:{api:raw},OfficeAuth:{isAuthenticated:()=>authenticated,wrapApi:a=>a,ensure:async()=>{ensured++;authenticated=true;}},addEventListener:(n,f)=>(events[n] ||= []).push(f),OfficeConfirm:{ask:async()=>{calls.push(['modal']);modalHook();return modal;}}};
 const document={readyState:'complete',getElementById:id=>nodes[id]||null,createElement:()=>new Element(),addEventListener:()=>{}};
 if(scenario==='initial_auth')authenticated=false;
 if(scenario==='initial_api')delete window.pywebview;

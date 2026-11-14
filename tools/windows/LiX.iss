@@ -21,7 +21,10 @@ InfoBeforeFile={#PayloadDir}\INSTALL-NOTES.txt
 SetupIconFile={#PayloadDir}\app\office_agent\webui\static\brand\lix.ico
 UninstallDisplayIcon={app}\LiX.exe
 OutputDir={#OutputDir}
-OutputBaseFilename=LiX-Setup-{#Version}-preview-x64
+#ifndef Flavor
+#define Flavor "preview"
+#endif
+OutputBaseFilename=LiX-Setup-{#Version}-{#Flavor}-x64
 Compression=lzma2
 SolidCompression=yes
 AppMutex=LiXInstalledRuntime

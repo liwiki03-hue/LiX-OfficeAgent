@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   let root=null,state=null,selected=null,dirty=false,operation=false,epoch=0,timer=null,formRevision=0,previewKey='',polling=false,sourceNode=null,opening=false,returnFocus=null;
   const dialogs=new Set();
   const names={cover:'封面',section:'章节',bullets:'标题与要点',columns:'双栏对比',table:'普通表格',chart:'数据柱状图',image:'图文'};
@@ -187,7 +188,7 @@
   }
   async function edit(action,fields={}){
     if(operation)return;
-    if(action!=='update'&&dirty&&!window.confirm('放弃本页未保存的输入？'))return;
+    if(action!=='update'&&dirty&&!await ask('放弃本页未保存的输入？'))return;
     operation=true;controls();const previousInput=action==='update'?JSON.stringify(formValues()):null;
     try{
       const previousIds=new Set(state.spec.slides.map(row=>row.id));
@@ -203,8 +204,8 @@
   function renderList(){
     const list=root.querySelector('[data-presentation-slides]');list.replaceChildren();
     state.spec.slides.forEach((slide,index)=>{
-      const choose=button((index+1)+'. '+slide.title,list,()=>{
-        if(operation)return;if(dirty&&!window.confirm('放弃本页未保存的输入？'))return;
+      const choose=button((index+1)+'. '+slide.title,list,async ()=>{
+        if(operation)return;if(dirty&&!await ask('放弃本页未保存的输入？'))return;
         selected=slide.id;dirty=false;renderList();renderEditor();showPreview();
       });choose.dataset.slide=slide.id;choose.setAttribute('aria-current',selected===slide.id?'page':'false');
     });
@@ -234,7 +235,7 @@
     button('保存本页到大纲',pane,()=>edit('update',formValues()));
     const actions=make('div','',pane);actions.className='presentation-actions';
     button('上移',actions,()=>edit('move',{direction:'up'}));button('下移',actions,()=>edit('move',{direction:'down'}));
-    button('删除本页',actions,()=>{if(window.confirm('从大纲移除此页？不会删除已有PPTX。'))return edit('delete');});
+    button('删除本页',actions,async ()=>{if(await ask('从大纲移除此页？不会删除已有PPTX。'))return edit('delete');});
     controls();
   }
   async function build(){
@@ -247,7 +248,7 @@
     if(operation||dirty)return;
     operation=true;controls();
     try{
-      const allowOld=state.source_status==='old_draft'&&window.confirm('来源草稿已改变。是否明确继续使用本次捕获的旧快照？');
+      const allowOld=state.source_status==='old_draft'&&await ask('来源草稿已改变。是否明确继续使用本次捕获的旧快照？');
       if(state.source_status==='old_draft'&&!allowOld)return;
       const result=await call('presentation_plan',state.spec.id,state.spec.revision,Boolean(allowOld));if(result.cancelled)return;
       const plan=result.plan,node=modal('确认发布演示稿',root.querySelector('[data-presentation-export]'));
@@ -286,10 +287,17 @@
       if(output.status!=='verified')continue;
       button('打开位置',item,()=>call('presentation_saved_action',output.id,'open'));
       button('撤销本次发布',item,async()=>{
-        await call('presentation_saved_action',output.id,'rollback_plan');
-        const confirm=window.confirm('仅移除本次生成的PPTX，保留来源和审计；确认撤销？');
-        const result=await call('presentation_saved_action',output.id,'rollback',confirm);
-        message(result.result.status==='rolled_back'?'本次发布已撤销':result.result.status==='uncertain'?'撤销结果不确定，请核对目录':'已取消或拒绝撤销，请核对记录');await poll();
+        if(operation||!root)return;
+        const mine=epoch,id=state.spec.id;
+        operation=true;controls();
+        try{
+          await call('presentation_saved_action',output.id,'rollback_plan');
+          if(!root||mine!==epoch||state.spec.id!==id)return;
+          const confirm=await ask('仅移除本次生成的PPTX，保留来源和审计；确认撤销？')===true;
+          if(!root||mine!==epoch||state.spec.id!==id)return;
+          const result=await call('presentation_saved_action',output.id,'rollback',confirm);
+          message(result.result.status==='rolled_back'?'本次发布已撤销':result.result.status==='uncertain'?'撤销结果不确定，请核对目录':'已取消或拒绝撤销，请核对记录');await poll();
+        }finally{if(mine===epoch){operation=false;controls();}}
       });
       const details=make('details','',item);make('summary','文件路径',details);make('p',output.path,details);
     }
@@ -305,15 +313,15 @@
       controls();renderOutputs();await showPreview();
     }finally{polling=false;}
   }
-  function close(){
-    if(operation)return;if(dirty&&!window.confirm('放弃本页未保存的输入？已保存大纲仍在本窗口。'))return;
+  async function close(){
+    if(operation)return;if(dirty&&!await ask('放弃本页未保存的输入？已保存大纲仍在本窗口。'))return;
     epoch++;clearInterval(timer);timer=null;root?.close();root=null;dirty=false;previewKey='';
   }
   function mount(){
     if(root?.isConnected){renderList();renderEditor();controls();showPreview();return;}
     const previous=returnFocus||document.activeElement;root=make('dialog','',document.body);const node=root;root.className='presentation-workspace';root.setAttribute('aria-label','演示稿工作区');
     const header=make('header','',root);make('strong','',header).dataset.presentationTitle='';
-    button('新建',header,()=>{if(dirty&&!window.confirm('放弃本页未保存输入并新建？'))return;createSource(header.querySelector('button'));});
+    button('新建',header,async ()=>{if(dirty&&!await ask('放弃本页未保存输入并新建？'))return;createSource(header.querySelector('button'));});
     button('新增一页',header,()=>edit('add'));
     const preview=button('生成实际预览',header,build);preview.dataset.presentationBuild='';preview.className='presentation-primary';
     const publish=button('发布PPTX',header,exportDeck);publish.dataset.presentationExport='';

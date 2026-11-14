@@ -1,8 +1,12 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   let snapshot = null, cursor = 0, polling = false, epoch = 0, submitting = false, pending = null;
   let operation = 0, feedbackOperation = 0;
+  let accessDialog = null, autoAction = false;
+  const automaticAttempts = new Set();
+  const accessLabels = {save_copy:'自动存副本',edit:'仅修改草稿'};
   let planSignature = '', outputSignature = '';
   let adopted = new Set(), seenMessages = new Set(), seenSkills = new Set(), viewVersion = '', modelHome = null, timer = null, lastPoll = 0;
   const make = (tag, text, parent, id) => {
@@ -17,6 +21,55 @@
     node.addEventListener('click', action); return node;
   };
   const api = () => window.OfficeAuth?.wrapApi(window.pywebview?.api);
+  const access = () => snapshot?.access || {id:'',level:'save_copy',serial:0};
+  function accessSettings() {
+    if (!snapshot?.document?.ready || accessDialog?.open) return;
+    const owner = {id:snapshot.document.id,version:snapshot.document.version,epoch:snapshot.epoch}, previous = document.activeElement;
+    const node = make('dialog','',document.body); node.className='paged-dialog document-access-dialog'; node.setAttribute('aria-label','编辑方式'); accessDialog=node;
+    make('h2','编辑方式',node); make('p',snapshot.document.name,node);
+    const choices = make('div','',node); choices.className='document-access-choices';
+    for (const [level,description] of [['save_copy','发送要求后直接修改，自动生成验证副本。'],['edit','直接修改草稿，由你选择何时保存。']]) {
+      const label=make('label','',choices),input=make('input','',label); input.type='radio';input.name='document-access';input.value=level;input.checked=access().level===level;
+      const text=make('span','',label);make('strong',accessLabels[level],text);make('small',description,text);
+    }
+    make('p','原文件保留。停止后不再处理，重新发送要求可继续。',node).className='document-access-scope';
+    const message=make('p','',node);message.setAttribute('role','alert');
+    const actions=make('div','',node);actions.className='paged-dialog-actions';
+    button('取消',actions,()=>node.close());
+    if(access().id)button('停止本次修改',actions,async()=>{
+      if(snapshot?.document?.id!==owner.id||snapshot?.epoch!==owner.epoch){message.textContent='文档已切换，请关闭后重新选择。';return;}
+      const result=await call('floating_stop');if(result?.ok)node.close();else message.textContent=result?.error||'未取得停止结果，请核对当前状态。';
+    });
+    const apply=button('应用',actions,async()=>{
+      if(snapshot?.document?.id!==owner.id||snapshot?.epoch!==owner.epoch){message.textContent='文档已切换，请关闭后重新选择。';return;}
+      const level=node.querySelector('input:checked').value;apply.disabled=true;
+      try{
+        const result=await api().floating_set_access(owner.id,owner.version,owner.epoch,level,true);
+        if(!result?.ok)throw Error(result?.error||'编辑方式未更新');
+        if(snapshot?.document?.id===owner.id&&snapshot.epoch===owner.epoch){snapshot.access=result.access;render(snapshot);}
+        node.close();await refresh();
+      }catch(error){message.textContent=error.message;apply.disabled=false;}
+    });apply.className='paged-primary';
+    node.addEventListener('close',()=>{if(accessDialog===node)accessDialog=null;node.remove();if(previous?.isConnected)previous.focus();});node.showModal();
+  }
+  async function openOutput(row) {
+    if(window.OfficePaged?.active()&&!await window.OfficePaged.beforeSwitch())return;
+    if(window.OfficeNative?.active()&&!await window.OfficeNative.beforeSwitch())return;
+    const result=await call('floating_select_output',row.id,true,access().id||null);
+    if(result?.ok)$('floating-document').replaceChildren();
+  }
+  async function driveAccess(state) {
+    if(autoAction||state.busy||!state.document?.ready||state.stage==='uncertain'||state.stage==='stopped'||document.querySelector('dialog[open]'))return;
+    const created=state.outputs.find(row=>!row.undone&&row.continue_editing?.serial===state.access?.serial&&row.source_version===state.document.version);
+    const plan=state.access?.id&&state.access.level==='save_copy'&&!state.paged&&!state.canvas&&state.plans.length===1?state.plans[0]:null;
+    const key=created?'open:'+created.id:plan?state.access.id+':plan:'+plan.plan.id:null;
+    if(!key||automaticAttempts.has(key))return;
+    automaticAttempts.add(key);autoAction=true;
+    try{
+      if(created)await openOutput(created);
+      else await call('floating_confirm',state.session_id,plan.plan.id,plan.revision,state.document.version,false,state.access.id);
+    }finally{autoAction=false;}
+  }
   function feedback(text) { if ($('floating-status')) { $('floating-status').textContent = text; $('floating-status').dataset.feedbackKind = ''; } }
   async function call(name, ...args) {
     const mine = epoch, documentId = snapshot?.document?.id, ownOperation = ++operation;
@@ -159,7 +212,7 @@
       accept.disabled = adopted.has(plan.id);
       button('不采用', actions, () => call('floating_confirm', state.session_id, plan.id, row.revision, state.document.version, false));
       const confirm = button('确认生成副本…', actions, async () => {
-        if (!window.confirm('请核对当前差异。将按要求版本 ' + row.revision + ' 备份、生成新副本、重开校验并渲染。不会覆盖原件。确认执行这一组？')) return;
+        if (!await ask('请核对当前差异。将按要求版本 ' + row.revision + ' 备份、生成新副本、重开校验并渲染。不会覆盖原件。确认执行这一组？')) return;
         confirm.disabled = true;
         await call('floating_confirm', state.session_id, plan.id, row.revision, state.document.version, true);
       });
@@ -167,49 +220,45 @@
     }
   }
   function renderOutputs(state) {
-    const signature = JSON.stringify([state.outputs, state.revision, state.document?.version]);
+    const signature = JSON.stringify([state.outputs, state.revision, state.document?.version, state.paged?.editable]);
     if (signature === outputSignature) return;
     outputSignature = signature;
     const pane = $('floating-outputs'); pane.replaceChildren();
     for (const row of state.outputs) {
       const card = make('article', '', pane); card.className = 'floating-result';
       const simplified=row.kind==='paged_editable_copy';
-      make('h3', row.undone ? '副本已撤销' : simplified ? '简化文字副本已生成' : '副本已生成并通过验证', card);
+      const current=state.document?.ready&&row.output_sha256===state.document.version;
+      make('h3', row.undone ? '副本已撤销' : current ? state.paged?.editable?'当前编辑副本':'已打开副本' : simplified ? '简化文字副本已生成' : '副本已生成并通过验证', card);
       make('p', String(row.output || '').split(/[\\/]/).pop(), card);
-      if(simplified&&!row.undone)make('p','正文文字已核对；原样式与分页已重建，打开后再核对编辑能力。',card);
+      if(simplified&&!row.undone)make('p',current?'格式已简化；原文件保留。':'正文文字已核对；原样式与分页已重建，打开后再核对编辑能力。',card);
       const details = make('details', '', card); make('summary', '路径与验证详情', details);
       make('p', row.output, details);
       make('p', row.render_diff ? '指定渲染器闸门已通过；不代表 Word 人工质量验收。' : '未提供渲染结果，请核对审计。', details);
       if (!row.undone) {
         if (row.source_version === state.document?.version && row.instruction_revision < state.revision) make('p', '这是上一版要求的结果，有新要求待处理；尚未完成最新要求。', card);
         button('查看副本内容…', card, async () => {
-          if (!window.confirm('读取当前记录的已验证副本，在软件内查看有界结构文本？不会切换修改基线或恢复批准。')) return;
           const response = await call('floating_preview_output', row.id, true);
           if (response?.ok) {
             if(window.OfficePaged?.active())window.OfficePaged.previewStructure(response.view,'已验证副本 · 只读结构文本');
             else {showView(response.view, '已验证副本 · 只读', row.id); $('floating-root').dataset.tab = 'document';}
           }
         });
-        button(simplified?'打开副本编辑…':'基于此副本继续…', card, async () => {
-          if (window.confirm('将重新准入这一副本并重新确认读取。旧计划和批准不沿用。是否继续？')) {
-            if(window.OfficePaged?.active()&&!await window.OfficePaged.beforeSwitch())return;
-            if(window.OfficeNative?.active()&&!await window.OfficeNative.beforeSwitch())return;
-            const result = await call('floating_select_output', row.id); if (result?.ok) $('floating-document').replaceChildren();
-          }
-        });
-        button('撤销本次副本…', card, () => {
-          if (window.confirm('仅删除本次审计登记且内容未改变的副本，保留原稿与备份。确认撤销？')) call('floating_rollback', row.id, true);
+        if(!current)button(simplified?'打开副本编辑…':'基于此副本继续…', card, () => openOutput(row));
+        button('撤销本次副本…', card, async () => {
+          if (await ask('仅删除本次审计登记且内容未改变的副本，保留原稿与备份。确认撤销？')) call('floating_rollback', row.id, true);
         });
       }
     }
   }
   function render(state) {
     const doc = state.document;
+    const permission=$('floating-access');
+    if(permission){permission.textContent=accessLabels[state.access?.level]||accessLabels.save_copy;permission.disabled=!doc?.ready;permission.dataset.level=state.access?.level||'save_copy';permission.title='编辑方式：'+permission.textContent;permission.setAttribute('aria-label',permission.title);}
     $('floating-root').dataset.document = doc ? doc.ready ? 'ready' : 'awaiting' : 'none';
     $('floating-title').textContent = doc?.name || 'LiX · 文档助手';
     const phase = state.open_request?.phase;
     const opening = ['receiving','admission_pending','parsing'].includes(phase);
-    $('floating-identity').textContent = doc ? (state.stage === 'changed' ? '源文件已改变，请重新选择并读取' : doc.ready ? '已在本机打开' : doc.source_origin === 'native_drop' ? '正在本机打开解析' : '等待读取同意') + ' · ' + (doc.editable ? '确认后生成副本' : '只读材料') : '拖入DOCX/XLSX后在本机打开；发送才调用模型';
+    $('floating-identity').textContent = doc ? (state.stage === 'changed' ? '源文件已改变，请重新选择并读取' : doc.ready ? '已在本机打开' : doc.source_origin === 'native_drop' ? '正在本机打开解析' : '等待读取同意') + ' · ' + (doc.editable ? '对话修改 · 原稿保留' : '只读材料') : '拖入DOCX/XLSX后在本机打开；发送才调用模型';
     $('floating-read').hidden = !doc || doc.ready || doc.source_origin === 'native_drop';
     $('floating-composer').hidden = false;
     $('floating-drop').hidden = !state.draft_drop_pending&&(!state.drop_pending || !['failed','blocked','cancelled'].includes(phase));
@@ -220,8 +269,9 @@
     $('floating-send').title = $('floating-send').textContent;
     $('floating-stop').disabled = !state.busy && !opening;
     $('floating-resolve-protection').hidden = !state.needs_clarification;
-    const stages = {rolled_back:'副本已撤销，原稿保留', verified:'副本已验证；可明确选择版本继续', uncertain:'结果不确定；请核对产物和审计，不要重复执行', failed:'本轮未完成；要求与记录保留', changed:'来源已改变，请重新选择并读取', stopped:'已停止后续步骤；远端请求不保证已取消', needs_clarification:'请在文档视图勾选需要保护的位置，再继续生成方案'};
-    const pendingResult = state.stage === 'verified' && state.outputs.some(row => !row.undone && row.source_version === doc?.version && row.instruction_revision < state.revision);
+    const stages = {rolled_back:'副本已撤销，原稿保留', verified:state.paged||state.canvas?'副本已验证，继续输入即可修改':'副本已验证；可明确选择版本继续', uncertain:'结果不确定；请核对产物和审计，不要重复执行', failed:'本轮未完成；要求与记录保留', changed:'来源已改变，请重新选择并读取', stopped:'已停止后续步骤；远端请求不保证已取消', needs_clarification:'请在文档视图勾选需要保护的位置，再继续生成方案'};
+    const currentOutputs = state.outputs.filter(row => !row.undone && row.source_version === doc?.version);
+    const pendingResult = state.stage === 'verified' && currentOutputs.length > 0 && currentOutputs.every(row => row.instruction_revision < state.revision);
     const back = $('floating-return');
     if (back) {
       const awaitingConfirmation = Boolean(state.needs_clarification || state.plans.length);
@@ -238,7 +288,7 @@
       positionBack();
     }
     const openingText = {receiving:'已接收文件，正在打开',admission_pending:'正在检查文件与访问范围；可以先写要求',parsing:'正在本机解析；可先保存要求，尚未调用模型',failed:state.open_request?.error || '本地打开失败，可重试；输入保留',cancelled:'已取消打开；输入保留'};
-    $('floating-progress').textContent = openingText[phase] || (state.needs_clarification ? stages.needs_clarification : state.busy ? (state.stage === 'executing' || state.paged?.publishing ? '正在写副本与验证；补充要求将排队' : '正在生成方案；可以继续追加要求') : state.plans.length ? '方案待审阅，尚未写入' : pendingResult ? '上一版副本已验证；新要求待明确选择版本后处理' : stages[state.stage] || '就绪');
+    $('floating-progress').textContent = openingText[phase] || (state.needs_clarification ? stages.needs_clarification : state.busy ? (state.stage === 'executing' || state.paged?.publishing || state.canvas?.publishing ? '正在写副本与验证；补充要求将排队' : '正在生成方案；可以继续追加要求') : state.plans.length ? '方案待审阅，尚未写入' : pendingResult ? '上一版副本已验证；新要求待明确选择版本后处理' : stages[state.stage] || '就绪');
     $('floating-progress').classList.add('state-badge');
     if(state.paged?.requirements?.length&&state.paged.requirements.every(row=>row.cancelled))$('floating-progress').textContent=state.paged.publishing?'副本事务已开始，将按原快照完成；取消仅作用于后续处理':state.busy?'要求已取消，等待已发请求结束；不再派发后续步骤':'本轮要求已全部取消；草稿和副本保留';
     $('floating-progress').dataset.state = state.stage === 'uncertain' ? 'unknown' : state.stage === 'failed' ? 'error' : state.busy || opening ? 'running' : state.plans.length ? 'waiting' : state.stage === 'verified' ? 'done' : 'ready';
@@ -249,15 +299,17 @@
     if (viewVersion !== identity) { viewVersion = identity; $('floating-document').replaceChildren(); }
     renderPlans(state); renderOutputs(state);
   }
-  async function refresh() {
+  async function refresh(automatic=false) {
     if (!window.OfficeFloating.active || polling || !window.OfficeAuth?.isAuthenticated()) return;
-    if (['orb','hidden'].includes(snapshot?.presentation) && Date.now() - lastPoll < 2000) return;
+    const interval=document.hidden||['orb','hidden'].includes(snapshot?.presentation)?5000:snapshot?.busy?350:1500;
+    if (automatic && Date.now() - lastPoll < interval) return;
     lastPoll = Date.now();
     polling = true; const mine = epoch;
     try {
       const state = await api().floating_snapshot(cursor);
       if (mine !== epoch || !state?.ok) return;
-      if (snapshot && snapshot.epoch !== state.epoch) { $('floating-timeline').replaceChildren(); adopted.clear(); seenMessages.clear(); seenSkills.clear(); feedback(''); }
+      if(snapshot?.epoch===state.epoch&&snapshot.access?.serial>state.access?.serial)state.access=snapshot.access;
+      if (snapshot && snapshot.epoch !== state.epoch) { $('floating-timeline').replaceChildren(); adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();accessDialog?.close();feedback(''); }
       const switched = !snapshot || snapshot.document?.id !== state.document?.id || snapshot.document?.version !== state.document?.version;
       const availabilityChanged = snapshot?.document?.ready !== state.document?.ready;
       snapshot = state;
@@ -287,6 +339,7 @@
       cursor = state.cursor; render(state);
       window.OfficePaged?.update(state).catch(error => feedback(error.message));
       window.OfficeNative?.update(state).catch(error => feedback(error.message));
+      driveAccess(state).catch(error=>feedback(error.message));
       if ((switched || state.gap || availabilityChanged && !$('floating-document').dataset.outputId) && state.view) showView(state.view);
       if (switched && state.queued_for_next_version.length && !$('floating-input').value.trim()) {
         $('floating-input').value = state.queued_for_next_version.join('\n');
@@ -319,8 +372,8 @@
     make('h2', '复用历史要求', dialog);
     make('p', '只填入草稿，不发送或恢复批准；请核对是否已执行。', dialog);
     if (result.limited) make('p', '仅显示有界扫描中的最近5组，历史可能不完整。', dialog);
-    const fill = text => {
-      if ($('floating-input').value.trim() && !window.confirm('替换当前未发送草稿？不会发送请求。')) return;
+    const fill = async text => {
+      if ($('floating-input').value.trim() && !await ask('替换当前未发送草稿？不会发送请求。')) return;
       $('floating-input').value = text; dialog.close();
       feedback('历史要求已填入草稿；请核对已有产物，避免重复修改，再主动发送。');
     };
@@ -341,13 +394,13 @@
     const header = make('header', '', root);
     const logo = make('img', '', header); logo.src = 'brand/lix.png'; logo.alt = 'LiX'; logo.className = 'lix-brand-icon'; logo.width = logo.height = 24;
     make('strong', 'LiX · 文档助手', header, 'floating-title');
-    window.OfficeAgentElements.iconButton(button('选择文档', header, async () => { if (window.OfficePaged?.active() && !await window.OfficePaged.beforeSwitch()) return; if(window.OfficeNative?.active()&&!await window.OfficeNative.beforeSwitch())return; await call('floating_choose'); await call('floating_present', 'review'); }, 'floating-choose'), 'folder-open');
+    window.OfficeAgentElements.iconButton(button('选择文档', header, async () => { if (window.OfficePaged?.active() && !await window.OfficePaged.beforeSwitch()) return; if(window.OfficeNative?.active()&&!await window.OfficeNative.beforeSwitch())return; const selected=await call('floating_choose'); if(selected?.ok&&!selected.cancelled&&selected.document_id===snapshot?.document?.id&&selected.epoch===snapshot?.epoch)await call('floating_present', 'review'); }, 'floating-choose'), 'folder-open');
     const collapse = button('收起', header, () => call('floating_present', 'orb'));
     const menuDetails = make('details', '', header); make('summary', '更多', menuDetails);
     window.OfficeAgentElements.iconButton(menuDetails.querySelector('summary'), 'ellipsis', '更多');
     window.OfficeWindowChrome?.attach(header, collapse);
     const menu = make('div', '', menuDetails); menu.className = 'floating-menu';
-    const group = name => { const section = make('section', '', menu); section.setAttribute('aria-label', name); return section; };
+    const group = name => { const folded=['当前任务','工具与记录'].includes(name),section = make(folded?'details':'section', '', menu); section.setAttribute('aria-label', name); if(folded)make('summary',name,section);return section; };
     const documentActions = group('文档');
     button('文档审阅', documentActions, () => {menuDetails.open=false;call('floating_present', 'review');});
     button('结构文本',documentActions,()=>{menuDetails.open=false;if(window.OfficePaged?.active())window.OfficePaged.previewStructure(snapshot.view,'原稿 · 只读有界结构文本');else{showView(snapshot.view);root.dataset.tab='document';}}).title='查看当前有界结构文本';
@@ -355,7 +408,7 @@
     const taskActions = group('当前任务');
     button('重新生成方案', taskActions, () => { menuDetails.open = false; call('floating_start_again', false); });
     button('继续排队要求', taskActions, () => { menuDetails.open = false; call('floating_start_again', false); });
-    button('新一轮要求…', taskActions, () => { menuDetails.open = false; if (window.confirm('开始新一轮会使旧计划和批准失效；不删除已生成副本。是否继续？')) {window.OfficePaged?.invalidate();call('floating_start_again', true);} });
+    button('新一轮要求…', taskActions, async () => { menuDetails.open = false; if (await ask('开始新一轮会使旧计划和批准失效；不删除已生成副本。是否继续？')) {window.OfficePaged?.invalidate();call('floating_start_again', true);} });
     const tools = group('工具与记录');
     button('历史记录', tools, () => { menuDetails.open = false; secondary(true, true); });
     button('复用历史要求', tools, () => { menuDetails.open = false; restoreDrafts(); }).title='恢复本文件历史要求到草稿，不自动发送';
@@ -371,12 +424,14 @@
       if (event.key === 'Escape') {event.preventDefault();event.stopPropagation();menuDetails.open=false;menuDetails.querySelector('summary').focus();return;}
       if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
       event.preventDefault();menuDetails.open=true;
-      const items=Array.from(menu.querySelectorAll('button:not(:disabled)'));
+      const items=Array.from(menu.querySelectorAll('button:not(:disabled),details>summary')).filter(node=>node.checkVisibility());
       const index=items.indexOf(document.activeElement);
       const next=event.key==='Home'?0:event.key==='End'?items.length-1:event.key==='ArrowDown'?(index+1)%items.length:(index+items.length-1)%items.length;
       items[next]?.focus();
     });
     document.addEventListener('pointerdown', event => {if(menuDetails.open&&!menuDetails.contains(event.target))menuDetails.open=false;});
+    const fitMenu=()=>{if(!menuDetails.open)return;const top=menuDetails.getBoundingClientRect().bottom,composer=$('floating-controls')?.getBoundingClientRect().top||innerHeight;menu.style.maxHeight=Math.max(88,Math.min(innerHeight-12,composer-8)-top)+'px';};
+    menuDetails.addEventListener('toggle',fitMenu);window.addEventListener('resize',fitMenu);
     make('p', '拖入DOCX/XLSX后在本机打开；发送才调用模型', root, 'floating-identity');
     button('重试本地打开此文件', root, async () => {if(window.OfficePaged?.active()&&!await window.OfficePaged.beforeSwitch())return;if(window.OfficeNative?.active()&&!await window.OfficeNative.beforeSwitch())return;await call('floating_admit_drop');}, 'floating-drop').hidden = true;
     const read = make('section', '', root, 'floating-read'); read.hidden = true;
@@ -394,12 +449,29 @@
     make('p', '拖入文档，或选择一个文件开始。', welcome).className = 'agent-welcome-note';
     button('选择文档', welcome, () => $('floating-choose').click()).className = 'agent-welcome-choose';
     const examples = make('div', '', welcome); examples.className = 'agent-suggestions';
-    for (const text of ['润色文字，保留原意', '统一术语与表达', '核对数字和单位']) button(text, examples, () => {
+    for (const text of ['润色文字，保留原意', '统一术语与表达', '核对数字和单位']) button(text, examples, async () => {
       const input = $('floating-input');
-      if (input.value && !window.confirm('替换未发送的要求？不会调用模型。')) return;
+      if (input.value && !await ask('替换未发送的要求？不会调用模型。')) return;
       input.value = text + '。'; input.focus();
     });
-    make('p', '本机打开 · 审阅后确认 · 另存新副本', welcome).className = 'agent-welcome-safety';
+    make('p', '本机打开 · 对话修改 · 原稿保留', welcome).className = 'agent-welcome-safety';
+    (async () => {
+      let seen = false;
+      try { seen = localStorage.getItem('lix.shell-intro-seen') === 'true'; } catch (_) {}
+      try { const saved = await api().floating_intro(); seen ||= saved?.ok && saved.intro_seen; } catch (_) {}
+      if(!seen && welcome.isConnected){
+        const guide=make('aside','',welcome);guide.className='lix-first-guide';guide.setAttribute('aria-label','首次使用');
+        make('p','拖文档到球上打开；点击球展开，× 收起；在托盘菜单退出。',guide);
+        const label=make('label','',guide),remember=make('input','',label);remember.type='checkbox';remember.checked=true;label.append(document.createTextNode('以后不再提示'));
+        button('知道了',guide,async()=>{
+          if(remember.checked){
+            try { localStorage.setItem('lix.shell-intro-seen','true'); } catch (_) {}
+            try { await api().floating_intro(true); } catch (_) {}
+          }
+          guide.remove();
+        });
+      }
+    })();
     make('section', '', body, 'floating-document').setAttribute('aria-label', '文档结构文本');
     const conversation = make('section', '', body, 'floating-conversation');
     const conversationHeader = make('div', '', conversation, 'floating-conversation-heading');
@@ -424,6 +496,7 @@
     input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } };
     const footer = make('div', '', composer); footer.className = 'agent-composer-footer';
     make('div', '', footer, 'floating-models');
+    button('自动存副本',footer,accessSettings,'floating-access');
     const actions = make('div', '', footer); actions.className = 'floating-actions';
     button('停止后续步骤', actions, () => {window.OfficePaged?.invalidate();return call('floating_stop');}, 'floating-stop');
     button('发送要求', actions, submit, 'floating-send').className = 'floating-primary-button';
@@ -458,8 +531,13 @@
       const opened = [...root.querySelectorAll('details[open]')].reverse()[0];
       if (opened) { event.preventDefault(); event.stopPropagation(); opened.open = false; opened.querySelector('summary')?.focus(); }
     });
+    const selector = '#floating-task-details, #simple-model-menu, #floating-root > header > details, #paged-top > header > details';
+    root.addEventListener('click', event => {
+      const node = event.target.closest('summary')?.parentElement;
+      if (!node?.matches(selector) || node.open) return;
+      for (const other of root.querySelectorAll(selector)) if (other !== node) other.open = false;
+    }, true);
     root.addEventListener('toggle', event => {
-      const selector = '#floating-task-details, #simple-model-menu, #floating-root > header > details, #paged-top > header > details';
       if (!event.target.open || !event.target.matches(selector)) return;
       for (const node of root.querySelectorAll(selector)) if (node !== event.target) node.open = false;
     }, true);
@@ -476,7 +554,7 @@
       const position = JSON.parse(localStorage.getItem('office-agent.orb-position') || 'null');
       if (position) await api().floating_restore_position(position);
     } catch (_) {}
-    if (timer === null) timer = setInterval(() => refresh().catch(() => {}), 500);
+    if (timer === null) timer = setInterval(() => refresh(true).catch(() => {}), 250);
   }
   async function openHistoryOutput(identifier){
     if(window.OfficePaged?.beforeSwitch&&!await window.OfficePaged.beforeSwitch())return false;
@@ -486,6 +564,7 @@
     secondary(false);await refresh();return true;
   }
   window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput};
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh().catch(()=>{});});
   window.addEventListener('pywebviewready', connect);
   window.addEventListener('officeauth:authenticated', connect);
   window.addEventListener('officeauth:unauthenticated', () => { epoch++; snapshot = null; cursor = 0; pending = null; adopted.clear(); seenMessages.clear(); seenSkills.clear(); if (timer) clearInterval(timer); timer = null; });

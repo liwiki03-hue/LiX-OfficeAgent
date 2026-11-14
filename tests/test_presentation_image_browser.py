@@ -10,6 +10,7 @@ from PIL import Image,ImageDraw
 from pptx import Presentation
 
 from office_agent.presentation_drafts import validate_deck
+from tests.ui_confirmation import respond_to_confirmation
 from tests.test_presentation_chart_browser import chart_browser
 from tests.test_presentation_browser import open_source,wait_ready
 
@@ -106,6 +107,7 @@ def test_real_ten_page_images_chart_publish_cancel_and_rollback(chart_browser):
         (folder/'SPEC.json').write_text(json.dumps(spec,ensure_ascii=False,indent=2),encoding='utf8')
         (folder/'VERIFICATION.json').write_text(json.dumps({'report':rendered['report'],'source_unchanged':True,'images_unchanged':True,'publish_cancel_created_nothing':True,'native':False,'cloud_calls':0,'asset_processing':backup['snapshot']['asset_processing'],'raw_bytes':len(raw)},ensure_ascii=False,indent=2),encoding='utf8')
     work.get_by_role('button',name='撤销本次发布',exact=True).click()
+    respond_to_confirmation(page, approved=True)
     deadline=time.monotonic()+10
     while path.exists():
         if time.monotonic()>deadline:raise AssertionError('rollback deadline')

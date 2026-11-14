@@ -1,5 +1,6 @@
 "use strict";
 (() => {
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById(id);
   const host = () => window.pywebview?.api && window.OfficeAuth?.wrapApi(window.pywebview.api);
   const authenticated = () => Boolean(window.OfficeAuth?.isAuthenticated?.());
@@ -45,9 +46,10 @@
   const label = make('label', '', '会话 ', controls);
   const picker = make('select', 'chat-session', '', label); picker.setAttribute('aria-label', '普通问答会话列表');
   picker.onchange = () => change('select_conversation', picker.value);
-  button('chat-refresh', '重新读取历史', controls, () => { if (window.confirm('重新读取将替换窗口内的会话记录；未保存消息可能不再显示，输入草稿保留。不会调用模型或恢复批准。继续？')) change('reload_conversations'); });
+  button('chat-refresh', '重新读取历史', controls, async () => { if (await ask('重新读取将替换窗口内的会话记录；未保存消息可能不再显示，输入草稿保留。不会调用模型或恢复批准。继续？')) change('reload_conversations'); });
   button('chat-delete', '删除本会话', controls, async () => {
-    if (selected && window.confirm('删除此问答会话的本地文字记录？不会撤销模型费用，也不删除文档或图片。')) await change('delete_conversation', selected, true);
+    const session = selected, born = epoch;
+    if (session && await ask('删除此问答会话的本地文字记录？不会撤销模型费用，也不删除文档或图片。') && born === epoch && selected === session) await change('delete_conversation', session, true);
   });
   const previewButton = button('chat-preview-context', '预览本次发送范围', controls, previewContext);
   const nameControls = make('div', '', '', panel); nameControls.className = 'daily-actions';
@@ -70,7 +72,8 @@
       const plan = await host().plan_settings_update({chat_history: desired});
       if (born !== epoch) return;
       if (!plan?.ok) { setNotice(error(plan)); return; }
-      const yes = window.confirm((desired ? '启用本机问答保存：当前窗口的会话及后续消息会保存文字、时间和模型来源。' : '停止保存新消息；已有历史仍可查看或主动删除。') + '不保存密钥，不恢复任何文件或写入批准。是否保存此偏好？');
+      const yes = await ask((desired ? '启用本机问答保存：当前窗口的会话及后续消息会保存文字、时间和模型来源。' : '停止保存新消息；已有历史仍可查看或主动删除。') + '不保存密钥，不恢复任何文件或写入批准。是否保存此偏好？');
+      if (born !== epoch) return;
       const saved = await host().confirm_settings_update(plan.plan.plan_id, yes);
       if (born !== epoch) return;
       if (saved?.ok && yes && desired) await host().save_conversation_history();
@@ -98,7 +101,8 @@
       const plan = await host().plan_settings_update({chat_reply_tokens:tokens});
       if (born !== epoch) return;
       if (!plan?.ok) { setNotice(error(plan)); return; }
-      const yes = window.confirm('保存普通问答最大输出预算为 ' + tokens + ' tokens？这是预算倾向，不保证字数；较大预算可能增加等待与费用，已有本地32000字符、2048分块、90秒限制保持。');
+      const yes = await ask('保存普通问答最大输出预算为 ' + tokens + ' tokens？这是预算倾向，不保证字数；较大预算可能增加等待与费用，已有本地32000字符、2048分块、90秒限制保持。');
+      if (born !== epoch) return;
       const result = await host().confirm_settings_update(plan.plan.plan_id, yes);
       if (born !== epoch) return;
       clearPreview(); setNotice(result?.ok ? (yes ? '回答预算已保存，用于后续普通问答。' : '已取消预算保存。') : error(result)); await refresh();
@@ -110,7 +114,7 @@
   const location = make('details', '', '', panel); make('summary', '', '本地保存范围与位置', location);
   const storage = make('p', 'chat-storage', '', location);
   button('chat-clear-saved', '清除本账户的已保存问答', location, async () => {
-    if (window.confirm('清除当前账户已保存的问答，并清空本窗口未保存消息？输入草稿保留；不删除文档或图片，不撤销费用。')) await change('clear_saved_conversations', true);
+    if (await ask('清除当前账户已保存的问答，并清空本窗口未保存消息？输入草稿保留；不删除文档或图片，不撤销费用。')) await change('clear_saved_conversations', true);
   });
   const contextPanel = make('details', 'chat-context-preview', '', panel); contextPanel.hidden = true;
   make('summary', '', '本次发送范围 · 只读预览', contextPanel);
@@ -141,7 +145,8 @@
       if (born !== epoch || selected !== session) return;
       if (!result?.ok) { setNotice(error(result)); return; }
       const plan = result.plan;
-      const yes = window.confirm('导出' + (plan.partial ? '当前部分内容的固定快照（未完成）' : content === 'answer' ? '单条回答' : plan.turns + '轮对话') + '，格式 ' + plan.format + '，' + (plan.metadata ? '含模型和时间' : '不含模型和时间') + '。\n新文件：' + plan.path + '\n' + plan.bytes + ' 字节；不覆盖已有文件，不调用模型。确认写入？');
+      const yes = await ask('导出' + (plan.partial ? '当前部分内容的固定快照（未完成）' : content === 'answer' ? '单条回答' : plan.turns + '轮对话') + '，格式 ' + plan.format + '，' + (plan.metadata ? '含模型和时间' : '不含模型和时间') + '。\n新文件：' + plan.path + '\n' + plan.bytes + ' 字节；不覆盖已有文件，不调用模型。确认写入？');
+      if (born !== epoch || selected !== session) return;
       const saved = await host().confirm_chat_export(plan.plan_id,yes);
       if (born !== epoch || selected !== session) return;
       exportResult.replaceChildren();
@@ -152,12 +157,19 @@
       const savedDetails = make('details','','',exportResult); make('summary','','路径与校验详情',savedDetails);
       make('p','','已重开校验：' + value.path,savedDetails);
       button('','打开导出位置',exportResult,async()=> { const opened = await host().open_chat_export_folder(value.save_id); if (born === epoch && !opened?.ok) setNotice(error(opened)); });
+      let rollbackPending = false;
       button('','撤销本次导出',exportResult,async()=> {
-        const rollback = await host().plan_chat_export_rollback(value.save_id);
-        if (born !== epoch || selected !== session) return;
-        if (!rollback?.ok) { setNotice(error(rollback)); return; }
-        const removed = await host().confirm_chat_export_rollback(value.save_id,window.confirm('删除本次仍未变化的导出文件？审计保留。'));
-        if (born === epoch) setNotice(removed?.result?.status === 'rolled_back' ? '本次导出文件已撤销，审计保留。' : '撤销未完成，请核对结果；没有自动重试。');
+        if (rollbackPending || born !== epoch || selected !== session) return;
+        rollbackPending = true;
+        try {
+          const rollback = await host().plan_chat_export_rollback(value.save_id);
+          if (born !== epoch || selected !== session) return;
+          if (!rollback?.ok) { setNotice(error(rollback)); return; }
+          const approved = await ask('删除本次仍未变化的导出文件？审计保留。') === true;
+          if (born !== epoch || selected !== session) return;
+          const removed = await host().confirm_chat_export_rollback(value.save_id,approved);
+          if (born === epoch) setNotice(removed?.result?.status === 'rolled_back' ? '本次导出文件已撤销，审计保留。' : '撤销未完成，请核对结果；没有自动重试。');
+        } finally { rollbackPending = false; }
       });
     } catch (_) { if (born === epoch) setNotice('导出结果未确认，请核对目录和记录；未自动重试。'); }
     finally { if (born === epoch) exporting = false; }
@@ -196,7 +208,8 @@
       const plan = await host().plan_settings_update({image_reuse_metadata:desired});
       if (born !== epoch) return;
       if (!plan?.ok) { setNotice(error(plan)); return; }
-      const yes = window.confirm(desired ? '为后续新生图记录保存原提示词、尺寸和风格？按本机账户保存，未加密；不保存密钥、完整响应或图片base64，不补回旧记录。' : '关闭后续提示词保存？已存记录仍保留，可在详情中查看。');
+      const yes = await ask(desired ? '为后续新生图记录保存原提示词、尺寸和风格？按本机账户保存，未加密；不保存密钥、完整响应或图片base64，不补回旧记录。' : '关闭后续提示词保存？已存记录仍保留，可在详情中查看。');
+      if (born !== epoch) return;
       const result=await host().confirm_settings_update(plan.plan.plan_id,yes);
       if (born === epoch) setNotice(result?.ok ? yes ? '生图记录偏好已保存，仅用于后续任务。' : '已取消偏好修改。' : error(result));
     } catch (_) { if (born === epoch) setNotice('偏好保存结果未确认，请重读设置；未自动重试。'); }
@@ -488,7 +501,7 @@
     if (ev.type === 'answer_draft_cancel') { retireStream(ev.stream_id); if (liveStream===ev.stream_id) { liveStream=null; live.hidden = true; streamed = ''; } }
     if (ev.type === 'chat_error' && mode === 'chat') {
       if (ev.turn_id && retiredStreams.has(ev.turn_id)) return;
-      const detail = {authentication_failed:'鉴权失败，请修复当前接口密钥。',model_not_found:'模型或接口路径不存在，请核对模型ID和地址。',rate_limited:'接口限流，请稍后主动重试。',redirect_refused:'接口返回重定向，为保护凭据未跟随；请填写最终服务地址。',service_failed:'模型服务异常，请核对服务状态。',timeout:'等待超时；服务端可能已受理，请先核对再重试。',address_unreachable:'连接地址不可达，请核对地址和网络。',response_incompatible:'响应格式不兼容；可关闭流式选项后主动重试。'};
+      const detail = {authentication_failed:'鉴权失败，请修复当前 API 密钥。',model_not_found:'模型或接口路径不存在，请核对模型名称和 API 地址。',rate_limited:'接口限流，请稍后主动重试。',redirect_refused:'接口返回重定向，为保护凭据未跟随；请填写最终 API 地址。',service_failed:'模型服务异常，请核对服务状态。',timeout:'等待超时；服务端可能已受理，请先核对再重试。',address_unreachable:'连接地址不可达，请核对地址和网络。',response_incompatible:'响应格式不兼容；可关闭流式选项后主动重试。'};
       setNotice(detail[ev.code] || '请求失败，未自动重试。', {turn_id:ev.turn_id,session_id:selected,terminal:true});
       failedPrompt = ev.prompt; retry.hidden = false;
       if (sending?.question === ev.prompt) sending.failed = true;
@@ -517,7 +530,7 @@
         if (!current()) return {ok:false,reason:'stale'};
         if (result?.reason === 'chat_transfer_required') {
           const destination = result.route;
-          if (!window.confirm('继续发送会把本会话预算内的历史文字发送到：' + destination.connection_name + ' · ' + destination.model_id + '。是否允许本次发送？')) return {ok:false,reason:'cancelled'};
+          if (!await ask('继续发送会把本会话预算内的历史文字发送到：' + destination.connection_name + ' · ' + destination.model_id + '。是否允许本次发送？')) return {ok:false,reason:'cancelled'};
           if (!current()) return {ok:false,reason:'stale'};
           result = await host().ask(question, {...options, transfer_to: destination});
           if (!current()) return {ok:false,reason:'stale'};

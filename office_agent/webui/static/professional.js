@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('professional-' + id);
   if (!$('panel')) return;
   let epoch = 0, revision = 0, busy = false, unknown = false, source = null, selected = null;
@@ -78,17 +79,17 @@
       row.append(label, preview, remove); $('changes').append(row);
     }); refresh();
   }
-  function choose(item) {
+  async function choose(item) {
     if (selected && $('text').value !== selected.text && !changes.some(value => value.locator_id === selected.locator_id && value.new_text === $('text').value) &&
-        window.confirm('切换目标会放弃尚未加入清单的新文本，是否继续？') !== true) return;
+        await ask('切换目标会放弃尚未加入清单的新文本，是否继续？') !== true) return;
     selected = item;
     const draft = changes.find(value => value.locator_id === item.locator_id);
     $('text').value = draft?.new_text ?? item.text; $('reason').value = draft?.reason || '';
     refresh();
   }
-  function load(offset) {
+  async function load(offset) {
     if (offset === 0 && (changes.length || selected && $('text').value !== selected.text) &&
-        window.confirm('重新读取会丢弃未保存的修改清单和新文本，是否继续？') !== true) return;
+        await ask('重新读取会丢弃未保存的修改清单和新文本，是否继续？') !== true) return;
     return run(false, async (api, current) => {
       status('正在读取当前文件的版本与结构…');
       const response = await api.read_professional_structure(offset);
@@ -101,8 +102,8 @@
       for (const item of result.items) {
         const card = document.createElement('article'), label = document.createElement('label'), radio = document.createElement('input');
         radio.type = 'radio'; radio.name = 'professional-target'; radio.value = item.locator_id;
-        radio.addEventListener('change', () => {
-          choose(item);
+        radio.addEventListener('change', async () => {
+          await choose(item);
           $('targets').querySelectorAll('input').forEach(value => { value.checked = value.value === selected?.locator_id; });
         });
         label.append(radio, document.createTextNode(item.location + ' · ' + (item.writable ? '可规划局部修改' : '只读：' + item.refusal)));
@@ -162,7 +163,7 @@
   $('confirm').addEventListener('click', () => run(true, async (api, current) => {
     const target = plan, version = revision;
     if (!target) return;
-    const approved = window.confirm('确认整组修改并生成新 DOCX 副本？\n原件保留；会备份、逐项保护检查、重开与渲染校验、审计。\n任一项失败整组拒绝，未知结果不自动重试。\n' + $('preview').textContent) === true;
+    const approved = await ask('确认整组修改并生成新 DOCX 副本？\n原件保留；会备份、逐项保护检查、重开与渲染校验、审计。\n任一项失败整组拒绝，未知结果不自动重试。\n' + $('preview').textContent) === true;
     if (!current() || version !== revision) return;
     const response = await api.confirm_professional_edit(target.id, approved);
     if (!current()) return;
@@ -180,7 +181,7 @@
   $('rollback').addEventListener('click', () => run(true, async (api, current) => {
     const target = saveId;
     if (!target) return;
-    const approved = window.confirm('确认撤销本次未被外部修改的输出副本？原件、备份与审计保留。') === true;
+    const approved = await ask('确认撤销本次未被外部修改的输出副本？原件、备份与审计保留。') === true;
     if (!current()) return;
     const response = await api.rollback_professional_edit(target, approved);
     if (!current()) return;

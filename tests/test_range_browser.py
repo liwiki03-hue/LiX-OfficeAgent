@@ -9,7 +9,7 @@ def setup_range(page, api, app, calls, receipts):
     source = Path(__file__).resolve().parents[1] / 'deliverables/docx-fidelity-20261020/challenges/development.docx'
     shutil.copyfile(source, app.path)
     def invoke(method, args):
-        assert method in {'read_edit_ranges', 'plan_range_edit', 'confirm_professional_edit', 'rollback_professional_edit'}
+        assert method in {'read_edit_ranges', 'plan_range_edit', 'confirm_professional_edit', 'rollback_professional_edit', 'get_settings'}
         calls.append(method)
         reply = getattr(api, method)(*args)
         receipts.append((method, reply))

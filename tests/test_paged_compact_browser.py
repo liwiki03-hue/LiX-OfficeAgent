@@ -58,9 +58,9 @@ def test_real_iframe_scrollbar_keyboard_scroll_and_fit_width_preserve_source(vis
     frame = engine_frame(page)
     scroll = frame.locator('#page-scroll')
     frame.locator('.superdoc-page[data-page-number="2"]').wait_for(state='visible')
-    assert scroll.evaluate("node=>getComputedStyle(node,'::-webkit-scrollbar').width") == '7px'
+    assert scroll.evaluate("node=>getComputedStyle(node,'::-webkit-scrollbar').width") == '6px'
     assert scroll.evaluate("node=>getComputedStyle(node).scrollbarWidth") == 'auto'
-    assert scroll.evaluate('node=>node.offsetWidth-node.clientWidth') == 7, frame.locator('body').evaluate("node=>[node,...node.querySelectorAll('*')].filter(n=>n.scrollHeight>n.clientHeight+2&&n.clientHeight>100).slice(0,12).map(n=>({id:n.id,cls:n.className,h:n.clientHeight,sh:n.scrollHeight,ow:n.offsetWidth,cw:n.clientWidth,overflow:getComputedStyle(n).overflow}))")
+    assert scroll.evaluate('node=>node.offsetWidth-node.clientWidth') == 6, frame.locator('body').evaluate("node=>[node,...node.querySelectorAll('*')].filter(n=>n.scrollHeight>n.clientHeight+2&&n.clientHeight>100).slice(0,12).map(n=>({id:n.id,cls:n.className,h:n.clientHeight,sh:n.scrollHeight,ow:n.offsetWidth,cw:n.clientWidth,overflow:getComputedStyle(n).overflow}))")
     scroll.focus()
     page.keyboard.press('PageDown')
     frame.wait_for_function("()=>document.getElementById('page-scroll').scrollTop>100")

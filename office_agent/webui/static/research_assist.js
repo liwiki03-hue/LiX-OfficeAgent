@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('assist-' + id);
   if (!$('panel')) return;
   let epoch = 0, busy = false, uncertain = false, taskDirty = false, version = null, offset = 0, total = 0, nextOffset = null, history = [], task = null, plan = null, saved = null, taskSaved = null, timer = null;
@@ -45,12 +46,19 @@
     if (reply?.reason === 'professional_uncertain') { uncertain = true; plan = saved = null; say('结果不确定，可能已存在副本或备份。请核对记录，不自动重试。'); }
     else say(messages[reply?.reason] || '操作被拒绝或结果不符合校验，请核对源文件与证据状态。');
   }
+  function confirmRun(message, action) {
+    let approved = false;
+    return run(async (api, current) => {
+      approved = await ask(message) === true;
+      if (current()) await action(api, current, approved);
+    }, () => approved);
+  }
   async function run(action, writing = false) {
     if (busy || uncertain || !auth()) return;
     const mine = epoch; busy = true; refresh();
     const current = () => mine === epoch && auth();
     try { await action(window.OfficeAuth.wrapApi(window.pywebview.api), current); }
-    catch (_) { if (current()) { if (writing) fail({reason: 'professional_uncertain'}); else say('请求未完成，请核对状态；未自动重试。'); } }
+    catch (_) { if (current()) { if (typeof writing === 'function' ? writing() : writing) fail({reason: 'professional_uncertain'}); else say('请求未完成，请核对状态；未自动重试。'); } }
     finally { if (mine === epoch) { busy = false; refresh(); } }
   }
   function checkbox(parent, value, text, checked = false) {
@@ -58,8 +66,8 @@
     node.type = 'checkbox'; node.value = value; node.checked = checked; label.className = 'assist-choice'; label.append(node, document.createTextNode(text)); parent.append(label);
     return node;
   }
-  function load(position, backward = false) {
-    if (task && !window.confirm('重新读取结构会清空当前建议及未保存审阅，是否继续？')) return;
+  async function load(position, backward = false) {
+    if (task && !await ask('重新读取结构会清空当前建议及未保存审阅，是否继续？')) return;
     run(async (api, current) => {
       if (task) { const cancelled = await api.cancel_research_assist(task.id); if (!current()) return; if (!cancelled?.ok) { fail(cancelled); return; } }
       const reply = await api.read_research_assist(position);
@@ -118,9 +126,9 @@
       const regenerate = document.createElement('button'), feedback = document.createElement('input'); regenerate.type = 'button'; regenerate.textContent = '仅重新生成此项…'; regenerate.className = 'btn secondary';
       feedback.maxLength = 400; feedback.setAttribute('aria-label', '本项重新生成要求'); feedback.placeholder = '本项调整要求（可选）';
       regenerate.dataset.exhausted = result.calls >= (result.request.max_calls || 3) || result.status === 'restored' ? 'true' : 'false';
-      regenerate.addEventListener('click', () => {
+      regenerate.addEventListener('click', async () => {
         if (taskDirty) { say('材料或要求已变，请重新开始研究。'); return; }
-        if (!window.confirm('确认向当前模型再次发送本次材料和本项调整要求？占用剩余调用预算，云端可能产生费用。此项人工审阅会清除。')) return;
+        if (!await ask('确认向当前模型再次发送本次材料和本项调整要求？占用剩余调用预算，云端可能产生费用。此项人工审阅会清除。')) return;
         const local = new Map([...$('suggestions').querySelectorAll('fieldset')].map(node => [node.dataset.locator, {text: node.querySelector('textarea').value, accepted: node.querySelector('input[value=accept]').checked, reviewed: node.querySelector('input[value=review]').checked}]));
         run(async (api, current) => { changed(); const reply = await api.regenerate_research_suggestion({task_id: task.id, locator_id: proposal.locator_id, feedback: feedback.value, outbound_approved: true}); if (!current()) return; if (!reply?.ok) { fail(reply); return; } preserved = local; regenerating = proposal.locator_id; render(reply.result); if (task.status === 'running') poll(epoch); });
       });
@@ -151,11 +159,14 @@
       run(async (api, current) => { const reply = await api.research_assist_status(task.id); if (!current()) return; if (!reply?.ok) { fail(reply); return; } render(reply.result); if (task.status === 'running') poll(mine); });
     }, 700);
   }
-  $('start').addEventListener('click', () => {
+  $('start').addEventListener('click', async () => {
     if (!targets.size || !$('question').value.trim()) { say('请选择段落并填写问题。'); return; }
-    if (!window.confirm('确认把问题、所选原段落与证据交给当前配置的对话模型？云端可能产生费用；模型结果仍需逐项人工审阅。')) return;
+    const owner = epoch, source = version;
+    const request = {question: $('question').value.trim(), mode: $('mode').value, source_sha256: source, locator_ids: [...targets.keys()], capture_ids: [...$('captures').querySelectorAll('input:checked')].map(node => node.value), evidence_save_id: $('receipt').value.trim(), protected_terms: $('terms').value.split('\n').map(value => value.trim()).filter(Boolean), outbound_approved: true, max_calls: Number($('max-calls').value), compute_budget: Number($('compute-budget').value)};
+    if (!await ask('确认把问题、所选原段落与证据交给当前配置的对话模型？云端可能产生费用；模型结果仍需逐项人工审阅。')) return;
+    if (owner !== epoch || source !== version || !auth() || busy) return;
     run(async (api, current) => {
-      changed(); const reply = await api.start_research_assist({question: $('question').value.trim(), mode: $('mode').value, source_sha256: version, locator_ids: [...targets.keys()], capture_ids: [...$('captures').querySelectorAll('input:checked')].map(node => node.value), evidence_save_id: $('receipt').value.trim(), protected_terms: $('terms').value.split('\n').map(value => value.trim()).filter(Boolean), outbound_approved: true, max_calls: Number($('max-calls').value), compute_budget: Number($('compute-budget').value)});
+      changed(); const reply = await api.start_research_assist(request);
       if (!current()) return; if (!reply?.ok) { fail(reply); return; } taskDirty = false; render(reply.result); if (task.status === 'running') poll(epoch);
     });
   });
@@ -176,20 +187,25 @@
     const detail = document.createElement('details'), heading = document.createElement('summary'), metadata = document.createElement('pre'); heading.textContent = '计划校验明细'; metadata.textContent = JSON.stringify(plan, null, 2); detail.append(heading, metadata); $('preview').append(detail);
     say('请核对差异；尚未批准写入。');
   }));
-  $('confirm').addEventListener('click', () => {
-    const approved = window.confirm('请核对预览差异。确认按本计划保存新副本并进行重开、渲染和审计校验？' + ((plan?.items || []).some(item => item.native_revisions) ? '\nWord里会显示为修订，需你逐条接受或拒绝；尚未验证Word界面视觉效果。' : ''));
-    run(async (api, current) => { const reply = await api.confirm_assisted_edit(plan.id, approved); if (!current()) return; plan = null; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'cancelled') { say('已取消，未写入。'); return; } if (reply.result.status !== 'saved') { fail({reason: 'professional_uncertain'}); return; } saved = reply.result.save_id; $('output').textContent = '已核验副本：' + reply.result.output; say('副本已保存，源文件未改；语义仍以人工审阅为准。'); }, approved);
+  $('confirm').addEventListener('click', async () => {
+    const target = plan, owner = epoch;
+    if (!target || busy) return;
+    return confirmRun('请核对预览差异。确认按本计划保存新副本并进行重开、渲染和审计校验？' + ((target.items || []).some(item => item.native_revisions) ? '\nWord里会显示为修订，需你逐条接受或拒绝；尚未验证Word界面视觉效果。' : ''), async (api, current, approved) => {
+      if (owner !== epoch || plan !== target) return;
+      const reply = await api.confirm_assisted_edit(target.id, approved); if (!current()) return; plan = null; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'cancelled') { say('已取消，未写入。'); return; } if (reply.result.status !== 'saved') { fail({reason: 'professional_uncertain'}); return; } saved = reply.result.save_id; $('output').textContent = '已核验副本：' + reply.result.output; say('副本已保存，源文件未改；语义仍以人工审阅为准。');
+    });
   });
-  $('undo').addEventListener('click', () => {
-    const approved = window.confirm('撤销本次未被外部修改的输出副本？保留原件、备份和审计。');
-    run(async (api, current) => { const reply = await api.rollback_assisted_edit(saved, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'rolled_back') { saved = null; $('output').textContent = '本次副本已撤销。'; } }, approved);
+  $('undo').addEventListener('click', async () => {
+    const target = saved; if (!target) return;
+    return confirmRun('撤销本次未被外部修改的输出副本？保留原件、备份和审计。', async (api, current, approved) => { if (saved !== target) return; const reply = await api.rollback_assisted_edit(target, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'rolled_back') { saved = null; $('output').textContent = '本次副本已撤销。'; } });
   });
   $('save-task').addEventListener('click', () => run(async (api, current) => {
     const drafts = [...$('suggestions').querySelectorAll('fieldset')].map(node => ({locator_id: node.dataset.locator, new_text: node.querySelector('textarea').value, accepted: node.querySelector('input[value=accept]').checked, reviewed: node.querySelector('input[value=review]').checked}));
     const planned = await api.plan_research_task_save({task_id: task.id, drafts});
     if (!current()) return; if (!planned?.ok) { fail(planned); return; }
     $('task-output').textContent = JSON.stringify(planned.result, null, 2);
-    const approved = window.confirm('保存当前问题、证据、未审阅建议及人工草稿到工作区研究归档？不保存任何调用或写入批准。');
+    const approved = await ask('保存当前问题、证据、未审阅建议及人工草稿到工作区研究归档？不保存任何调用或写入批准。');
+    if (!current()) return;
     let reply;
     try { reply = await api.confirm_research_task_save(planned.result.plan_id, approved); }
     catch (error) { if (approved && current()) fail({reason: 'professional_uncertain'}); return; }
@@ -198,8 +214,8 @@
     else if (reply.result.status === 'uncertain') fail({reason: 'professional_uncertain'});
     else say('任务归档未写入或已取消。');
   }));
-  $('restore-task').addEventListener('click', () => {
-    if (task && !window.confirm('恢复历史研究会替换本面板当前建议与审阅状态；未保存改动会放弃，是否继续？')) return;
+  $('restore-task').addEventListener('click', async () => {
+    if (task && !await ask('恢复历史研究会替换本面板当前建议与审阅状态；未保存改动会放弃，是否继续？')) return;
     run(async (api, current) => {
       if (task && task.status !== 'restored') { const cancelled = await api.cancel_research_assist(task.id); if (!current()) return; if (!cancelled?.ok) { fail(cancelled); return; } }
       const reply = await api.restore_research_task($('task-receipt').value.trim());
@@ -215,9 +231,9 @@
       version = data.resumable_task ? data.task.request.source_sha256 : null;
     });
   });
-  $('undo-task').addEventListener('click', () => {
-    const approved = window.confirm('撤销本次未被外部修改的研究任务归档？源文件与审计保留。');
-    run(async (api, current) => { const reply = await api.rollback_research_task(taskSaved, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'rolled_back') { taskSaved = null; $('task-output').textContent = '本次任务归档已撤销。'; } else if (reply.result.status === 'uncertain') fail({reason: 'professional_uncertain'}); }, approved);
+  $('undo-task').addEventListener('click', async () => {
+    const target = taskSaved; if (!target) return;
+    return confirmRun('撤销本次未被外部修改的研究任务归档？源文件与审计保留。', async (api, current, approved) => { if (taskSaved !== target) return; const reply = await api.rollback_research_task(target, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'rolled_back') { taskSaved = null; $('task-output').textContent = '本次任务归档已撤销。'; } else if (reply.result.status === 'uncertain') fail({reason: 'professional_uncertain'}); });
   });
   ['question', 'terms', 'receipt', 'mode', 'max-calls', 'compute-budget'].forEach(id => $(id).addEventListener('input', () => changed(true)));
   $('tracked').addEventListener('input', () => changed());

@@ -164,6 +164,8 @@ def exercise(tmp_path, monkeypatch, capture=None):
             paragraph.getparent().replace(paragraph, _project(paragraph, ids, ['accept'] * len(ids)))
         rewrite(current2, accept_this_round)
         page.locator('#doc-task-prepare-return').click()
+        from tests.ui_confirmation import respond_to_confirmation
+        respond_to_confirmation(page)
         choose(current2)
         page.locator('#doc-task-return-compare').click()
         page.wait_for_function("document.getElementById('doc-task-return-output').textContent.includes('本系统文字修订已接受')")
@@ -245,6 +247,10 @@ def test_late_return_response_duplicate_clicks_and_logout_never_restore_draft(tm
         page.locator('#doc-task-return-baseline').fill('baseline.docx')
         page.locator('#doc-task-return-delivered').fill('delivered.docx')
         page.evaluate('''() => {document.getElementById('doc-task-return-compare').click();document.getElementById('doc-task-return-compare').click();}''')
+        assert page.evaluate('window.returnCalls') == 0
+        from tests.ui_confirmation import respond_to_confirmation
+        respond_to_confirmation(page)
+        page.wait_for_function('window.returnCalls===1')
         assert page.evaluate('window.returnCalls') == 1
         page.evaluate("window.authenticated=false;window.dispatchEvent(new Event('officeauth:unauthenticated'))")
         page.evaluate('''() => window.resolveReturn({ok:true,result:{comparison_id:'old',next_offset:null,

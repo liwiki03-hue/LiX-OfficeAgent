@@ -2,6 +2,7 @@ from docx import Document
 
 from office_agent.writes import digest
 from test_citations_browser import citations_browser
+from ui_confirmation import respond_to_confirmation
 
 
 def long_browser(tmp_path, monkeypatch, *, real_render=False):
@@ -173,9 +174,11 @@ def test_evidence_review_draft_survives_pages_and_explicit_discard(tmp_path, mon
         assert page.evaluate('document.activeElement.id') == 'citations-targets'
         page.evaluate('window.approved = false')
         card.locator('input.citations-authorized').click()
+        respond_to_confirmation(page, approved=False)
         assert card.locator('input.citations-authorized').is_checked() and card.locator('fieldset').count() == 1
         page.evaluate('window.approved = true')
         card.locator('input.citations-authorized').uncheck()
+        respond_to_confirmation(page, approved=True)
         assert card.locator('fieldset').count() == 0
         assert '0/12' in page.locator('#citations-selected').inner_text()
         assert calls.count('plan_citation_edit') == 0

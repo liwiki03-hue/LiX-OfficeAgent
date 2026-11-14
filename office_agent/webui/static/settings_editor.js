@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   if (!$('settings-editor-version')) return;
   const fields = {
     provider: 'settings-provider', model: 'settings-model', base_url: 'settings-url',
@@ -8,7 +9,7 @@
     embedding_model: 'settings-embedding-model', embedding_dimension: 'settings-embedding-dimension',
     embedding_timeout: 'settings-embedding-timeout', embedding_budget: 'settings-embedding-budget'
   };
-  const labels = {provider: '提供方', model: '对话模型', base_url: '服务地址', api_key: '密钥',
+  const labels = {provider: '模型提供方', model: '模型名称', base_url: 'API 地址', api_key: 'API 密钥',
     context_window: '上下文窗口', embedding_channel: '检索通道', embedding_model: '检索模型',
     embedding_dimension: '检索维度', embedding_timeout: '单次超时', embedding_budget: '总时长上限'};
   const reasons = {
@@ -71,7 +72,7 @@
     $('settings-embedding-local').hidden = !local;
     document.querySelector('label[for="settings-embedding-timeout"]')?.toggleAttribute('hidden', local);
     $('settings-embedding-timeout').hidden = local;
-    $('settings-embedding-model-label').textContent = local ? '离线检索模型目录（绝对路径）' : '百炼检索模型名';
+    $('settings-embedding-model-label').textContent = local ? '离线检索模型目录（绝对路径）' : '百炼检索模型名称';
     refreshGuide(blocked);
   }
   function refreshGuide(blocked) {
@@ -155,7 +156,7 @@
             !url.hostname || url.username || url.password || url.search || url.hash || url.port === '0' ||
             /[\s\\\x00-\x1f\x7f]/.test(values.base_url) ||
             (values.provider !== 'ollama' && url.protocol !== 'https:')) throw Error();
-      } catch (_) { issues.base_url = '填写完整服务地址；云端须为 HTTPS，不含用户信息、查询参数或片段。'; }
+      } catch (_) { issues.base_url = '填写完整 API 地址；云端须为 HTTPS，不含用户信息、查询参数或片段。'; }
     }
     if (!['local', 'api'].includes(values.embedding_channel)) issues.embedding_channel = '请选择本地离线或联网接口。';
     for (const [name, [min, max, integral]] of Object.entries(snapshot.limits)) {
@@ -229,10 +230,10 @@
       if (mine === epoch) { pending = false; refresh(); }
     }
   }
-  function guard() {
+  async function guard() {
     if (pending) { status(state, '操作正在进行，请等待返回后再关闭。'); return false; }
     const discarded = dirty();
-    if (discarded && window.confirm('放弃全部未保存改动并清空新密钥？各提供方草稿也会丢弃；磁盘配置不变。') !== true) return false;
+    if (discarded && await ask('放弃全部未保存改动并清空新密钥？各提供方草稿也会丢弃；磁盘配置不变。') !== true) return false;
     epoch++; revision++; clearSensitive();
     if (snapshot && discarded) show(snapshot);
     drafts = {};
@@ -266,9 +267,9 @@
       if (!pending && snapshot && live() && !uncertain) focusSetting(id);
     });
   }
-  function load() {
+  async function load() {
     if (pending || !live()) return;
-    if (dirty() && window.confirm('重新读取会放弃全部草稿并清空新密钥，是否继续？') !== true) return;
+    if (dirty() && await ask('重新读取会放弃全部草稿并清空新密钥，是否继续？') !== true) return;
     clearSensitive();
     return run('read', async (host, current) => {
       status('loading', '正在读取磁盘配置…');
@@ -284,13 +285,13 @@
     if (pending || !snapshot || !live()) return;
     revision++; show(snapshot); status('clean', '已放弃改动，恢复最近读取的快照；没有写入磁盘。');
   });
-  [...Object.values(fields), 'settings-key', 'settings-clear-key'].forEach(id => $(id).addEventListener('input', () => {
+  [...Object.values(fields), 'settings-key', 'settings-clear-key'].forEach(id => $(id).addEventListener('input', async () => {
     if (!snapshot || !live()) return;
     revision++; connection = null;
     if (id === 'settings-provider') {
       const target = $('settings-provider').value;
       if (!snapshot.providers.includes(target)) { $('settings-provider').value = provider; return; }
-      if ((key() || clearKey()) && window.confirm('切换提供方会清空新密钥和清除密钥选项；模型与地址草稿会保留，是否继续？') !== true) {
+      if ((key() || clearKey()) && await ask('切换提供方会清空新密钥和清除密钥选项；模型与地址草稿会保留，是否继续？') !== true) {
         $('settings-provider').value = provider; refresh(); return;
       }
       drafts[provider] = {model: $('settings-model').value, base_url: $('settings-url').value};
@@ -346,7 +347,7 @@
       if (!result?.ok || !opaque(result.plan?.plan_id)) { failure(result); return; }
       const plan = result.plan;
       const lines = (plan.differences || []).map(item => `${labels[item.field] || item.field}：${item.before ?? '未设置'} → ${item.after ?? '未设置'}`);
-      const approved = version === revision && window.confirm('确认保存以下实际改动？\n' + lines.join('\n') +
+      const approved = version === revision && await ask('确认保存以下实际改动？\n' + lines.join('\n') +
         '\n密钥：' + (plan.differences?.find(item => item.field === 'api_key')?.after || '保持') +
         (otherDrafts ? '\n其他提供方还有草稿；本次保存成功后重新读取会丢弃这些草稿。' : '') +
         '\n所有本机账户共享此配置；确认后备份、写入并校验。已保存，重启后生效。') === true;
@@ -364,16 +365,16 @@
       else failure({outcome_uncertain: true});
     });
   });
-  $('settings-rollback').addEventListener('click', () => {
+  $('settings-rollback').addEventListener('click', async () => {
     if (!saveId || pending || !live()) return;
-    if (dirty() && window.confirm('撤销将丢弃未保存草稿并清空新密钥，是否继续？') !== true) return;
+    if (dirty() && await ask('撤销将丢弃未保存草稿并清空新密钥，是否继续？') !== true) return;
     clearSensitive();
     return run('write', async (host, current) => {
       status('saving', '正在准备撤销…');
       const target = saveId, result = await host.plan_settings_rollback(target);
       if (!current()) return;
       if (!result?.ok || !opaque(result.plan?.rollback_id)) { failure(result); return; }
-      const approved = window.confirm('从本次备份恢复配置？确认后写入、校验，重启后生效。' +
+      const approved = await ask('从本次备份恢复配置？确认后写入、校验，重启后生效。' +
         (result.plan.restores_absent_source_as_empty_env ? ' 原来没有配置文件，将恢复为空 .env。' : '')) === true;
       if (!current() || target !== saveId) return;
       const receipt = await host.confirm_settings_rollback(result.plan.rollback_id, approved);
@@ -387,11 +388,11 @@
   });
   const probeMessages = {
     reachable: '服务可达，模型列表读取成功。', authentication_failed: '认证失败，请检查当前提供方的密钥或访问权限。',
-    timeout: '检测超时，请检查地址和网络。', models_unsupported: '服务响应，但无法通过模型列表验证；可继续保留手动模型名。',
-    redirect_refused: '服务要求重定向，已拒绝转发凭据；请手动核对最终服务地址。',
-    models_unverified: '服务响应，但无法通过模型列表验证；可继续保留手动模型名。',
+    timeout: '检测超时，请检查地址和网络。', models_unsupported: '服务响应，但无法通过模型列表验证；可继续保留手动模型名称。',
+    redirect_refused: '服务要求重定向，已拒绝转发凭据；请手动核对最终 API 地址。',
+    models_unverified: '服务响应，但无法通过模型列表验证；可继续保留手动模型名称。',
     service_failed: '服务返回错误，请检查服务状态；未发送生成请求。',
-    response_too_large: '模型列表超过检测大小上限，未继续读取。', connection_failed: '连接失败，请检查服务地址、证书或本机服务状态。'
+    response_too_large: '模型列表超过检测大小上限，未继续读取。', connection_failed: '连接失败，请检查 API 地址、证书或本机服务状态。'
   };
   $('settings-test').addEventListener('click', () => {
     if (!snapshot || pending || !live() || !errors(read())) return;

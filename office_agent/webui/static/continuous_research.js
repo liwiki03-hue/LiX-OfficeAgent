@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('cr-' + id);
   let epoch = 0, revision = 0, busy = false, fused = false, mode = 'ranges';
   let source = null, next = null, anchors = new Map(), insertions = [], comments = [], replacements = [], ignored = [];
@@ -118,13 +119,20 @@
     document.getElementById('continuous-panel').setAttribute('aria-busy', String(busy));
   }
   function changed() { revision++; historyPlan = historyRemoval = null; claimReview = null; rangePlan = null; plan = null; check = null; show('preview', ''); refresh(); }
+  function confirmRun(message, operation) {
+    let approved = false;
+    return run(async (host, current) => {
+      approved = await ask(message) === true;
+      if (current()) await operation(host, current, approved);
+    }, () => approved);
+  }
   async function run(operation, write = false) {
     if (busy || fused || !ready()) return;
     busy = true; refresh();
     const mine = epoch, rev = revision;
     const current = () => epoch === mine && revision === rev && ready();
     try { await operation(api(), current); }
-    catch (_) { if (current()) { if (write) fail({reason: 'professional_uncertain'}); else say('读取或校验失败；未批准写入。'); } }
+    catch (_) { if (current()) { if (typeof write === 'function' ? write() : write) fail({reason: 'professional_uncertain'}); else say('读取或校验失败；未批准写入。'); } }
     finally { if (epoch === mine) { busy = false; refresh(); } }
   }
   function navigate(value) {
@@ -168,16 +176,15 @@
     if (!reply?.ok) return fail(reply);
     historyPlan = reply.result; show('history-result', reply.result); say('仅保存所示终止尝试的诊断元数据，尚未写入；请审阅后独立确认。');
   });
-  $('history-confirm').onclick = () => {
+  $('history-confirm').onclick = async () => {
     const selected = historyPlan; if (!selected) return;
-    const yes = window.confirm('保存所示页段尝试记录？只保留诊断元数据，不含PDF正文；不发布索引。');
-    run(async (host, current) => {
+    return confirmRun('保存所示页段尝试记录？只保留诊断元数据，不含PDF正文；不发布索引。', async (host, current, yes) => {
       const reply = await host.confirm_pdf_attempt_history(selected.plan_id, yes); if (!current()) return; historyPlan = null;
       if (!reply?.ok || reply.result?.status === 'uncertain') return fail(reply);
       show('history-result', reply.result);
       if (reply.result.status === 'saved') { $('history-receipt').value = reply.result.save_id; say('记录已保存，可凭回执在重启后恢复供核对。'); }
       else say(yes ? '未保存记录，请重新预览或核对回执中的原因。' : '已取消，未保存记录。');
-    }, yes);
+    });
   };
   $('history-restore').onclick = () => run(async (host, current) => {
     const reply = await host.restore_pdf_attempt_history($('history-receipt').value.trim()); if (!current()) return;
@@ -190,14 +197,13 @@
     if (!reply?.ok) return fail(reply); historyRemoval = reply.result; show('history-result', reply.result);
     say('仅撤销这条诊断记录；源PDF、索引、其他证据、备份与审计保留。请独立确认。');
   });
-  $('history-remove-confirm').onclick = () => {
+  $('history-remove-confirm').onclick = async () => {
     const selected = historyRemoval; if (!selected) return;
-    const yes = window.confirm('撤销所示诊断记录文件？备份和审计保留，不修改PDF、索引或已保存证据。');
-    run(async (host, current) => {
+    return confirmRun('撤销所示诊断记录文件？备份和审计保留，不修改PDF、索引或已保存证据。', async (host, current, yes) => {
       const reply = await host.confirm_remove_pdf_attempt_history(selected.rollback_id, yes); if (!current()) return; historyRemoval = null;
       if (!reply?.ok || reply.result?.status === 'uncertain') return fail(reply); show('history-result', reply.result);
       say(reply.result.status === 'rolled_back' ? '记录已撤销，备份与审计保留。' : yes ? '未获得撤销成功回执，请核对原因。' : '已取消，记录保持。');
-    }, yes);
+    });
   };
   $('history-receipt').oninput = () => { revision++; historyPlan = historyRemoval = null; refresh(); };
   $('dependency-check').onclick = () => run(async (host, current) => {
@@ -251,15 +257,14 @@
     const reply = await host.cancel_output_review(outputReview.review_id); if (!current()) return;
     if (!reply?.ok) return fail(reply); outputReview = outputReviewToken = null; show('review-result','会话已结束；文件、备份和审计未改。');
   });
-  $('review-undo').onclick = () => {
+  $('review-undo').onclick = async () => {
     const selected = outputReview, token = outputReviewToken; if (!selected || !token) return;
-    const yes = window.confirm('另行确认仅撤销目标 ' + selected.target + ' 的输出副本？审阅快照将再次核对，且必须保有原撤销权限；不批量删除。');
-    run(async (host, current) => {
+    return confirmRun('另行确认仅撤销目标 ' + selected.target + ' 的输出副本？审阅快照将再次核对，且必须保有原撤销权限；不批量删除。', async (host, current, yes) => {
       const reply = await host.rollback_reviewed_output(selected.review_id, token, yes); if (!current()) return; outputReviewToken = null;
       if (!reply?.ok || reply.result?.status === 'uncertain') return fail(reply);
       if (reply.result.status === 'rolled_back') { if (saved === selected.target) saved = null; show('review-result','目标副本已撤销；请刷新查看依赖变化。'); say('已按原权限独立撤销单个副本，源文件、备份和审计保留。'); }
       else say('已取消撤销；一次性审阅凭据已消费，文件未改。');
-    }, yes);
+    });
   };
   $('review-save-plan').onclick = () => run(async (host, current) => {
     if (!outputReview) return; reviewSavePlan = null;
@@ -267,16 +272,15 @@
     if (!reply?.ok) return fail(reply); reviewSavePlan = reply.result; show('review-archive-result', reply.result);
     say('请核对将保存的完整回执集合；仅保存ID和校验摘要，尚未写入。');
   });
-  $('review-save-confirm').onclick = () => {
+  $('review-save-confirm').onclick = async () => {
     const selected = reviewSavePlan; if (!selected) return;
-    const yes = window.confirm('保存预览中的回执集合？不包含正文或撤销凭据，恢复后仅供只读审阅。');
-    run(async (host, current) => {
+    return confirmRun('保存预览中的回执集合？不包含正文或撤销凭据，恢复后仅供只读审阅。', async (host, current, yes) => {
       const reply = await host.confirm_output_review_archive(selected.plan_id, yes); if (!current()) return; reviewSavePlan = null;
       if (!reply?.ok || reply.result?.status === 'uncertain') return fail(reply); show('review-archive-result', reply.result);
       if (reply.result.status === 'rejected' && reply.result.code !== 'evidence_denied') return fail({reason:'professional_review_archive_' + reply.result.code});
       if (reply.result.status === 'saved') { $('review-archive-receipt').value = reply.result.save_id; say('集合已保存，请保留回执；重启后可恢复并重新核验。'); }
       else say('未保存集合；请核对取消或拒绝原因。');
-    }, yes);
+    });
   };
   $('review-restore').onclick = () => run(async (host, current) => {
     reviewSavePlan = null; outputReviewToken = null;
@@ -291,15 +295,14 @@
     if (!reply?.ok) return fail(reply); reviewRemovePlan = reply.result; show('review-archive-result', reply.result);
     say('仅删除这条集合记录，文档、备份和审计保留；请独立确认。');
   });
-  $('review-remove-confirm').onclick = () => {
+  $('review-remove-confirm').onclick = async () => {
     const selected = reviewRemovePlan; if (!selected) return;
-    const yes = window.confirm('删除预览中的集合记录？不删除任何文档，备份和审计保留。');
-    run(async (host, current) => {
+    return confirmRun('删除预览中的集合记录？不删除任何文档，备份和审计保留。', async (host, current, yes) => {
       const reply = await host.confirm_remove_output_review_archive(selected.rollback_id, yes); if (!current()) return; reviewRemovePlan = null;
       if (!reply?.ok || reply.result?.status === 'uncertain') return fail(reply); show('review-archive-result', reply.result);
       if (reply.result.status === 'rejected' && reply.result.code !== 'evidence_denied') return fail({reason:'professional_review_archive_' + reply.result.code});
       say(reply.result.status === 'rolled_back' ? '集合记录已删除；文档、备份和审计保留。' : '未删除集合记录。');
-    }, yes);
+    });
   };
   $('review-archive-receipt').oninput = () => { revision++; reviewRemovePlan = null; refresh(); };
   for (const id of ['dependency-target','dependency-receipts']) $(id).addEventListener('input', () => { revision++; reviewSavePlan = null; outputReview = outputReviewToken = null; show('review-result','回执范围已编辑，请重新开始审阅会话。'); refresh(); });
@@ -319,24 +322,27 @@
     }
     rangePlan = reply.plan; show('range-coverage', '待独立确认；尚未嵌入或写入。\n' + JSON.stringify(reply.plan, null, 2));
   });
-  $('range-confirm').onclick = () => {
+  $('range-confirm').onclick = async () => {
     const selected = rangePlan; if (!selected) return;
-    const yes = window.confirm('发布所示页集合？只有新增/失效页会使用已配置的嵌入通道；API通道会发送这些页的文字。源文件不变。');
-    run(async (host, current) => {
+    return confirmRun('发布所示页集合？只有新增/失效页会使用已配置的嵌入通道；API通道会发送这些页的文字。源文件不变。', async (host, current, yes) => {
       const reply = await host.confirm_rag_index(selected.plan_id, yes); if (!current()) return; rangePlan = null;
       if (!reply?.ok || reply.result?.status === 'uncertain') return fail(reply);
       if (reply.result.status === 'saved') { rangeSaved = reply.result.save_id; const status = await host.get_pdf_ranges($('pdf-file').value.trim() || null); if (current() && status?.ok) coverage(status.ranges); say('页集合已整组发布，可继续检索或撤销。'); }
       else say('已取消或计划过期，未获得发布成功回执。');
-    }, yes);
+    });
   };
   $('range-undo').onclick = () => run(async (host, current) => {
     const planned = await host.plan_rag_rollback('index', rangeSaved); if (!current()) return; if (!planned?.ok) return fail(planned);
-    const reply = await host.confirm_rag_rollback('index', planned.plan.rollback_id, window.confirm('恢复本次发布前的索引？独立保存的证据保留。'));
+    const approved = await ask('恢复本次发布前的索引？独立保存的证据保留。') === true;
+    if (!current()) return;
+    const reply = await host.confirm_rag_rollback('index', planned.plan.rollback_id, approved);
     if (!current()) return; if (!reply?.ok || reply.result.status === 'uncertain') return fail(reply); rangeSaved = null; say('索引撤销已处理，请重新读取覆盖。');
   }, true);
   $('query-run').onclick = () => run(async (host, current) => {
     const planned = await host.query_pdf_ranges($('query').value.trim(), 10, $('pdf-file').value.trim() || null); if (!current()) return; if (!planned?.ok) return fail(planned);
-    const reply = await host.confirm_rag_query(planned.plan.plan_id, window.confirm('保存当前已发布页段的检索证据？未覆盖页不能据此作否定结论。'));
+    const approved = await ask('保存当前已发布页段的检索证据？未覆盖页不能据此作否定结论。') === true;
+    if (!current()) return;
+    const reply = await host.confirm_rag_query(planned.plan.plan_id, approved);
     if (!current()) return; if (!reply?.ok || reply.result.status === 'uncertain') return fail(reply);
     show('range-results', reply.result);
     if (reply.result.status === 'saved') { const receipt = document.getElementById('assist-receipt'); if (receipt) { receipt.value = reply.result.save_id; receipt.dispatchEvent(new Event('input')); } say('证据已保存，回执已填入研究助理；保持当前DOCX选中即可主动运行研究助理。'); }
@@ -379,7 +385,7 @@
     say('已读取版本绑定锚点；' + (citationManifest ? '已恢复编号与书目候选，未恢复授权或证据审阅。' : '选择正文及已取证原文后再加入草稿。'));
   }
   $('receipt').oninput = () => { source = null; next = null; citationManifest = null; changed(); say('回执已变化，请重新读取；草稿保留供核对。'); };
-  $('load').onclick = () => { if ((insertions.length || comments.length || replacements.length) && !window.confirm('重新读取会放弃本组未保存草稿，是否继续？')) return; numericReviewIds=[];pendingNumericReview=null;insertions=[]; comments=[]; replacements=[]; ignored=[];claimSelections=[];claimReview=null;show('claim-sources','');changed(); run((host,current) => load(host,current)); };
+  $('load').onclick = async () => { const mine=epoch,rev=revision;if(busy||fused||!ready())return;if ((insertions.length || comments.length || replacements.length) && !await ask('重新读取会放弃本组未保存草稿，是否继续？')) return;if(mine!==epoch||rev!==revision||!ready())return; numericReviewIds=[];pendingNumericReview=null;insertions=[]; comments=[]; replacements=[]; ignored=[];claimSelections=[];claimReview=null;show('claim-sources','');changed(); run((host,current) => load(host,current)); };
   $('next').onclick = () => { const offset = next; run((host,current) => load(host,current,offset)); };
   $('anchor').onchange = () => { changed(); show('original', anchors.get($('anchor').value)?.text || ''); };
   $('capture').onchange = () => { changed(); $('reviewed').checked = false; $('fragments').replaceChildren(); if (!$('capture').value) return;
@@ -389,10 +395,13 @@
   };
   $('claim-add').onclick=()=>{const ids=[...$('fragments').querySelectorAll('input:checked')].map(n=>n.value);if(!$('capture').value||!ids.length||ids.length>3||claimSelections.length>=3){say('每次选择1–3条原文，最多3个来源。');return;}claimSelections=claimSelections.filter(r=>r.capture_id!==$('capture').value);claimSelections.push({capture_id:$('capture').value,evidence_ids:ids});changed();show('claim-sources',claimSelections);};
   $('claim-apply').onclick=()=>{const row=claimReview?.review?.suggestions?.find(r=>r.locator_id===$('anchor').value);if(!row){say('当前段落没有可用的未审阅替换建议。');return;}$('replacement').value=row.new_text;$('replace-reason').value=row.reason;navigate('write');changed();say('已填入草稿；请人工核对，再加入替换清单并预览整组影响。');};
-  $('claim-review').onclick = () => {
+  $('claim-review').onclick = async () => {
+    if(busy||fused||!ready())return;
+    const mine=epoch,rev=revision;
     const ids=[...$('fragments').querySelectorAll('input:checked')].map(n=>n.value);
     if(!claimSelections.length && (!$('capture').value || !ids.length || ids.length>3)) {say('先选择已取证材料与1–3条原文；多来源争议仍可使用研究助理的多材料审阅。');return;}
-    if(!window.confirm('主动使用已配置模型核对所选段落与证据？一次调用，可能产生费用；结果不自动视为人工审阅。'))return;
+    if(!await ask('主动使用已配置模型核对所选段落与证据？一次调用，可能产生费用；结果不自动视为人工审阅。'))return;
+    if(mine!==epoch||rev!==revision||!ready())return;
     run(async(host,current)=>{const reply=await host.review_paragraph_claim($('anchor').value,claimSelections.length ? claimSelections : [{capture_id:$('capture').value,evidence_ids:ids}]);if(!current())return;if(!reply?.ok)return fail(reply);claimReview=reply.result;show('claim-result',reply.result);say('论点核验为未审阅建议；请检查原文和适用条件，再决定是否加入修改或批注。');});
   };
   $('add-insert').onclick = () => {
@@ -414,7 +423,7 @@
     if(pendingNumericReview&&!numericReviewIds.includes(pendingNumericReview))numericReviewIds.push(pendingNumericReview);pendingNumericReview=null;
     changed(); draftView();
   };
-  $('clear').onclick = () => { if (!window.confirm('放弃本组未写入草稿？')) return; numericReviewIds=[];pendingNumericReview=null;insertions=[];comments=[];replacements=[];ignored=[];claimSelections=[];claimReview=null;show('claim-sources','');changed();draftView(); };
+  $('clear').onclick = async () => { const mine=epoch,rev=revision;if(busy||fused||!ready())return;if (!await ask('放弃本组未写入草稿？')) return;if(mine!==epoch||rev!==revision||!ready())return; numericReviewIds=[];pendingNumericReview=null;insertions=[];comments=[];replacements=[];ignored=[];claimSelections=[];claimReview=null;show('claim-sources','');changed();draftView(); };
   $('plan').onclick = () => run(async (host,current) => {
     if (!source) { say('请先读取DOCX锚点。'); return; }
     const number_records = {}; $('number-map').querySelectorAll('select').forEach(n=> { if(n.value) number_records[n.dataset.number]=n.value; });
@@ -422,10 +431,9 @@
     const reply = await host.plan_structure_edit({source_sha256:source.source_sha256,insertions,comments,replacements,review_notes:ignored.map(r=>r.reason),numeric_reviews:numericReviewIds,authorized:selected('authorized'),bibliography:selected('bibliography'),bibliography_anchor:$('bib-anchor').value || null,number_records});
     if (!current()) return; if (!reply?.ok) return fail(reply); plan=reply.result; show('preview','待独立确认，原件不变。\n修改前：\n'+reply.result.before+'\n整组影响：\n'+reply.result.after); say('整组校验完成；审阅插入、改号、书目和批注后，再独立确认。');
   });
-  $('confirm').onclick = () => { const selected=plan;if(!selected)return; const yes=window.confirm('确认所示整组差异，并生成经重开与渲染验证的副本？正文插入为净稿模式。');
-    run(async(host,current)=>{const reply=await host.confirm_professional_edit(selected.id,yes);if(!current())return;plan=null;if(!reply?.ok||reply.result.status==='uncertain')return fail(reply);if(reply.result.status==='saved'){saved=reply.result.save_id;$('dependency-target').value=saved;outputReview=outputReviewToken=null;show('review-result','新输出已生成，可开始该目标的依赖审阅会话。');show('output',reply.result);say('副本已保存并通过重开与渲染闸门；Word人工审阅仍待完成。');}else say('已取消，未写入。');},yes);
+  $('confirm').onclick = () => { const selected=plan;if(!selected)return; return confirmRun('确认所示整组差异，并生成经重开与渲染验证的副本？正文插入为净稿模式。', async(host,current,yes)=>{const reply=await host.confirm_professional_edit(selected.id,yes);if(!current())return;plan=null;if(!reply?.ok||reply.result.status==='uncertain')return fail(reply);if(reply.result.status==='saved'){saved=reply.result.save_id;$('dependency-target').value=saved;outputReview=outputReviewToken=null;show('review-result','新输出已生成，可开始该目标的依赖审阅会话。');show('output',reply.result);say('副本已保存并通过重开与渲染闸门；Word人工审阅仍待完成。');}else say('已取消，未写入。');});
   };
-  $('undo').onclick = () => { const yes=window.confirm('独立撤销本次未被外部修改的输出副本？原件、备份和审计保留。');run(async(host,current)=>{const reply=await host.rollback_professional_edit(saved,yes);if(!current())return;if(!reply?.ok||reply.result.status==='uncertain')return fail(reply);if(reply.result.status==='rolled_back'){saved=null;show('output','本次副本已撤销。');}},yes); };
+  $('undo').onclick = () => confirmRun('独立撤销本次未被外部修改的输出副本？原件、备份和审计保留。', async(host,current,yes)=>{const reply=await host.rollback_professional_edit(saved,yes);if(!current())return;if(!reply?.ok||reply.result.status==='uncertain')return fail(reply);if(reply.result.status==='rolled_back'){saved=null;show('output','本次副本已撤销。');}});
   function fillObservations(records) {
     $('observation').replaceChildren(); $('baseline').replaceChildren(); option($('baseline'),'','没有比较基线');
     for (const row of records) { const text=row.location+' '+row.header+' 原文：'+(row.missing?'缺失':row.raw); option($('observation'),row.id,text); option($('baseline'),row.id,text); }
@@ -563,8 +571,10 @@
   const checkHome=$('check').parentNode;
   window.OfficeContinuous={
     async mountTarget(parent, locator, offset, filename, page){
+      const mine=epoch,rev=revision;
       if(!ready()||busy||fused)return false;
-      if((insertions.length||comments.length||replacements.length)&&!window.confirm('切换至工作台核验将放弃原面板未写入草稿，是否继续？'))return false;
+      if((insertions.length||comments.length||replacements.length)&&!await ask('切换至工作台核验将放弃原面板未写入草稿，是否继续？'))return false;
+      if(!ready()||mine!==epoch||rev!==revision)return false;
       insertions=[];comments=[];replacements=[];numericReviewIds=[];pendingNumericReview=null;changed();let okay=false;
       await run(async(host,current)=>{await load(host,current);if(!current()||!source)return;if(offset)await load(host,current,offset);if(!current()||!anchors.has(locator))return;
         $('anchor').value=locator;show('original',anchors.get(locator).text);navigate('check');parent.append($('check'));$('pdf-table-section').hidden=false;$('pdf-table-toggle').setAttribute('aria-expanded','true');

@@ -106,7 +106,7 @@ def test_failed_open_releases_layout_for_next_file_read_consent(paged_browser):
     source.write_bytes(package(bad_parts))
     page.locator('#floating-choose').click()
     page.get_by_role('button', name='同意读取并打开', exact=True).click()
-    page.get_by_role('button', name='重新打开当前草稿', exact=True).wait_for(timeout=60000)
+    page.wait_for_function("document.getElementById('paged-save-state')?.dataset.kind === 'readonly'")
     assert not api._floating.paged.editable
     source.write_bytes(good)
     page.locator('#floating-choose').click()

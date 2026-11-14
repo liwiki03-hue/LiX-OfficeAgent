@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import uuid
 import zipfile
 
 from tools import release_source
@@ -62,7 +64,7 @@ def runtime_files(archive, metadata, license_root):
     return files
 
 
-def stage(root, target, uv_archive, license_root):
+def stage(root, target, uv_archive, license_root, renderer_archive=None):
     root, target = checked(root), checked(target, missing=True)
     if target.exists():
         raise ValueError('Installer staging requires a new directory')
@@ -73,15 +75,28 @@ def stage(root, target, uv_archive, license_root):
     if not version or metadata.get('schema') != 1 or metadata.get('channel') != 'network-preview':
         raise ValueError('Installer metadata is incompatible')
     files = runtime_files(uv_archive, metadata, license_root)
+    renderer_row = None
+    if renderer_archive is not None:
+        from tools.installed_runtime import digest as file_digest
+        renderer_archive = checked(renderer_archive)
+        renderer = metadata['renderer']
+        if (renderer_archive.stat().st_size != renderer['bytes']
+                or file_digest(renderer_archive) != renderer['sha256']):
+            raise ValueError('Bundled renderer differs from the pinned official archive')
+        renderer_row = {'path': 'runtime/LibreOffice_' + renderer['version'] + '_Win_x86-64.msi',
+                        'bytes': renderer['bytes'], 'sha256': renderer['sha256']}
     for row in source['files']:
         data = release_source.read_file(root, row['path'])
         if digest(data) != row['sha256']:
             raise ValueError('Public source changed while staging the installer')
         files['app/' + row['path']] = data
     manifest = {'schema': 1, 'version': version[1], 'channel': 'network-preview',
+                'bundles_renderer': renderer_row is not None,
                 'python': metadata['python'], 'uv_version': metadata['uv']['version'],
                 'files': [{'path': name, 'bytes': len(data), 'sha256': digest(data)}
                           for name, data in sorted(files.items())]}
+    if renderer_row:
+        manifest['files'].append(renderer_row)
     manifest_data = (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
     files['LiX.install.json'] = manifest_data
     target.mkdir()
@@ -90,9 +105,16 @@ def stage(root, target, uv_archive, license_root):
         path.parent.mkdir(exist_ok=True, parents=True)
         with path.open('xb') as stream:
             stream.write(data)
+    if renderer_row:
+        destination = target / renderer_row['path']
+        with renderer_archive.open('rb') as source_stream, destination.open('xb') as output_stream:
+            shutil.copyfileobj(source_stream, output_stream, 1024 * 1024)
+        if file_digest(destination) != renderer_row['sha256']:
+            raise ValueError('Bundled renderer changed during staging')
     (target / 'INSTALL-NOTES.txt').write_text(
         'LiX 联网预览安装版\n\n'
-        '仅安装到当前用户，无需管理员权限。首次启动须联网准备固定 Python、锁定依赖、文档编辑资源和渲染器，可能需要数分钟及约 3 GB 可用空间。\n\n'
+        + ('已内置原版 LibreOffice 渲染器，第 3 步直接校验和本地解压；Python、依赖及编辑资源仍需联网，不是全离线安装包。\n\n' if renderer_row else '')
+        + '仅安装到当前用户，无需管理员权限。首次启动准备固定 Python、锁定依赖、文档编辑资源和渲染器，可能需要数分钟及约 3 GB 可用空间。\n\n'
         '不捆绑开发者的密钥、配置、历史、文档或虚拟环境。请在软件设置中配置自己的模型；安装与首次准备不调用模型。\n\n'
         '本候选未签名，尚未完成全新 Windows 机器与正式发行验证。安装不代表功能全量验收。\n\n'
         '卸载移除安装清单中的程序与快捷方式；保留本机配置、历史和下载缓存。用户文档及修改副本不属于卸载范围。\n\n'
@@ -112,12 +134,29 @@ def compile_launcher(root, payload):
     metadata = payload / 'launcher_version.cs'
     metadata.write_text('using System.Reflection;[assembly: AssemblyTitle("LiX")]'
                         '[assembly: AssemblyProduct("LiX")][assembly: AssemblyVersion("' + version + '.0")]', encoding='utf-8')
+    temporary = checked(payload.parent / ('.lix-compiler-' + uuid.uuid4().hex), missing=True)
+    temporary.mkdir()
+    try:
+        executable = checked(temporary / 'LiX.exe', missing=True)
+        _compile_launcher(root, payload, compiler, metadata, executable)
+        target = checked(payload / 'LiX.exe', missing=True)
+        if target.exists() or executable.drive.lower() != target.drive.lower():
+            raise ValueError('Launcher target exists or is on another volume')
+        executable.rename(target)
+    finally:
+        if checked(temporary).resolve().parent != checked(payload.parent).resolve() or not temporary.name.startswith('.lix-compiler-'):
+            raise ValueError('Unexpected compiler cleanup target')
+        shutil.rmtree(temporary)
+
+
+def _compile_launcher(root, payload, compiler, metadata, executable):
     args = [str(compiler), '/nologo', '/target:winexe', '/platform:x64', '/optimize+',
             '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
-            '/reference:System.Web.Extensions.dll', '/out:' + str(payload / 'LiX.exe'),
+            '/reference:System.Web.Extensions.dll', '/out:' + str(executable),
             '/win32icon:' + str(root / 'office_agent/webui/static/brand/lix.ico'),
             '/resource:' + str(payload / 'bootstrap.json') + ',LiX.Bootstrap',
-            str(root / 'tools/windows/installed_launcher.cs'), str(root / 'tools/windows/process_job.cs'), str(metadata)]
+            str(root / 'tools/windows/installed_launcher.cs'), str(root / 'tools/windows/process_job.cs'),
+            str(root / 'tools/windows/bootstrap_network.cs'), str(metadata)]
     result = subprocess.run(args, capture_output=True, timeout=60)
     if result.returncode:
         raise RuntimeError('Launcher compilation failed: ' + result.stdout.decode('mbcs', 'replace')[:5000])
@@ -146,13 +185,15 @@ def main():
     parser.add_argument('--uv-archive', type=Path, required=True)
     parser.add_argument('--license-root', type=Path, required=True)
     parser.add_argument('--stage-only', action='store_true')
+    parser.add_argument('--renderer-archive', type=Path)
     args = parser.parse_args()
     if not args.stage_only:
         parser.error('Build installers through tools/build_windows_installer.ps1; this entry only stages source')
     root, payload = checked(args.root), checked(args.payload, missing=True)
-    manifest, source = stage(root, payload, args.uv_archive, args.license_root)
+    manifest, source = stage(root, payload, args.uv_archive, args.license_root, args.renderer_archive)
     prepare_compiler_inputs(root, payload, manifest)
     receipt = dict(version=manifest['version'], public_source_files=len(source['files']),
+                   bundles_renderer=manifest['bundles_renderer'],
                    payload_files=len(manifest['files']),
                    source_manifest_sha256=digest(json.dumps(source, sort_keys=True).encode()))
     (payload / 'STAGE.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')

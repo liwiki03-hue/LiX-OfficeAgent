@@ -5,7 +5,12 @@ import os
 from pathlib import Path, PurePosixPath
 import tarfile
 import time
-from urllib.request import Request, urlopen
+import sys
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from office_agent.network import urlopen
 import uuid
 
 
@@ -51,35 +56,20 @@ def spec(root):
 
 
 def download(root, expected):
+    from office_agent.downloads import fetch
     directory = checked(root / '.runtime/downloads', missing=True)
     directory.mkdir(parents=True, exist_ok=True)
-    checked(directory)
     archive = checked(directory / 'superdoc-1.47.2.tgz', missing=True)
-    if archive.exists():
-        if not archive.is_file() or archive.stat().st_size > MAX_ARCHIVE or sha(archive.read_bytes()) != expected:
-            raise ValueError('Existing frontend archive differs from the pinned hash; retained, not overwritten')
-        return archive.read_bytes(), False
-    partial = checked(directory / ('superdoc-' + uuid.uuid4().hex + '.partial'), missing=True)
-    deadline, total = time.monotonic() + 120, 0
-    request = Request(URL, headers={'User-Agent': 'LiX-pinned-frontend-setup', 'Accept': 'application/octet-stream'})
-    with urlopen(request, timeout=30) as response, partial.open('xb') as stream:
-        if response.status != 200 or response.geturl() != URL:
-            raise ValueError('Official frontend download returned an unexpected address or status')
-        while chunk := response.read(1024 * 1024):
-            total += len(chunk)
-            if total > MAX_ARCHIVE or time.monotonic() > deadline:
-                raise ValueError('Frontend download exceeded its size or time budget; partial retained')
-            stream.write(chunk)
-        stream.flush()
-        os.fsync(stream.fileno())
-    data = partial.read_bytes()
-    if sha(data) != expected:
-        raise ValueError('Official frontend archive hash mismatch; partial retained, nothing installed')
-    checked(archive, missing=True)
-    os.link(partial, archive)
-    partial.unlink()
-    return data, True
-
+    network = not archive.exists()
+    def progress(**value):
+        target = os.environ.get('LIX_SETUP_REPORT')
+        if target:
+            destination = checked(Path(target), missing=True)
+            temporary = checked(destination.with_name(destination.name + '.tmp'), missing=True)
+            temporary.write_text(json.dumps({'schema': 1, 'stage': 'frontend', **value}), encoding='utf-8')
+            os.replace(temporary, destination)
+    path = fetch(URL, archive, expected, limit=MAX_ARCHIVE, seconds=120, opener=urlopen, progress=progress)
+    return path.read_bytes(), network
 
 def unpack(data, assets):
     wanted = {item['path']: item for item in assets}

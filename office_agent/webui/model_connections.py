@@ -1,6 +1,9 @@
 import json
 import threading
 import secrets
+import time
+import hmac
+import hashlib
 
 from ..model_connections import ConnectionState, from_values, plan_catalog
 from ..settings_store import SettingsError, SettingsStore
@@ -35,6 +38,8 @@ class ModelConnections:
         self.chat_owner = None
         self.standalone_root = None
         self.image_tickets = {}
+        self.model_lists = {}
+        self._probe_secret = secrets.token_bytes(32)
 
     def invalidate(self):
         with self.lock:
@@ -43,6 +48,7 @@ class ModelConnections:
             self.chat_messages.clear()
             self.chat_running = None
             self.image_tickets.clear()
+            self.model_lists.clear()
             if self.conversations is not None:
                 self.conversations.invalidate()
 
@@ -70,7 +76,9 @@ class ModelConnections:
                 revision = secrets.token_hex(16)
                 store._connection_snapshots[revision] = source
                 store._connection_snapshots = dict(list(store._connection_snapshots.items())[-8:])
-                return {'ok': True, 'catalog': self.state.public(catalog), 'revision': revision}
+                from ..settings_definition import PROVIDER_DEFAULTS
+                return {'ok': True, 'catalog': self.state.public(catalog), 'revision': revision,
+                        'provider_defaults': {key: {'base_url': value['base_url']} for key, value in PROVIDER_DEFAULTS.items()}}
             except SettingsError as exc:
                 return {'ok': False, 'reason': exc.code}
             except Exception:
@@ -130,6 +138,8 @@ class ModelConnections:
                 if self.state.identity(row) != route.revision:
                     return
                 self.state.outcomes[(route.connection_id, route.model_id, route.capability, route.revision)] = status
+                from ..diagnostics import record
+                record('model', 'request', status, correlation=route.connection_id)
             except (SettingsError, StopIteration):
                 return
 
@@ -148,11 +158,13 @@ class ModelConnections:
                 owner.record(route, 'failed')
 
         callbacks = [Outcome()]
+        from ..network import options
+        proxy = options(self.settings._root).route(route.base_url)
         if route.protocol == 'ollama':
             from langchain_ollama import ChatOllama
             model = ChatOllama(model=route.model_id, base_url=route.base_url, temperature=0, callbacks=callbacks,
                                **({'num_ctx': route.context_window} if route.capability == 'chat' else {}),
-                               client_kwargs={'timeout': 60, 'follow_redirects': False, 'trust_env': False})
+                               client_kwargs={'timeout': 60, 'follow_redirects': False, 'trust_env': False, **({'proxy': proxy} if proxy else {})})
             for client in (model._client, model._async_client):
                 client._client.headers.pop('authorization', None)
                 if route.api_key:
@@ -167,9 +179,14 @@ class ModelConnections:
                     payload['max_tokens'] = payload.pop('max_completion_tokens')
                 return payload
         cls = ChatOutputModel if route.capability == 'chat' else ChatOpenAI
+        if proxy:
+            import httpx2
+            client = httpx2.Client(proxy=proxy, follow_redirects=False, trust_env=False, timeout=60)
+        else:
+            client = _http_client()
         return cls(model=route.model_id, base_url=route.base_url, api_key=SecretStr(route.api_key),
                           timeout=60, max_retries=0, callbacks=callbacks,
-                          http_client=_http_client(), http_socket_options=())
+                          http_client=client, http_socket_options=())
 
     def research_model(self):
         route = self.capture('agent')
@@ -304,6 +321,68 @@ class ModelConnections:
                     return {'ok': False, 'reason': 'settings_source_changed'}
                 self.state.lists[(connection_id, revision)] = outcome['status']
                 return {'ok': True, 'result': outcome}
+        finally:
+            prepared = None
+            with self.lock:
+                self.settings._probing = False
+
+    def probe_draft(self, draft, refresh=False):
+        from ..settings_probe import probe_connection
+        from ..settings_store import _validate
+        from urllib.parse import urlsplit
+        from ..network import endpoint_identity
+        prepared, key_id, source_identity = None, None, None
+        def prepare(store, session):
+            nonlocal prepared, key_id, source_identity
+            if (not isinstance(draft, dict) or set(draft) - {'id', 'protocol', 'base_url', 'key_action', 'api_key'}
+                    or type(refresh) is not bool or draft.get('protocol') not in ('openai', 'ollama')):
+                raise SettingsError()
+            protocol, url = draft['protocol'], draft.get('base_url', '')
+            _validate({'base_url': url})
+            parsed = urlsplit(url)
+            if not (parsed.scheme == 'https' or protocol == 'ollama' and parsed.hostname in {'localhost', '127.0.0.1', '::1'}):
+                raise SettingsError()
+            saved = next((row for row in self._catalog()['connections'] if row['id'] == draft.get('id')), None)
+            action = draft.get('key_action', 'keep')
+            if action not in ('keep', 'replace', 'clear') or action != 'replace' and draft.get('api_key'):
+                raise SettingsError()
+            key = draft.get('api_key', '') if action == 'replace' else ''
+            if action == 'replace' and not key:
+                raise SettingsError('settings_invalid', field='api_key')
+            if action == 'keep' and saved:
+                if endpoint_identity(saved['base_url']) != endpoint_identity(url) or saved['protocol'] != protocol:
+                    raise SettingsError('settings_invalid', field='api_key')
+                key = saved['api_key']
+                source_identity = self.state.identity(saved)
+            _validate({'api_key': key})
+            if protocol != 'ollama' and not key:
+                raise SettingsError('settings_invalid', field='api_key')
+            prepared = ('ollama' if protocol == 'ollama' else 'deepseek', endpoint_identity(url), '', key)
+            key_id = hmac.new(self._probe_secret, json.dumps([draft.get('id'), source_identity, prepared], ensure_ascii=True).encode(), hashlib.sha256).hexdigest()
+            return {'prepared': True}
+        with self.lock:
+            if self.settings._probing:
+                return {'ok': False, 'reason': 'busy'}
+            result = self.settings._call(prepare)
+            if not result['ok']:
+                return result
+            cached = self.model_lists.get(key_id)
+            if not refresh and cached and time.monotonic() - cached[0] < 300:
+                return {'ok': True, 'result': cached[1], 'cached': True}
+            self.settings._probing = True
+            epoch = self.state.epoch
+        try:
+            outcome = probe_connection(prepared, include_models=True)
+            with self.lock:
+                if not self.authenticated() or epoch != self.state.epoch:
+                    return {'ok': False, 'reason': 'settings_source_changed'}
+                if source_identity:
+                    saved = next((row for row in self._catalog()['connections'] if row['id'] == draft.get('id')), None)
+                    if not saved or self.state.identity(saved) != source_identity:
+                        return {'ok': False, 'reason': 'settings_source_changed'}
+                self.model_lists[key_id] = (time.monotonic(), outcome)
+                self.model_lists = dict(list(self.model_lists.items())[-16:])
+                return {'ok': True, 'result': outcome, 'cached': False}
         finally:
             prepared = None
             with self.lock:

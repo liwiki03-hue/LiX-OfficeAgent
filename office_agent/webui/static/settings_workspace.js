@@ -43,8 +43,8 @@
   }
   nav.after(compactNav);
   sectionSelect.value = dialog.dataset.tab || 'tab-model';
-  sectionSelect.addEventListener('change', () => {
-    window.OfficeSettings.selectTab(sectionSelect.value);
+  sectionSelect.addEventListener('change', async () => {
+    await window.OfficeSettings.selectTab(sectionSelect.value);
     sectionSelect.value = dialog.dataset.tab;
   });
   const machine = $('settings-pane-machine').querySelector('.settings-form');

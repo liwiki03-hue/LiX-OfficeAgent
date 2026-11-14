@@ -27,7 +27,7 @@ def test_readonly_to_copy_actual_editor_publish_and_rollback(tmp_path, monkeypat
     if not EDGE.is_file():
         pytest.skip('Requires existing Windows Edge')
     from playwright.sync_api import sync_playwright
-    out = STATIC.parents[2] / 'deliverables/editable-copy-20261113'
+    out = STATIC.parents[2] / 'deliverables/default-document-edit-20261114/manual-optout'
     out.mkdir(parents=True, exist_ok=True)
     source = tmp_path / '只读开题报告.docx'
     make_readonly(source)
@@ -74,6 +74,7 @@ def test_readonly_to_copy_actual_editor_publish_and_rollback(tmp_path, monkeypat
             assert page.locator('#floating-input').input_value() == '请稍后检查这一段，保留数字和单位。'
             page.set_viewport_size({'width': 1280, 'height': 820})
             create.click()
+            plan_dialog.get_by_role('checkbox', name='创建后直接打开，按当前方式修改副本').uncheck()
             plan_dialog.get_by_role('button', name='确认创建简化副本', exact=True).click()
             wait(page, lambda: bool(api._floating.outputs) and not app.busy,
                  lambda: {'feedback': page.locator('#paged-feedback').text_content(), 'outputs': api._floating.outputs})
@@ -88,8 +89,9 @@ def test_readonly_to_copy_actual_editor_publish_and_rollback(tmp_path, monkeypat
             old_id = api._floating.document['id']
             page.get_by_role('button', name='打开副本编辑…', exact=True).click()
             wait(page, lambda: api._floating.document['id'] != old_id, lambda: api._floating.document)
-            assert not api._floating.document['ready'] and not api._floating.runtime
-            page.get_by_role('button', name='同意读取并打开', exact=True).click()
+            assert api._floating.document['ready'] and not api._floating.runtime
+            assert not api._floating.access.state()['active'] and not api._floating.access.state()['id']
+            assert page.locator('#floating-read').is_hidden()
             wait(page, lambda: bool(api._floating.paged.manifest) or bool(api._floating.paged.document_id and not api._floating.paged.editable), lambda: api._floating.paged.state())
             assert api._floating.paged.editable and not api._floating.paged.proposals
             frame = engine_frame(page)
@@ -123,7 +125,8 @@ def test_readonly_to_copy_actual_editor_publish_and_rollback(tmp_path, monkeypat
             (out / 'BROWSER.json').write_text(json.dumps({'source_sha256': hashlib.sha256(original).hexdigest(),
                 'source_unchanged': True, 'copy': row, 'edited': final, 'calls': calls, 'errors': errors,
                 'model_requests': 0, 'cancel_no_output': True, 'copy_reopened_editable': True,
-                'separate_read_consent': True, 'two_outputs_rolled_back': True, 'artifacts': artifacts,
+                'open_click_authorizes_read': True, 'grant_not_inherited_without_consent': True,
+                'two_outputs_rolled_back': True, 'artifacts': artifacts,
                 'native_webview': False, 'office': False}, ensure_ascii=False, indent=2), encoding='utf-8')
         finally:
             browser.close()

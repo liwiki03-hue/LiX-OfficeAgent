@@ -119,11 +119,11 @@ def auth_hint(exc: Exception) -> str:
     if "401" in text or "invalid_api_key" in low or "incorrect api key" in low or "authentication" in low:
         return (
             "\n[提示] 401 = Key 无效。排查顺序：\n"
-            "  1) 确认 .env 里当前 provider你5研讨会 的 Key 是真实值（不能是 sk-xxx 占位符）：\n"
+            "  1) 确认 .env 中当前模型提供方的 API 密钥有效：\n"
             "     dashscope → DASHSCOPE_API_KEY（百炼/Model Studio 控制台，不是阿里云 AccessKey ID/Secret）\n"
             "     deepseek  → DEEPSEEK_API_KEY（platform.deepseek.com/api_keys）\n"
             "  2) Key 前后不要有引号/空格/换行；改完 .env 必须重新运行程序；\n"
-            "  3) 先运行 uv run python check_key.py 验证（能区分 Key 错还是网络/模型错）。"
+            "  3) 在 LiX 设置→模型与服务中核对 API 地址、API 密钥并测试连接。"
         )
     if "402" in text or "insufficient balance" in low or "insufficient_quota" in low:
         return "\n[提示] 402/额度不足：该账号余额或免费额度已用尽，去对应控制台充值（DeepSeek 常见）。"
@@ -293,7 +293,7 @@ async def ask(agent, text: str) -> None:
 async def main() -> None:
     questions = resolve_questions()
     if not questions:
-        print('这是课程命令行示例；桌面应用请使用 Start-OfficeAgent.cmd。显式提供问题后才会请求模型。')
+        print('LiX 命令行入口；桌面应用请使用 Start-OfficeAgent.cmd。显式提供问题后才会请求模型。')
         return
     provider = resolve_provider()
     key = None if provider == "ollama" else read_api_key(provider)
@@ -306,7 +306,7 @@ async def main() -> None:
     llm = build_llm(provider)
     model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "?")
 
-    print(f"[环境] .env={ENV_PATH} | provider={provider} | model={model_name}")
+    print(f"[环境] 配置=.env | 模型提供方={provider} | 模型名称={model_name}")
     print(
         f"[环境] tools={[getattr(t, 'name', '?') for t in TOOLS]}"
         + (" | key=已配置" if key else " | key=本地模型无需 Key")

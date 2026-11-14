@@ -10,14 +10,16 @@
     ['tab-updates', 'settings-pane-updates'],
     ['tab-account', 'settings-pane-account']
   ];
-  let open = false, previousFocus = null, initialized = false, backgroundWasInert = false;
+  let open = false, previousFocus = null, initialized = false, backgroundWasInert = false, closing = false, tabSequence = 0;
   const canFocus = element => Boolean(element) && !element.hidden && !element.disabled &&
     typeof element.focus === 'function' && (element.offsetParent !== null || element.offsetParent === undefined);
 
-  function selectTab(tabId) {
+  async function selectTab(tabId) {
     const known = TABS.some(([id]) => id === tabId) ? tabId : TABS[0][0];
+    const ticket = ++tabSequence;
     const dialog = node('settings-dialog');
-    if (dialog.dataset.tab === 'tab-skills' && known !== 'tab-skills' && window.OfficeSkills?.requestClose() === false) return;
+    if (dialog.dataset.tab === 'tab-skills' && known !== 'tab-skills' && await window.OfficeSkills?.requestClose() === false) return;
+    if (ticket !== tabSequence) return;
     dialog.dataset.tab = known;
     TABS.forEach(([id, paneId]) => {
       const tab = node(id), pane = node(paneId);
@@ -70,11 +72,15 @@
     if (target) target.focus();
     document.dispatchEvent(new CustomEvent('officesettings:opened', { detail: { dialog } }));
   }
-  function close() {
-    if (!open) return;
-    if (window.OfficeSettingsEditor?.requestClose() === false) return;
-    if (window.OfficeModelSelector?.requestClose() === false) return;
-    if (window.OfficeSkills?.requestClose() === false) return;
+  async function close() {
+    if (!open || closing) return false;
+    closing = true;
+    try {
+    for (const owner of [window.OfficeSettingsEditor, window.OfficeModelSelector, window.OfficeSkills]) {
+      if (!owner?.requestClose) continue;
+      const result = owner.requestClose();
+      if (result === false || result?.then && await result === false) return false;
+    }
     const dialog = node('settings-dialog');
     open = false;
     dialog.hidden = true;
@@ -85,6 +91,8 @@
     previousFocus = null;
     if (canFocus(back)) back.focus();
     else { const entry = node('nav-settings'); if (canFocus(entry)) entry.focus(); }
+    return true;
+    } finally { closing = false; }
   }
   function init() {
     if (initialized) return;
@@ -97,7 +105,7 @@
     document.addEventListener('keydown', onKey, true);
     selectTab(TABS[0][0]);
   }
-  window.OfficeSettings = { show, close, isOpen: () => open, selectTab: tabId => { if (open) selectTab(tabId); } };
+  window.OfficeSettings = { show, close, isOpen: () => open, selectTab: tabId => { if (open) return selectTab(tabId); } };
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState !== 'loading') init();
 })();

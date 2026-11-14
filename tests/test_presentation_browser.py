@@ -10,11 +10,13 @@ from pptx import Presentation
 import pytest
 
 from tests.test_paged_browser import paged_browser, engine_frame
+from tests.test_floating_browser import open_floating_menu
 from office_agent.presentation_drafts import validate_deck
+from tests.ui_confirmation import respond_to_confirmation
 
 
 def open_source(page):
-    page.get_by_label('更多',exact=True).first.click()
+    open_floating_menu(page, '工具与记录')
     page.get_by_role('button',name='生成演示稿',exact=True).click()
     return page.get_by_role('dialog').filter(has=page.get_by_role('heading',name='新建演示稿',exact=True))
 
@@ -82,6 +84,7 @@ def test_current_docx_draft_real_preview_publish_cancel_and_rollback(paged_brows
         (folder/'SPEC.json').write_text(json.dumps(api._presentations.spec,ensure_ascii=False,indent=2),encoding='utf8')
         (folder/'VERIFICATION.json').write_text(json.dumps({'source_unchanged':source.read_bytes()==original,'source':captured,'report':api._presentations.rendered['report'],'saved_path':str(path),'native':False,'cloud_calls':0},ensure_ascii=False,indent=2),encoding='utf8')
     work.get_by_role('button',name='撤销本次发布',exact=True).click()
+    respond_to_confirmation(page, approved=True)
     deadline=time.monotonic()+10
     while path.exists():
         if time.monotonic()>deadline:raise AssertionError(page.locator('[data-presentation-status]').text_content())

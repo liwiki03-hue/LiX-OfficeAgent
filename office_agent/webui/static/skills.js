@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   const node = id => document.getElementById(id);
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const fields = ['skills-slug', 'skills-name', 'skills-description', 'skills-body'];
   const actions = ['load', 'create', 'edit', 'delete', 'toggle', 'import', 'rollback'];
   let epoch = 0, revision = 0, inflight = false, selected = null, saveId = null;
@@ -11,9 +12,9 @@
   const values = () => fields.map(id => node(id)?.value || '');
   const dirty = () => initialized && JSON.stringify(values()) !== baseline;
   const browser = () => Boolean(node('skills-search'));
-  function guard() {
+  async function guard() {
     if (inflight) { status('操作尚未结束，请等待后再离开。'); return false; }
-    if (dirty() && !window.confirm('放弃未保存的技能改动？已保存内容不会改变。')) return false;
+    if (dirty() && !await ask('放弃未保存的技能改动？已保存内容不会改变。')) return false;
     if (dirty()) {
       const saved = JSON.parse(baseline);
       fields.forEach((id, index) => { node(id).value = saved[index]; });
@@ -149,9 +150,9 @@
       node('skills-list').append(empty);
     }
   }
-  function select(item) {
+  async function select(item) {
     if (inflight || !ready() || uncertain) return;
-    if (browser() && !guard()) return;
+    if (browser() && !await guard()) return;
     clearEditor(); selected = item; revision++; refresh();
     return run(async (api, current) => {
       const response = await api.get_skill(item.slug, item.source);
@@ -253,7 +254,7 @@
     if (operation === 'enabled' && typeof plan.enabled !== 'boolean') { doubt(); return; }
     const action = operation === 'enabled' ? (plan.enabled ? '启用技能' : '停用技能') : ({create:'新增技能',edit:'保存技能修改',delete:'删除技能',import:'导入技能',update:'更新技能'})[operation];
     if (!action) { doubt(); return; }
-    const confirmed = window.confirm('确认' + action + '？\n目标：' + String(plan.id || '') +
+    const confirmed = await ask('确认' + action + '？\n目标：' + String(plan.id || '') +
       (plan.origin?'\n工作区：'+plan.workspace+'\n来源：'+plan.origin.repository+'\n固定版本：'+(plan.origin.provider==='lix'?plan.origin.version:plan.origin.commit)+'\n许可：'+plan.origin.license+'\n'+plan.format+'\n仅作文字参考，安装不代表 Agent 已使用。':'')+
       (plan.previous_origin?'\n原版本：'+plan.previous_origin.commit+'\n文件变化：'+plan.changes.map(item=>item.status+' '+item.path).join('；'):'')+
       '\n仅改动当前工作区的技能或启用状态；公开技能保留已核验的受支持资料。文档不会因此被修改。\n不会新增工具权限；操作留有备份与记录，可另行确认撤销。') === true;
@@ -299,8 +300,8 @@
     fields.forEach(id => node(id).addEventListener('input', () => { revision++; refresh(); }));
     ['create', 'edit', 'delete'].forEach(operation => node('skills-' + operation).addEventListener('click', () => change(operation)));
     node('skills-toggle').addEventListener('click', () => change('enabled'));
-    node('skills-import').addEventListener('click', () => {
-      if (browser() && !guard()) return;
+    node('skills-import').addEventListener('click', async () => {
+      if (browser() && !await guard()) return;
       return run(async (api, current) => {
       const response = await api.plan_skill_import(); if (!current()) return;
       await approve(api, current, response, 'import');
@@ -312,7 +313,7 @@
       if (response?.ok !== true) { saveId = null; rejected(response); return; }
       const plan = response.plan;
       if (!opaque(plan?.rollback_id) || plan.operation !== 'rollback' || plan.confirmation_required !== true || plan.wrote_nothing !== true) { doubt(); return; }
-      const confirmed = window.confirm('确认撤销这次的技能操作？\n会从已校验的备份还原，记录和资源都保留；技能不会因此获得执行脚本的权限。') === true;
+      const confirmed = await ask('确认撤销这次的技能操作？\n会从已校验的备份还原，记录和资源都保留；技能不会因此获得执行脚本的权限。') === true;
       if (!current() || saveId !== target) return;
       const result = await api.confirm_skill_rollback(plan.rollback_id, confirmed === true ? true : false); if (!current()) return;
       const outcome = result?.result;
@@ -329,8 +330,8 @@
     retire();
     if (browser()) initBrowser();
   }
-  function loadCatalog(check = true) {
-    if (browser() && check && !guard()) return;
+  async function loadCatalog(check = true) {
+    if (browser() && check && !await guard()) return;
     return run(async (api, current) => {
       const response = await api.list_skills(); if (!current()) return;
       if (response?.ok !== true) { rejected(response); return; }
@@ -345,14 +346,14 @@
     const activate = () => {
       if (window.OfficeSettings?.isOpen() && !node('settings-pane-skills').hidden && !loaded && !dirty() && !inflight && ready()) loadCatalog(false);
     };
-    const setView = next => {
-      if (!guard()) return;
+    const setView = async next => {
+      if (!await guard()) return;
       clearEditor(); revision++; view = next; refresh();
       document.dispatchEvent(new CustomEvent('officeskills:view', {detail:{view: next}}));
       if (next === 'installed') activate();
     };
-    const begin = recovered => {
-      if (!guard()) return;
+    const begin = async recovered => {
+      if (!await guard()) return;
       clearEditor(); revision++; view = 'installed'; editing = true;
       node('skills-slug').value = 'skill-' + Array.from(window.crypto.getRandomValues(new Uint8Array(8)), value => value.toString(16).padStart(2, '0')).join('');
       baseline = JSON.stringify(values());
@@ -371,8 +372,8 @@
     node('skills-search').addEventListener('input', () => { renderList(); refresh(); });
     node('skills-search').addEventListener('keydown', event => { if (view === 'installed' && event.key === 'Enter' && !event.isComposing) { event.preventDefault(); renderList(); } });
     node('skills-open-editor').addEventListener('click', () => { editing = true; node('skills-editor-title').textContent = '编辑技能'; refresh(); node('skills-name').focus(); });
-    node('skills-detail-back').addEventListener('click', () => { if (guard()) { clearEditor(); revision++; refresh(); } });
-    node('skills-editor-cancel').addEventListener('click', () => { if (guard()) refresh(); });
+    node('skills-detail-back').addEventListener('click', async () => { if (await guard()) { clearEditor(); revision++; refresh(); } });
+    node('skills-editor-cancel').addEventListener('click', async () => { if (await guard()) refresh(); });
     document.addEventListener('officesettings:opened', activate);
     document.addEventListener('officesettings:tab', event => {
       if (event.detail?.tab === 'tab-skills' && !dirty()) { loaded = false; activate(); }
@@ -380,7 +381,7 @@
     document.addEventListener('officesettings:closed', () => { epoch++; revision++; });
     window.addEventListener('officeapp:state', activate);
     window.OfficeSkills = {requestClose: guard, dirty, refresh: activate, installPublic: async resolution => {
-      if (!guard()) return {installed:false,text:node('skills-status').textContent};
+      if (!await guard()) return {installed:false,text:node('skills-status').textContent};
       const previousSave=saveId;
       await run(async (api,current) => {
         const response=await api.plan_public_skill_install(resolution);

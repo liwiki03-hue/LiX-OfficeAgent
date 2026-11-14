@@ -291,6 +291,14 @@ class OfficeCanvas:
             result = read_range(self.data, item_id, start, end)
             return {'ok':True, 'draft_revision':revision, **result}
 
+    def selection_scope(self, document_id, revision, item_id, axis, index):
+        from ..canvas_ranges import used_selection
+        with self.lock:
+            self.guard(document_id, revision)
+            if self.source.suffix.lower() != '.xlsx':
+                raise GuardError('行列选择仅适用于工作表')
+            return {'ok': True, **used_selection(self.data, item_id, axis, index)}
+
     def prepare_range(self, document_id, revision, item_id, start, text, mode):
         with self.lock:
             self.guard(document_id, revision)
@@ -569,9 +577,14 @@ class OfficeCanvas:
             self.plans[identifier] = plan
             return {'ok': True, 'plan': {key: value for key, value in plan.items() if key not in {'deadline', 'candidate', 'operations'}}}
 
-    def publish(self, document_id, revision, plan_id, confirmed):
+    def publish(self, document_id, revision, plan_id, confirmed, access_id=None):
         with self.lock:
             self.guard(document_id, revision)
+            authorization = self.floating.access.require(access_id, 'publish', document_id) if access_id is not None else None
+            if authorization:
+                if revision <= self.published_revision or self.ai.running is not None:
+                    raise GuardError('当前草稿已保存或仍在处理，未重复自动保存')
+                confirmed = True
             plan = self.plans.pop(plan_id, None)
             if confirmed is not True:
                 return {'ok': True, 'cancelled': True}
@@ -584,6 +597,8 @@ class OfficeCanvas:
             if plan['implementation'] != canvas_implementation():
                 raise GuardError('编辑实现已改变，请重新核对计划')
             self.source_guard.check_source()
+            if authorization:
+                plan['authorization'] = authorization
             self.publishing = self.floating.app.busy = True
             threading.Thread(target=self._publish, args=(plan, self.source_guard, self.floating.app.editor, self.floating.epoch), daemon=True).start()
             return {'ok': True, 'publishing': True}
@@ -698,6 +713,12 @@ class OfficeCanvasApi:
     def canvas_ai_reference(self, document_id, revision, item_id, target, allow_numeric_change=False):
         return self._floating_call(self._floating.canvas.ai.select, document_id, revision, item_id, target, allow_numeric_change)
 
+    def canvas_selection_scope(self, document_id, revision, item_id, axis, index):
+        return self._floating_call(self._floating.canvas.selection_scope, document_id, revision, item_id, axis, index)
+
+    def canvas_ai_reference_range(self, document_id, revision, item_id, start, end, numeric_targets=None):
+        return self._floating_call(self._floating.canvas.ai.select_range, document_id, revision, item_id, start, end, numeric_targets)
+
     def canvas_ai_submit(self, document_id, revision, reference_id, session_id, client_id, text):
         return self._floating_call(self._floating.canvas.ai.submit, document_id, revision, reference_id, session_id, client_id, text)
 
@@ -707,8 +728,8 @@ class OfficeCanvasApi:
     def canvas_ai_resume(self, document_id, revision, reference_id, session_id, instruction_revision):
         return self._floating_call(self._floating.canvas.ai.resume, document_id, revision, reference_id, session_id, instruction_revision)
 
-    def canvas_ai_adopt(self, document_id, revision, proposal_id):
-        return self._floating_call(self._floating.canvas.ai.adopt, document_id, revision, proposal_id)
+    def canvas_ai_adopt(self, document_id, revision, proposal_id, access_id=None):
+        return self._floating_call(self._floating.canvas.ai.adopt, document_id, revision, proposal_id, access_id)
 
     def canvas_ai_reject(self, document_id, revision, proposal_id):
         return self._floating_call(self._floating.canvas.ai.reject, document_id, revision, proposal_id)
@@ -737,8 +758,8 @@ class OfficeCanvasApi:
     def canvas_plan(self, document_id, revision):
         return self._floating_call(self._floating.canvas.plan, document_id, revision)
 
-    def canvas_publish(self, document_id, revision, plan_id, confirmed=False):
-        return self._floating_call(self._floating.canvas.publish, document_id, revision, plan_id, confirmed)
+    def canvas_publish(self, document_id, revision, plan_id, confirmed=False, access_id=None):
+        return self._floating_call(self._floating.canvas.publish, document_id, revision, plan_id, confirmed, access_id)
 
     def canvas_discard(self, document_id, revision, confirmed=False):
         return self._floating_call(self._floating.canvas.discard, document_id, revision, confirmed)

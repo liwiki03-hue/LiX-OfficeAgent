@@ -1,6 +1,7 @@
 /* Host-scoped preference settings. Browser supplies no account, recurrence or content authority. */
 "use strict";
 (() => {
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const byId = id => document.getElementById(id);
   const load = byId("memory-load"), toggle = byId("memory-toggle"), save = byId("memory-save");
   const remove = byId("memory-delete"), clear = byId("memory-clear");
@@ -84,7 +85,7 @@
           (action === "set_manual" && (response.plan.value?.kind !== value.kind || response.plan.value?.text !== value.text))) {
         status.textContent = "方案不可用（" + String(response?.reason || "memory_plan_invalid") + "）。"; return;
       }
-      const approved = window.confirm(explanation);
+      const approved = await ask(explanation);
       if (current !== epoch || !authenticated()) return;
       submitted = approved === true;
       const result = await service.confirm_memory_change(planId, approved === true);

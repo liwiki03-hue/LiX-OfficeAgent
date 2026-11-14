@@ -94,6 +94,7 @@ def test_lix_workflow_install_real_editor_suggestion_and_verified_copy(tmp_path,
             wait_for(page,lambda:bool(api._floating.document),'file admission')
             page.get_by_role('button',name='同意读取并打开',exact=True).click()
             wait_for(page,lambda:bool(api._floating.paged.manifest),'real editor import and bootstrap',70)
+            api._floating.access.set(api._floating.document['id'], api._floating.document['version'], api._floating.epoch, 'edit', True)
             frame = engine_frame(page)
             page.locator('#paged-top > header > details > summary').click()
             page.locator('.floating-menu').get_by_role('button',name='设置',exact=True).click()
@@ -109,10 +110,12 @@ def test_lix_workflow_install_real_editor_suggestion_and_verified_copy(tmp_path,
             page.get_by_role('button',name='预览安装到当前工作区',exact=True).wait_for()
             page.evaluate('window.approved=false')
             page.get_by_role('button',name='预览安装到当前工作区',exact=True).click()
+            page.get_by_role('dialog', name='LiX', exact=True).get_by_role('button', name='取消', exact=True).click()
             wait_for(page,lambda:not page.locator('#skills-panel').get_attribute('aria-busy')=='true','install cancellation')
             assert not (source.parent/'skills/lix-report-polish/SKILL.md').exists() and model.calls==0
             page.evaluate('window.approved=true')
             page.get_by_role('button',name='预览安装到当前工作区',exact=True).click()
+            page.get_by_role('dialog', name='LiX', exact=True).get_by_role('button', name='确认', exact=True).click()
             page.wait_for_selector('#skills-list .skill-entry')
             page.locator('#skills-list .skill-entry').click()
             page.wait_for_function('document.getElementById("skills-detail-meta").textContent.includes("LiX 提供 @ 1.0.0")')
@@ -128,7 +131,7 @@ def test_lix_workflow_install_real_editor_suggestion_and_verified_copy(tmp_path,
             assert next(iter(api._floating.paged.references.values()))['old']==BEFORE
             page.locator('#floating-input').fill('技术报告润色：精简当前引用段落，保留数字、单位、引文和未验证条件，不改标题、表格与其他文字。')
             page.locator('#floating-send').click()
-            page.get_by_role('button',name='采用到草稿',exact=True).wait_for(timeout=25000)
+            wait_for(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()),'automatic adoption',25)
             page.wait_for_selector('[data-skill-read="user:lix-report-polish"]')
             assert page.locator('[data-skill-read="user:lix-report-polish"]').count()==1
             assert '仅代表宿主准备参考' in page.locator('[data-skill-read="user:lix-report-polish"]').text_content()
@@ -136,7 +139,7 @@ def test_lix_workflow_install_real_editor_suggestion_and_verified_copy(tmp_path,
             assert model.calls==2 and candidate()['body'] in model_messages[0][0]['content']
             assert source.read_bytes()==original and not list(source.parent.glob('*.agent-*.docx'))
             page.screenshot(path=str(OUT/'workflow-suggestion.png'))
-            page.get_by_role('button',name='采用到草稿',exact=True).click()
+            assert any(row['status']=='adopted' for row in api._floating.paged.proposals.values())
             wait_for(page,lambda:next(iter(api._floating.paged.proposals.values()))['status']=='adopted','adopt suggestion')
             assert source.read_bytes()==original
             page.get_by_role('button',name='保存副本',exact=True).click()

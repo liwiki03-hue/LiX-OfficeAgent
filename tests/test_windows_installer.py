@@ -108,28 +108,165 @@ def test_renderer_hash_failure_does_not_extract_or_replace(tmp_path, monkeypatch
     assert len(list(tmp_path.glob('*.partial'))) == 1
 
 
+class ArchiveResponse(io.BytesIO):
+    def __init__(self, data, status=206, headers=None):
+        super().__init__(data)
+        self.status = status
+        self.headers = headers or {}
+
+    def geturl(self):
+        return 'https://official.example/archive'
+
+
+def archive_spec(data):
+    return {'version': 'fixture', 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+            'url': 'https://official.example/archive'}
+
+
+def test_renderer_chunk_download_resumes_legacy_partial_without_repeating_bytes(tmp_path, monkeypatch):
+    data = b'0123456789abcdef'
+    spec = archive_spec(data)
+    previous = tmp_path / ('LibreOffice_fixture_Win_x86-64.msi.' + 'a' * 32 + '.partial')
+    previous.write_bytes(data[:5])
+    ranges = []
+
+    def receive(request, timeout):
+        ranges.append(request.get_header('Range'))
+        start, last = map(int, ranges[-1].split('=')[1].split('-'))
+        return ArchiveResponse(data[start:last + 1], headers={
+            'Content-Range': f'bytes {start}-{last}/{len(data)}', 'Content-Length': str(last - start + 1)})
+
+    monkeypatch.setattr(installed_runtime, 'urlopen', receive)
+    monkeypatch.setattr(installed_runtime, 'CHUNK_BYTES', 4)
+    result = installed_runtime.download(tmp_path, spec)
+    assert result.read_bytes() == data
+    assert ranges == ['bytes=5-8', 'bytes=9-12', 'bytes=13-15']
+    assert not previous.exists()
+    assert not list(tmp_path.glob('*.partial'))
+    assert installed_runtime.download(tmp_path, spec) == result
+    assert len(ranges) == 3
+
+
+@pytest.mark.parametrize('status,headers,expected', [
+    (200, {}, 'download_range'),
+    (206, {'Content-Range': 'bytes 0-5/10'}, 'download_range'),
+    (206, {'Content-Range': 'bytes 4-9/10', 'Content-Length': '99'}, 'download_size'),
+])
+def test_renderer_bad_resume_response_never_appends(tmp_path, monkeypatch, status, headers, expected):
+    partial = tmp_path / 'LibreOffice_fixture_Win_x86-64.msi.partial'
+    partial.write_bytes(b'0123')
+    monkeypatch.setattr(installed_runtime, 'urlopen', lambda *a, **k: ArchiveResponse(b'unsafe', status, headers))
+    with pytest.raises(installed_runtime.PreparationError, match=expected):
+        installed_runtime.download(tmp_path, archive_spec(b'0123456789'))
+    assert partial.read_bytes() == b'0123'
+    assert not list(tmp_path.glob('*.msi'))
+
+
+def test_renderer_timeout_resumes_partial_in_a_bounded_retry(tmp_path, monkeypatch):
+    calls = []
+
+    class Interrupted(ArchiveResponse):
+        def read1(self, size):
+            if self.tell():
+                raise TimeoutError('private network detail')
+            return super().read1(4)
+
+    def receive(request, timeout):
+        calls.append(request.get_header('Range'))
+        if len(calls) == 1:
+            return Interrupted(b'0123456789', 200)
+        return ArchiveResponse(b'456789', headers={'Content-Range': 'bytes 4-9/10'})
+
+    monkeypatch.setattr(installed_runtime, 'urlopen', receive)
+    assert installed_runtime.download(tmp_path, archive_spec(b'0123456789')).read_bytes() == b'0123456789'
+    assert calls == ['bytes=0-9', 'bytes=4-9']
+
+
+def test_renderer_error_receipt_is_safe_and_does_not_report_ready(tmp_path, monkeypatch, capsys):
+    report = tmp_path / 'renderer.json'
+    monkeypatch.setenv('LIX_RENDERER_REPORT', str(report))
+
+    def fail(root):
+        raise TimeoutError('secret-token-and-local-path')
+
+    monkeypatch.setattr(installed_runtime, 'prepare', fail)
+    assert installed_runtime.main(tmp_path) == 1
+    saved = json.loads(report.read_text('utf-8'))
+    assert saved['state'] == 'failed'
+    assert saved['code'] == 'download_timeout'
+    assert 'secret-token' not in report.read_text('utf-8') + capsys.readouterr().out
+
+
+def test_renderer_global_budget_preserves_data_without_more_requests(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(installed_runtime, 'DOWNLOAD_SECONDS', 0)
+    monkeypatch.setattr(installed_runtime, 'urlopen', lambda *a, **k: calls.append(a))
+    with pytest.raises(installed_runtime.PreparationError, match='download_timeout'):
+        installed_runtime.download(tmp_path, archive_spec(b'0123456789'))
+    assert calls == []
+    assert not list(tmp_path.glob('*.msi'))
+
+
+def test_bundle_stages_checked_archive_and_declares_network_still_needed(tmp_path):
+    root, archive, spec = fixture_source(tmp_path)
+    renderer = tmp_path / 'renderer.msi'
+    renderer.write_bytes(b'synthetic-offline-renderer')
+    spec['renderer'].update(bytes=renderer.stat().st_size, sha256=hashlib.sha256(renderer.read_bytes()).hexdigest())
+    (root / 'release/WINDOWS_INSTALLER.json').write_text(json.dumps(spec), encoding='utf-8')
+    manifest, _ = installer.stage(root, tmp_path / 'payload', archive, tmp_path, renderer)
+    row = next(item for item in manifest['files'] if item['path'].endswith('.msi'))
+    assert (tmp_path / 'payload' / row['path']).read_bytes() == renderer.read_bytes()
+    assert row['sha256'] == spec['renderer']['sha256']
+    assert manifest['bundles_renderer'] is True
+    assert '不是全离线安装包' in (tmp_path / 'payload/INSTALL-NOTES.txt').read_text('utf-8-sig')
+    renderer.write_bytes(b'tampered')
+    with pytest.raises(ValueError, match='pinned official archive'):
+        installer.stage(root, tmp_path / 'rejected', archive, tmp_path, renderer)
+    assert not (tmp_path / 'rejected').exists()
+
+
+def test_bundled_renderer_is_verified_before_extract_without_network(tmp_path, monkeypatch):
+    root = tmp_path / 'app'
+    (root / 'release').mkdir(parents=True)
+    spec = json.loads((ROOT / 'release/WINDOWS_INSTALLER.json').read_text('utf-8'))
+    (root / 'release/WINDOWS_INSTALLER.json').write_text(json.dumps(spec), encoding='utf-8')
+    bundle = tmp_path / 'runtime/LibreOffice_26.2.6.2_Win_x86-64.msi'
+    bundle.parent.mkdir()
+    with bundle.open('wb') as stream:
+        stream.truncate(spec['renderer']['bytes'])
+    original_digest = installed_runtime.digest
+    monkeypatch.setattr(installed_runtime, 'digest', lambda path: spec['renderer']['sha256'] if path == bundle else original_digest(path))
+    monkeypatch.setattr(installed_runtime, 'urlopen', lambda *a, **k: pytest.fail('unexpected network request'))
+    extracted = []
+
+    def extract(archive, destination):
+        extracted.append(archive)
+        (destination / 'program').mkdir(parents=True)
+        (destination / 'program/soffice.com').write_bytes(b'synthetic-binary')
+
+    monkeypatch.setattr(installed_runtime, 'extract', extract)
+    assert installed_runtime.prepare(root)['ok'] is True
+    assert extracted == [bundle]
+    assert installed_runtime.prepare(root)['status'] == 'already_verified'
+    assert extracted == [bundle]
+
+
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows installed launcher')
 def test_actual_compiled_launcher_checks_integrity_without_network_or_launch(tmp_path, monkeypatch):
-    from office_agent.diagram_process import _WindowsJob
+    from office_agent.diagram_process import _run_owned
     root, archive, _ = fixture_source(tmp_path)
     payload = tmp_path / 'LiX 中文 & (install)'
     installer.stage(root, payload, archive, tmp_path)
-    installer.compile_launcher(ROOT, payload)
+    compiled = _run_owned((sys.executable, '-I', '-c', 'import sys,faulthandler;from pathlib import Path;trace=open(sys.argv[3],"w");sys.stdout=sys.stderr=trace;faulthandler.dump_traceback_later(8,repeat=True,file=trace);sys.path.insert(0,sys.argv[1]);from tools.build_windows_installer import compile_launcher;compile_launcher(Path(sys.argv[1]),Path(sys.argv[2]));faulthandler.cancel_dump_traceback_later()', str(ROOT), str(payload), str(tmp_path / 'compiler-stack.log')), timeout_ms=30000)
+    assert compiled.empty_confirmed
+    assert compiled.exit_code == 0, 'Launcher compilation did not complete within its isolated 30-second boundary'
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'isolated-user'))
 
     def run():
-        process, job = None, _WindowsJob()
-        try:
-            process = job.spawn((str(payload / 'LiX.exe'), '--check'))
-            end = time.monotonic() + 15
-            while process.poll() is None and time.monotonic() < end:
-                time.sleep(.05)
-            return process.poll()
-        finally:
-            empty = job.close()
-            if process:
-                process.close()
-            assert empty
+        result = _run_owned((sys.executable, '-I', '-c', 'import subprocess,sys;sys.exit(subprocess.run([sys.argv[1],"--check"],timeout=15).returncode)', str(payload / 'LiX.exe')), timeout_ms=20000)
+        assert result.empty_confirmed
+        assert result.code != 'render_timeout', 'Compiled launcher check exceeded independent 20-second boundary'
+        return result.exit_code
 
     assert run() == 42
     assert not (payload / 'app/.runtime').exists()

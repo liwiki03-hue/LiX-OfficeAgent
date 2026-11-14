@@ -18,6 +18,10 @@
 #canvas-surface { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; scroll-behavior: auto; padding: 16px; background: var(--card); }
 .canvas-grid { border-collapse: separate; border-spacing: 0; background: #fff; color: #202124; table-layout: fixed; }
 .canvas-grid td { background: #fff; color: #202124; }
+.canvas-grid [data-target] { touch-action: none; }
+.canvas-grid th button { width: 100%; min-height: 28px; border: 0; border-radius: 0; background: transparent; color: inherit; }
+.canvas-context-menu { position: fixed; margin: 0; padding: 6px; min-width: 160px; }
+.canvas-context-menu button { display: block; width: 100%; text-align: left; }
 .canvas-grid td, .canvas-grid th { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); min-width: 104px; max-width: 240px; padding: 0; }
 .canvas-grid th { position: sticky; top: -16px; background: var(--card); color: var(--ink); font-weight: 500; height: 28px; z-index: 1; }
 .canvas-grid tbody th { left: -16px; top: auto; min-width: 44px; }

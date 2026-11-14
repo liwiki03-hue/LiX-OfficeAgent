@@ -13,6 +13,7 @@ from tests.test_model_connections import connection, payload, save
 from tests.test_office_workflow_browser import make_document, wait_for
 from tests.test_paged_browser import engine_frame, serve_static
 from tests.test_professional_browser import EDGE, STATIC
+from tests.test_floating_browser import open_floating_menu
 
 
 OUT = STATIC.parents[2]/'deliverables/ui-style-unification-20261113'
@@ -95,7 +96,7 @@ def test_shared_style_two_themes_migration_and_actual_editor(tmp_path, monkeypat
                 assert page.locator('#floating-input').input_value()=='请精简所选段落，保留数字、单位和引文。'
                 page.locator('#settings-close').click()
                 page.set_viewport_size({'width':1280,'height':820})
-                page.locator('#floating-root:not([hidden]) header > details > summary').click()
+                open_floating_menu(page, '工具与记录')
                 page.locator('.floating-menu').get_by_role('button',name='历史记录',exact=True).click()
                 page.locator('#simple-history').wait_for(state='visible')
                 page.wait_for_function("typeof historyLoading==='undefined'||!historyLoading")

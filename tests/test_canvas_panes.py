@@ -12,6 +12,7 @@ from office_agent import canvas_panes as panes
 from office_agent import office_canvas as engine
 from office_agent.diagram_process import _run_owned
 from office_agent.writes import GuardError
+from office_agent.browser_runtime import find_edge
 from tests.test_l3_l4_editing import sheet_draft
 
 
@@ -137,7 +138,7 @@ def test_table_column_policy_does_not_mutate_engine_json(tmp_path):
     assert payload['passed']
 
 
-@pytest.mark.skipif(not Path('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe').is_file(),reason='Requires existing Edge; no runtime installed')
+@pytest.mark.skipif(find_edge() is None,reason='Requires existing Edge; no runtime installed')
 def test_fixed_engine_column_export_reopen_code_probe():
     path=Path(__file__).resolve().parents[1]/'deliverables/l3-l4-panes-20261111/engine_probe.py'
     spec=importlib.util.spec_from_file_location('column_engine_probe',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

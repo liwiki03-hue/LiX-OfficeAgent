@@ -1,5 +1,6 @@
 "use strict";
 (() => {
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const get = id => document.getElementById(id);
   const controls = ["general-load","general-save","general-delete","general-clear","multi-select","multi-clear","multi-load"].map(get);
   if (controls.some(control => !control)) return;
@@ -48,7 +49,7 @@
     }
     const text = operation === "remember" ? "确认保存并允许跨任务召回以下内容？召回可能发送给当前模型。\n\n" + plan.content :
       "确认停止召回" + (operation === "clear" ? "本账户全部通用记忆" : "所选通用记忆") + "？事务备份仍保留在本机。";
-    const confirmed = window.confirm(text);
+    const confirmed = await ask(text);
     if (!valid()) return;
     const outcome = await service.confirm_general_memory(plan.plan_id, confirmed === true);
     if (!valid()) return;
@@ -99,7 +100,7 @@
       if (!response?.ok || !id(plan?.plan_id) || plan.requires_confirmation !== true || JSON.stringify(plan.files) !== JSON.stringify(names)) {
         get("multi-status").textContent = "范围拒绝：只支持当前目录的安全DOCX/XLSX文件。"; return;
       }
-      const confirmed = window.confirm("确认读取以下文件的有界摘要，并用于后续任务？内容可能发送给当前模型；每个写计划仍单独确认。\n\n" + plan.files.join("\n"));
+      const confirmed = await ask("确认读取以下文件的有界摘要，并用于后续任务？内容可能发送给当前模型；每个写计划仍单独确认。\n\n" + plan.files.join("\n"));
       if (!valid()) return;
       const result = await service.confirm_task_documents(plan.plan_id, confirmed === true);
       if (!valid()) return;

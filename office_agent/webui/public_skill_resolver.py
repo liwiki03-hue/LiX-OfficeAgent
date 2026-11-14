@@ -22,7 +22,8 @@ LICENSES = {'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'NOTICE', 'NOTICE.md', 'NOTI
 def read_api(path, deadline, *, accept='application/vnd.github+json', limit=1024 * 1024):
     if not path.startswith('/repos/') or time.monotonic() >= deadline:
         raise ValueError('source_timeout')
-    with httpx2.Client(timeout=min(8, max(.1, deadline - time.monotonic())), follow_redirects=False, trust_env=False) as client:
+    from ..network import transport
+    with httpx2.Client(timeout=min(8, max(.1, deadline - time.monotonic())), follow_redirects=False, trust_env=False, transport=transport('https://api.github.com')) as client:
         with client.stream('GET', 'https://api.github.com' + path,
                            headers={'Accept': accept, 'User-Agent': 'LiX-PublicSkills/1'}) as response:
             if response.status_code in (403, 429):

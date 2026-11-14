@@ -3,9 +3,12 @@ param(
     [Parameter(Mandatory=$true)][string]$Output,
     [Parameter(Mandatory=$true)][string]$UvArchive,
     [Parameter(Mandatory=$true)][string]$LicenseRoot,
-    [Parameter(Mandatory=$true)][string]$InnoSetup
+    [Parameter(Mandatory=$true)][string]$InnoSetup,
+    [string]$RendererArchive = '',
+    [string]$BuildId = ''
 )
 $ErrorActionPreference = 'Stop'
+if ($BuildId -and $BuildId -notmatch '^[a-z0-9][a-z0-9-]{0,63}$') { throw 'Build ID must use 1 to 64 lowercase letters, digits or hyphens' }
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $originalTemp = $env:TEMP
 $originalTmp = $env:TMP
@@ -106,8 +109,10 @@ public static class LiXInstallerFileSecurity
     }
     [LiXInstallerFileSecurity]::Check($buildRoot)
     $uv = (Get-Command uv -CommandType Application -ErrorAction Stop).Source
-    Invoke-OwnedBuild $uv @('run','--offline','python','-m','tools.build_windows_installer','--stage-only',
-        '--root',$projectRoot,'--payload',$Payload,'--uv-archive',$UvArchive,'--license-root',$LicenseRoot) 120
+    $stageArgs = @('run','--offline','python','-m','tools.build_windows_installer','--stage-only',
+        '--root',$projectRoot,'--payload',$Payload,'--uv-archive',$UvArchive,'--license-root',$LicenseRoot)
+    if ($RendererArchive) { $stageArgs += @('--renderer-archive',(Get-CheckedPath $RendererArchive)) }
+    Invoke-OwnedBuild $uv $stageArgs 120
     $manifest = [IO.File]::ReadAllText((Join-Path $Payload 'LiX.install.json')) | ConvertFrom-Json
     $stage = [IO.File]::ReadAllText((Join-Path $Payload 'STAGE.json')) | ConvertFrom-Json
     if ($manifest.version -notmatch '^\d+\.\d+\.\d+$' -or $manifest.version -ne $stage.version) { throw 'Invalid staged version' }
@@ -123,6 +128,7 @@ public static class LiXInstallerFileSecurity
         ('/out:'+$launcher),('/win32icon:'+(Join-Path $projectRoot 'office_agent/webui/static/brand/lix.ico')),
         ('/resource:'+(Join-Path $Payload 'bootstrap.json')+',LiX.Bootstrap'),
         (Join-Path $projectRoot 'tools/windows/installed_launcher.cs'),(Join-Path $projectRoot 'tools/windows/process_job.cs'),
+        (Join-Path $projectRoot 'tools/windows/bootstrap_network.cs'),
         (Join-Path $Payload 'launcher_version.cs')) 60
     [IO.File]::Move($launcher, (Join-Path $Payload 'LiX.exe'))
     [LiXInstallerFileSecurity]::Check((Join-Path $Payload 'LiX.exe'))
@@ -132,18 +138,21 @@ public static class LiXInstallerFileSecurity
     if ($LASTEXITCODE -ne 0 -or "$banner" -notmatch '\b7\.1\.1\b') { throw 'Expected Inno Setup 7.1.1' }
     $binaryRoot = Join-Path $buildRoot 'output'
     [IO.Directory]::CreateDirectory($binaryRoot) | Out-Null
+    $flavor = if ($stage.bundles_renderer) { 'renderer-preview' } else { 'preview' }
+    if ($BuildId) { $flavor = $BuildId + '-' + $flavor }
     Invoke-OwnedBuild $iscc @('/Qp',('/DPayloadDir='+$Payload),('/DOutputDir='+$binaryRoot),
-        ('/DVersion='+$manifest.version),(Join-Path $projectRoot 'tools/windows/LiX.iss')) 180
-    $name = 'LiX-Setup-' + $manifest.version + '-preview-x64.exe'
+        ('/DVersion='+$manifest.version),('/DFlavor='+$flavor),(Join-Path $projectRoot 'tools/windows/LiX.iss')) 600
+    $name = 'LiX-Setup-' + $manifest.version + '-' + $flavor + '-x64.exe'
     $artifact = Join-Path $binaryRoot $name
-    if ((Get-Item -LiteralPath $artifact).Length -gt 128MB) { throw 'Installer exceeds the size bound' }
+    $sizeLimit = if ($stage.bundles_renderer) { 512MB } else { 128MB }
+    if ((Get-Item -LiteralPath $artifact).Length -gt $sizeLimit) { throw 'Installer exceeds the size bound' }
     $checksum = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.Directory]::CreateDirectory($Output) | Out-Null
     [IO.File]::Move($artifact, (Join-Path $Output $name))
     [LiXInstallerFileSecurity]::Check((Join-Path $Output $name))
     [IO.File]::WriteAllText((Join-Path $Output 'SHA256SUMS.txt'), ($checksum+'  '+$name+"`n"), [Text.Encoding]::ASCII)
     $receipt = [ordered]@{file=$name;bytes=(Get-Item -LiteralPath (Join-Path $Output $name)).Length;sha256=$checksum;
-        version=$manifest.version;channel='network-preview';signed=$false;published=$false;
+        version=$manifest.version;build_id=$BuildId;channel='network-preview';signed=$false;published=$false;bundles_renderer=$stage.bundles_renderer;
         public_source_files=$stage.public_source_files;payload_files=$stage.payload_files;
         source_manifest_sha256=$stage.source_manifest_sha256;binary_created_in_system_temp=$true;
         final_binary_same_volume_move=$true;low_integrity_artifacts_rejected=$true;security_permissions_modified=$false}

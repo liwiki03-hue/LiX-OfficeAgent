@@ -100,7 +100,8 @@ class Embedder:
         if type(config) is not EmbeddingConfig:
             fail()
         self.config = config
-        self._transport = transport_factory or (lambda:httpx2.HTTPTransport(retries=0,trust_env=False))
+        from .network import transport
+        self._transport = transport_factory or (lambda: transport(self.config.base_url))
         self._local_factory = local_factory
         self._model = None
         self._manifest_id = None

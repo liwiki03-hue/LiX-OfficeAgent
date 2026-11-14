@@ -1,5 +1,7 @@
 # 第三方来源与许可
 
+本轮补核对：httpx2 2.13.0来自[Pydantic官方仓库](https://github.com/pydantic/httpx2)和[固定PyPI发行](https://pypi.org/project/httpx2/2.13.0/)，许可BSD-3-Clause；不是本项目自建未知分叉。uv.lock保留wheel SHA-256 `fc12720cedf72faa26cca6b4ca394e05c894e7d7933fc45cafe767960804e49a`、sdist `81bd07dc67a3701729ef1f777a3c00c915d4539604fdb5afd327f8682f6b7b44`。原许可在发行包的dist-info/licenses/LICENSE.md；本轮共用网络选项、下载、日志、确认框与选区实现为项目自有代码，没有新增第三方库或复制第三方实现。固定依赖仍以uv.lock和DEPENDENCY_NOTICES.json为准。
+
 保留原始版权、许可和工具指令，不把第三方代码重新授权为项目许可。完整 Python 锁定清单是 uv.lock；源码候选不含 .venv、MSI 或已安装运行时。
 
 | 资产 | 固定版本/来源 | 许可及适配 |
@@ -17,9 +19,9 @@
 | pywebview | 6.2.1 | BSD-3-Clause，标准入口为 Edge/netfx |
 | pypdfium2 | 5.14.0 | BSD-3-Clause、Apache-2.0 及 PDFium 依赖许可，完整依赖通知不可省略 |
 | citeproc-py / Playwright | 0.11.1 / 1.63.0 | BSD-2-Clause-Views / Apache-2.0，后者为开发组 |
-| LibreOffice | 官方归档 26.2.6.2 x64 MSI | 外部下载，不打包进源码；保留下载器摘要和原安装包许可 |
+| LibreOffice | 官方归档 26.2.6.2 x64 MSI | 轻量版外部下载；可选 renderer-preview 候选携带未经修改的固定 MSI，不打包进源码，保留原安装包全部许可 |
 
-安装器候选使用 Inno Setup 7.1.1（is-7_1_1）官方编译器，下载归档和许可摘要固定在 release/WINDOWS_INSTALLER.json。原安装引擎通知保留，自行编写 .iss 配置，不复制第三方界面实现。随候选携带的 uv.exe 为官方 0.12.18 x64 归档，提交 01cb90c1a4f88af09906cb60de9766d2add4a062，原 Apache-2.0/MIT 两份许可完整保存在安装目录 licenses。来源及具体文件见[安装包说明](docs/WINDOWS_INSTALLER.md)；用户首次准备下载的 Python、锁定依赖、SuperDoc 与 LibreOffice 不包含在安装器中，原许可与捆绑发行缺项继续适用。
+安装器候选使用 Inno Setup 7.1.1（is-7_1_1）官方编译器，下载归档和许可摘要固定在 release/WINDOWS_INSTALLER.json。原安装引擎通知保留，自行编写 .iss 配置，不复制第三方界面实现。随候选携带的 uv.exe 为官方 0.12.18 x64 归档，提交 01cb90c1a4f88af09906cb60de9766d2add4a062，原 Apache-2.0/MIT 两份许可完整保存在安装目录 licenses。来源及具体文件见[安装包说明](docs/WINDOWS_INSTALLER.md)；轻量版不含 Python、锁定依赖、SuperDoc 与 LibreOffice；renderer-preview 候选仅额外包含上述固定原版 MSI，其他准备仍需联网。原许可与发行核对边界继续适用。
 
 本轮新脚本自行实现，未粘贴第三方实现。CI 参考 uv 官方锁定同步设计；actions/checkout 固定 11bd71901bbe5b1630ceea73d27597364c9af683（v4.2.2），astral-sh/setup-uv 固定 37802adc94f370d6bfd71619e3f0bf239e1f3b78（v7.6.0）。Action 不打包进应用。
 
@@ -28,3 +30,5 @@
 安装元数据只是清点依据，不是完整兼容性意见。发行前仍需审核根许可、贡献归属、传递依赖和实际随包资产。历史基线回归资产同样保留第三方许可。
 
 逐包版本、安装元数据和原许可证位置见 release/DEPENDENCY_NOTICES.json；未安装的可选/平台依赖明确标为未核对，不自动安装大型 extras。
+
+LibreOffice 原版归档保持未修改，其安装目录内 LICENSE、NOTICE 和各组件通知完整保留。许可说明：https://www.libreoffice.org/licenses/ 。对应版本源码入口：https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.6.2/src/ 。本轮只制作本地构建候选，公开分发前需完成对应源码取得与许可交付核对，不把链接存在当作已经交付源码。

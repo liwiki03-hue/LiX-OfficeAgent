@@ -39,6 +39,8 @@ MANAGED |= frozenset({'OFFICE_MODEL_CONNECTIONS', 'OFFICE_CHAT_HISTORY'})
 FIELDS |= frozenset({'chat_history'})
 FIELDS |= frozenset({'chat_reply_tokens', 'image_reuse_metadata'})
 MANAGED |= frozenset({'OFFICE_CHAT_REPLY_TOKENS', 'OFFICE_IMAGE_REUSE_METADATA'})
+FIELDS |= frozenset({'network_mode', 'network_proxy'})
+MANAGED |= frozenset({'OFFICE_NETWORK_MODE', 'OFFICE_NETWORK_PROXY'})
 
 
 class SettingsError(ValueError):
@@ -82,6 +84,10 @@ def _unsafe(st):
 
 def _private_values(values):
     private = [v for k, v in values.items() if v and any(marker in k.upper() for marker in ('KEY', 'TOKEN', 'SECRET', 'PASSWORD'))]
+    if values.get('OFFICE_NETWORK_PROXY'):
+        from urllib.parse import unquote
+        parsed = urlsplit(values['OFFICE_NETWORK_PROXY'])
+        private.extend([values['OFFICE_NETWORK_PROXY'], *[unquote(value) for value in (parsed.username, parsed.password) if value]])
     if values.get('OFFICE_MODEL_CONNECTIONS'):
         from .model_connections import from_values
         private.extend(row['api_key'] for row in from_values(values)['connections'] if row['api_key'])
@@ -96,7 +102,18 @@ def _validate(changes):
     if type(changes) is not dict or not changes or not changes.keys() <= FIELDS:
         raise SettingsError()
     for key, value in changes.items():
-        if key in ('chat_history', 'image_reuse_metadata'):
+        if key == 'network_mode':
+            if type(value) is not str or value not in {'auto', 'direct', 'manual'}:
+                raise SettingsError('settings_invalid', field=key)
+        elif key == 'network_proxy':
+            _text(value, 2048, True)
+            if value:
+                from .network import NetworkOptions
+                try:
+                    NetworkOptions('manual', value)
+                except ValueError:
+                    raise SettingsError('settings_invalid', field=key) from None
+        elif key in ('chat_history', 'image_reuse_metadata'):
             if type(value) is not bool:
                 raise SettingsError()
         elif key == 'chat_reply_tokens':
@@ -279,6 +296,9 @@ class SettingsStore:
                 result[name] = "[redacted]"
         configured = bool(values.get(prefix + "_API_KEY")) if provider != "ollama" else False
         result.update(api_key="********" if configured else "", api_key_configured=configured)
+        result.update(network_mode=values.get('OFFICE_NETWORK_MODE') or 'direct',
+                      network_proxy='********' if values.get('OFFICE_NETWORK_PROXY') else '',
+                      network_proxy_configured=bool(values.get('OFFICE_NETWORK_PROXY')))
         return result
 
     def snapshot(self):
@@ -348,6 +368,13 @@ class SettingsStore:
         values = self._values(source)
         current = self._public(values)
         provider = changes.get("provider", values.get("MODEL_PROVIDER") or "deepseek")
+        if 'network_mode' in changes or 'network_proxy' in changes:
+            from .network import NetworkOptions
+            try:
+                NetworkOptions(changes.get('network_mode', values.get('OFFICE_NETWORK_MODE') or 'direct'),
+                               changes.get('network_proxy', values.get('OFFICE_NETWORK_PROXY') or ''))
+            except ValueError:
+                raise SettingsError('settings_invalid', field='network_proxy') from None
         if provider == "ollama" and "api_key" in changes:
             raise SettingsError()
         if "base_url" in changes and changes["base_url"].startswith("http:") and provider != "ollama":
@@ -356,6 +383,7 @@ class SettingsStore:
         mapping['chat_history'] = 'OFFICE_CHAT_HISTORY'
         mapping['chat_reply_tokens'] = 'OFFICE_CHAT_REPLY_TOKENS'
         mapping['image_reuse_metadata'] = 'OFFICE_IMAGE_REUSE_METADATA'
+        mapping.update(network_mode='OFFICE_NETWORK_MODE', network_proxy='OFFICE_NETWORK_PROXY')
         mapping.update({name: spec[0] for name, spec in EMBEDDING_NUMBERS.items()})
         actual = {k: v for k, v in changes.items() if
                   (current.get(k) != v if k in LIMITS and mapping[k] in values else str(v) != str(values.get(mapping[k], '')))}
@@ -385,8 +413,8 @@ class SettingsStore:
         self._pending[plan_id] = _Plan(session_id, time.monotonic(), source, desired)
         differences = []
         for key in sorted(actual):
-            if key == 'api_key':
-                differences.append({'field': key, 'before': '已配置' if before['api_key_configured'] else '未配置', 'after': '替换' if changes[key] else '清除'})
+            if key in ('api_key', 'network_proxy'):
+                differences.append({'field': key, 'before': '已配置' if before['network_proxy_configured' if key == 'network_proxy' else 'api_key_configured'] else '未配置', 'after': '替换' if changes[key] else '清除'})
             else:
                 differences.append({'field': key, 'before': (current['provider'] if values.get('MODEL_PROVIDER') else None) if key == 'provider' else before.get(key), 'after': public.get(key)})
         return {"plan_id": plan_id, "settings": public, "changed_fields": sorted(actual), "differences": differences, "confirmation_required": True, "wrote_nothing": True, "expires_in_seconds": TTL_SECONDS, "restart_required": True}

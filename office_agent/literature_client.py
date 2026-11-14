@@ -50,7 +50,7 @@ def _unique(pairs):
 class LiteratureClient:
     def __init__(self, config=None, *, transport_factory=None, clock=time.monotonic):
         self.config = config or LiteratureConfig()
-        self.transport = transport_factory or (lambda: httpx2.HTTPTransport(retries=0, trust_env=False))
+        self.transport = transport_factory
         self.clock = clock
         self.calls = 0
         self.key_calls = 0
@@ -85,7 +85,8 @@ class LiteratureClient:
         self.next_at[source] = now + 1
         deadline = now + self.config.timeout
         try:
-            with httpx2.Client(transport=self.transport(), trust_env=False, follow_redirects=False) as client:
+            from .network import transport
+            with httpx2.Client(transport=self.transport() if self.transport else transport(url), trust_env=False, follow_redirects=False) as client:
                 with client.stream('GET', url, params=params, headers=headers, timeout=self.config.timeout) as response:
                     if response.status_code == 429:
                         wait = response.headers.get('retry-after', '')

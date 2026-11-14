@@ -1,6 +1,7 @@
 /* Human-only RAG: no model grants, roots, provider identity or supplied hits. */
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const node = id => document.getElementById(id);
   const actions = ['load','index','query','read','next','rollback-index','rollback-evidence'];
   let epoch = 0, revision = 0, inflight = false, initialized = false, uncertain = false;
@@ -245,7 +246,7 @@
     if (!valid || !opaque(plan.rollback_id) || plan.operation !== (kind === 'index' ? 'rollback' : 'remove_evidence') || plan.confirmation_required !== true ||
         (kind === 'index' ? (!integer(plan.revision,1,Number.MAX_SAFE_INTEGER) || !integer(plan.chunk_count,0,10000) || typeof plan.first_absent_restored_empty !== 'boolean') :
           (plan.wrote_nothing !== true || !integer(plan.expires_in_seconds,1,300)))) throw Error();
-    const confirmed = window.confirm('确认撤销本次' + (kind === 'index' ? '索引' : '检索结果') + '？\n仅处理本会话已校验的保存产物；源文件、备份和审计保留。') === true;
+    const confirmed = await ask('确认撤销本次' + (kind === 'index' ? '索引' : '检索结果') + '？\n仅处理本会话已校验的保存产物；源文件、备份和审计保留。') === true;
     if (!current()) return;
     const result = await api.confirm_rag_rollback(kind, plan.rollback_id, confirmed);
     if (!current()) return;
@@ -312,7 +313,7 @@
       if (!current()) return;
       if (!accepted(response, 'plan')) return;
       const message = indexPlan(response.plan) + (!corpus && node('rag-research')?.checked ? '\n本次替换当前文件的旧索引，采用384 token切块；可用本次撤销恢复。' : '');
-      const confirmed = window.confirm(message) === true;
+      const confirmed = await ask(message) === true;
       if (!current()) return;
       const result = corpus ? await api.confirm_research_corpus(response.plan.plan_id,confirmed) : await api.confirm_rag_index(response.plan.plan_id,confirmed);
       if (!current()) return;
@@ -333,7 +334,7 @@
       const research = Boolean(node('rag-research')?.checked);
       const directory = Boolean(node('rag-directory')?.checked);
       const range = pdfRange(); if (!range) return;
-      if (directory && !research && window.confirm('确认读取当前文件所在目录中最多20个安全Word/Excel文档进行检索？\n目录：' +
+      if (directory && !research && await ask('确认读取当前文件所在目录中最多20个安全Word/Excel文档进行检索？\n目录：' +
           (node('file-dir')?.textContent || '') + '\n将使用已配置的检索服务；如配置了云服务，文档内容会发送给该服务。索引仅在内存中建立，保存结果仍需另行确认。') !== true) return;
       if (!current()) return;
       const response = research && directory ? await api.plan_research_corpus_query(question,topk,Boolean(node('rag-rerank')?.checked),Boolean(node('rag-expand')?.checked)) : research ? await api.plan_research_query(question,topk,...range) : directory ? await api.plan_rag_directory_query(question,topk) : await api.plan_rag_query(question,topk);
@@ -341,7 +342,7 @@
       if (!accepted(response, 'plan')) return;
       if (directory && !research && !response.plan?.directory) throw Error();
       const message = queryPlan(response.plan), count = response.plan.hit_count;
-      const confirmed = window.confirm(message) === true;
+      const confirmed = await ask(message) === true;
       if (!current()) return;
       const result = await api.confirm_rag_query(response.plan.plan_id,confirmed);
       if (!current()) return;

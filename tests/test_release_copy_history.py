@@ -11,6 +11,7 @@ from office_agent.webui import manual_history
 from office_agent.paged_documents import CandidatePublisher
 from office_agent.writes import GuardError, digest
 from tests.test_office_canvas import fixtures
+from tests.test_floating_browser import open_floating_menu
 
 
 @pytest.fixture
@@ -185,7 +186,7 @@ def test_history_ui_lists_all_formats_and_reopens_without_restoring_grants(copie
             page.route('**/auth.js', lambda route: route.fulfill(status=200, body=''))
             errors = [];page.on('pageerror', lambda error: errors.append(str(error)))
             page.goto(url);page.locator('#canvas-items button').first.wait_for()
-            page.get_by_label('更多', exact=True).click()
+            open_floating_menu(page, '工具与记录')
             page.get_by_role('button', name='历史记录', exact=True).click()
             page.wait_for_function('document.querySelectorAll("#history-list [data-session^=\\"manual:\\"]").length===3')
             assert not page.locator('#simple-history-chats').is_visible()

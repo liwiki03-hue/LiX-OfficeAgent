@@ -7,8 +7,7 @@ import shutil
 from docx import Document
 import pytest
 
-from tests.test_paged_browser import paged_browser
-from tests.test_paged_inbox_browser import select_model, select_reference, wait
+from tests.test_paged_inbox_browser import paged_browser, select_model, select_reference, wait
 
 
 @pytest.mark.parametrize('question', [
@@ -38,11 +37,11 @@ def test_explicit_year_proposal_cancel_publish_reopen_and_rollback(paged_browser
     select_reference(page)
     page.locator('#floating-input').fill(question)
     page.locator('#floating-send').click()
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible')
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     assert '2025 → 2026' in page.locator('#paged-proposals').inner_text()
     assert 'same-model' in page.locator('#paged-proposals').inner_text()
     wait(page, lambda: not api._app.busy)
-    page.get_by_role('button',name='采用到草稿',exact=True).click()
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     wait(page, lambda: any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     page.get_by_role('button',name='保存副本',exact=True).click()
     page.get_by_role('dialog').get_by_role('button',name='取消',exact=True).click()

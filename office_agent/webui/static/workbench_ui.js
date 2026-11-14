@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById(id);
   if (!$('daily-conversations') || !window.OfficeWorkspace || $('simple-reading')) return;
   const make = (tag, id, text, parent) => {
@@ -41,14 +42,14 @@
   const startNote = make('p', 'simple-start-note', '', start);
   const starts = make('div', 'simple-start-actions', '', start);
   button('simple-start-document', '选择文档…', starts, () => $('btn-select2').click());
-  button('simple-start-draft', '润色一段文字', starts, () => {
+  button('simple-start-draft', '润色一段文字', starts, async () => {
     const input = $('prompt');
-    if (input.value && !window.confirm('替换未发送的草稿？不会调用模型。')) return;
+    if (input.value && !await ask('替换未发送的草稿？不会调用模型。')) return;
     input.value = '请润色以下文字，保留数字、单位、引文和限定条件：\n';
     input.dispatchEvent(new Event('input', {bubbles:true})); input.focus();
   });
-  button('simple-start-question', '概括报告要点', starts, () => {
-    if ($('prompt').value && !window.confirm('替换未发送的草稿？不会调用模型。')) return;
+  button('simple-start-question', '概括报告要点', starts, async () => {
+    if ($('prompt').value && !await ask('替换未发送的草稿？不会调用模型。')) return;
     $('prompt').value = '请概括以下技术报告的目的、方法、主要结果与适用条件：\n';
     $('prompt').dispatchEvent(new Event('input', {bubbles:true})); $('prompt').focus();
   });
@@ -264,7 +265,7 @@
   const authBoundary = $('auth-screen')?.querySelector('.auth-boundary');
   if (authBoundary) {
     const details = make('details','simple-auth-details','',authBoundary.parentElement);
-    make('summary','','本地账户共用数据；文件修改仍需逐次确认',details); details.append(authBoundary);
+    make('summary','','本地数据共用；原文保留，修改另存副本',details); details.append(authBoundary);
   }
   const historyClose = imageHistory.querySelector(':scope > button:last-child');
   if (historyClose) historyClose.onclick = () => window.OfficeWorkspace.open('work');

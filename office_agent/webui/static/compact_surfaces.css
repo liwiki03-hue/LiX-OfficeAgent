@@ -1,4 +1,12 @@
 :root { --surface-menu-radius: 10px; --surface-row-height: var(--control-height); --surface-reading-width: 860px; }
+.floating-menu > details > summary { list-style: none; display: flex; align-items: center; padding: 8px 10px; cursor: pointer; }
+.floating-menu > details > summary::after { content: '›'; margin-left: auto; }
+.floating-menu > details[open] > summary::after { transform: rotate(90deg); }
+.floating-menu > details:not([open]) > button { display: none !important; }
+.lix-first-guide { max-width: 100%; padding: 12px; margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-btn); background: var(--card); }
+.lix-first-guide label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); }
+.lix-first-guide input { width: auto; }
+.lix-confirm-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
 #skills-public-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 8px; margin: 16px 0; }
 #skills-public-results[hidden], #skills-public-detail[hidden] { display: none; }
 #skills-public-detail { margin: 16px 0; padding: 16px; background: var(--card-inner); border-radius: 10px; }

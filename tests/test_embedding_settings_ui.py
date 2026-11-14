@@ -43,7 +43,7 @@ const api={
  async confirm_settings_rollback(plan,allow){calls.push(['rollback_confirm',plan,allow]);return receipts?actual('confirm_settings_rollback',[plan,allow]):{ok:true,result:allow?{status:'rolled_back',restored:true}:{status:'rejected',restored:false,wrote_nothing:true}};}
 };
 const window={OfficeAuth:{isAuthenticated:()=>authenticated,wrapApi:a=>a},pywebview:{api},addEventListener:(k,v)=>events[k]=v,
- dispatchEvent:e=>notifications.push(e.ragUncertain),confirm:msg=>{modals.push(msg);hook();return approved;}};
+ dispatchEvent:e=>notifications.push(e.ragUncertain),OfficeConfirm:{ask:async msg=>{modals.push(msg);hook();return approved;}}};
 vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{window,document:{getElementById:id=>id==='model-settings'?null:node(id),addEventListener(){}},Event:class{constructor(type){this.type=type;}}});
 const click=id=>node(id).events.click(),tick=()=>new Promise(resolve=>setImmediate(resolve));
 const fill=()=>{node('settings-embedding-dimension').value='1024';node('settings-embedding-timeout').value='1.25';node('settings-embedding-budget').value='60';};

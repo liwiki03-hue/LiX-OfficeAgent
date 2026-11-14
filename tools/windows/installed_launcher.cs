@@ -35,6 +35,17 @@ internal sealed class InstallManifest
     public InstalledFile[] files { get; set; }
 }
 
+internal sealed class RendererProgress
+{
+    public int schema { get; set; }
+    public string state { get; set; }
+    public string code { get; set; }
+    public long received { get; set; }
+    public long total { get; set; }
+    public int attempt { get; set; }
+    public int? system_code { get; set; }
+}
+
 internal static class InstalledLiX
 {
     private static readonly string Root = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
@@ -51,6 +62,8 @@ internal static class InstalledLiX
     private static Button action;
     private static bool preparing;
     private static bool starting;
+    private static string rendererFailure;
+    private static string activeRendererReport;
 
     private static string Hash(byte[] data)
     {
@@ -105,8 +118,10 @@ internal static class InstalledLiX
                 if (part == ".." || part == "." || part.Length == 0 || part.EndsWith(".") || part.EndsWith(" "))
                     throw new IOException("Invalid installation component");
             string path = Safe(Path.Combine(Root, row.path.Replace('/', Path.DirectorySeparatorChar)));
+            bool bundledRenderer = row.path == "runtime/LibreOffice_26.2.6.2_Win_x86-64.msi"
+                && row.bytes == 373293056 && row.sha256 == "788ce7d4b56460357f57552cb8cd848e8f2254f28f6e51fa61e0c65a18096373";
             if (!path.StartsWith(Root, StringComparison.OrdinalIgnoreCase) || row.bytes < 0
-                    || row.bytes > 64 * 1024 * 1024 || (total += row.bytes) > 512 * 1024 * 1024
+                    || (!bundledRenderer && row.bytes > 64 * 1024 * 1024) || (total += row.bytes) > 512 * 1024 * 1024
                     || new FileInfo(path).Length != row.bytes || FileHash(path) != row.sha256)
                 throw new IOException("An installed file is missing or changed");
         }
@@ -116,9 +131,10 @@ internal static class InstalledLiX
         Directory.CreateDirectory(logs);
         diagnostic = Path.Combine(logs, "prepare-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff") + "-" + Guid.NewGuid().ToString("N") + ".log");
         using (File.Create(diagnostic)) { }
+        Note("build_version=" + config.version + "; manifest_sha256=" + config.manifest_sha256);
     }
 
-    private static SortedDictionary<string, string> EnvironmentForApp()
+    private static SortedDictionary<string, string> EnvironmentForApp(bool network = false)
     {
         SortedDictionary<string, string> values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry row in Environment.GetEnvironmentVariables())
@@ -137,6 +153,9 @@ internal static class InstalledLiX
         values["UV_NO_CONFIG"] = "1";
         values["UV_NO_PROGRESS"] = "1";
         values["UV_HTTP_TIMEOUT"] = "60";
+        values["UV_HTTP_CONNECT_TIMEOUT"] = "10";
+        values["UV_HTTP_RETRIES"] = "2";
+        if (network) BootstrapNetwork.Configure(values, App, Safe);
         string temporary = Safe(Path.Combine(Data, "Temp"));
         Directory.CreateDirectory(temporary);
         values["TEMP"] = Safe(temporary);
@@ -147,6 +166,7 @@ internal static class InstalledLiX
         values["PYTHONNET_RUNTIME"] = "netfx";
         values["OFFICE_WEBVIEW_GUI"] = "edgechromium";
         values.Remove("OFFICE_LIBREOFFICE_PATH");
+        values.Remove("LIX_RENDERER_REPORT");
         return values;
     }
 
@@ -162,11 +182,138 @@ internal static class InstalledLiX
         if (window != null && !window.IsDisposed) window.BeginInvoke((Action)(() => status.Text = text));
     }
 
-    private static void Execute(string[] args, int seconds)
+    private static string RendererMessage(string code)
     {
-        int code = OwnedCommand.Run(Safe(Path.Combine(Root, "runtime", "uv.exe")), args, App,
-            EnvironmentForApp(), seconds, () => cancelled, empty => Note("owned_job_empty=" + empty));
+        switch (code)
+        {
+            case "download_timeout": return "下载超时，已保留进度；点击重新准备继续下载。";
+            case "download_network": return "下载连接中断；检查网络后点击重新准备续传。";
+            case "download_tls": return "下载证书验证失败；请检查系统时间与网络。";
+            case "download_http": return "官方下载站暂不可用；稍后重试或使用含渲染器安装包。";
+            case "download_range": return "下载站未正确响应续传；请使用含渲染器安装包。";
+            case "download_incomplete": return "下载未完成；点击重新准备从已有进度继续。";
+            case "download_size":
+            case "download_checksum":
+            case "partial_invalid": return "下载文件校验失败，未解压；请使用含渲染器安装包。";
+            case "disk_permission": return "无法写入运行目录；请检查目录权限或磁盘空间。";
+            case "extract_failed": return "渲染器解压失败；请检查磁盘空间及系统安装服务。";
+            case "installer_service_unavailable": return "Windows Installer 服务不可访问（1601）；渲染器未准备完成，下载缓存已保留。";
+            case "extract_timeout": return "渲染器解压超时；未标记准备完成，请查看准备记录。";
+            case "runtime_integrity_or_extraction": return "渲染器文件或解压结果异常；请查看准备记录。";
+            default: return "渲染器准备失败；请查看准备记录或使用含渲染器安装包。";
+        }
+    }
+
+    private static void ReadRendererProgress(string path)
+    {
+        try
+        {
+            if (!File.Exists(Safe(path)) || new FileInfo(path).Length > 4096) return;
+            RendererProgress row = new JavaScriptSerializer().Deserialize<RendererProgress>(File.ReadAllText(path, Encoding.UTF8));
+            if (row == null || row.schema != 1) return;
+            string text = null;
+            if (row.state == "download" && row.total == 373293056 && row.received >= 0 && row.received <= row.total)
+                text = "3 / 4  下载渲染器 " + (row.received / 1048576) + " / 356 MiB";
+            else if (row.state == "retry") text = "3 / 4  连接中断，保留进度并重试（最多 3 次）";
+            else if (row.state == "verify") text = "3 / 4  使用本地组件，正在校验";
+            else if (row.state == "extract") text = "3 / 4  使用本地组件，正在提取";
+            else if (row.state == "failed") rendererFailure = text = RendererMessage(row.code) +
+                (row.system_code.HasValue ? " 系统错误 " + row.system_code.Value + "。" : "");
+            if (text != null && window != null && !window.IsDisposed)
+                window.BeginInvoke((Action)(() => { if (activeRendererReport == path) status.Text = text; }));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (ArgumentException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private static void ReadPreparationProgress(string path, DateTime started)
+    {
+        try
+        {
+            string text = currentStage + " · 已等待 " + (int)(DateTime.UtcNow - started).TotalSeconds + " 秒";
+            if (path != null && File.Exists(Safe(path)) && new FileInfo(path).Length <= 4096)
+            {
+                RendererProgress row = new JavaScriptSerializer().Deserialize<RendererProgress>(File.ReadAllText(path, Encoding.UTF8));
+                if (row != null && row.schema == 1 && row.received >= 0 && row.total >= row.received)
+                    text = "2 / 4  编辑资源 · " + row.received + (row.total > 0 ? " / " + row.total : "") + " 字节";
+            }
+            if (window != null && !window.IsDisposed) window.BeginInvoke((Action)(() => status.Text = text));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (ArgumentException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private static void Execute(string[] args, int seconds, bool renderer = false)
+    {
+        bool frontend = Array.IndexOf(args, "tools.install_frontend_assets") >= 0;
+        SortedDictionary<string, string> environment = EnvironmentForApp(renderer || frontend || (args.Length > 0 && args[0] == "sync"));
+        string report = null;
+        System.Threading.Timer timer = null;
+        DateTime started = DateTime.UtcNow;
+        if (renderer || frontend)
+        {
+            report = Safe(Path.Combine(Path.GetDirectoryName(diagnostic), "renderer-" + Guid.NewGuid().ToString("N") + ".json"));
+            environment[renderer ? "LIX_RENDERER_REPORT" : "LIX_SETUP_REPORT"] = report;
+            activeRendererReport = report;
+            Note("renderer_report=" + Path.GetFileName(report));
+            timer = new System.Threading.Timer(_ =>
+            {
+                if (renderer) ReadRendererProgress(report);
+                else ReadPreparationProgress(report, started);
+            }, null, 0, 1000);
+        }
+        else if (seconds > 0) timer = new System.Threading.Timer(_ => ReadPreparationProgress(null, started), null, 0, 1000);
+        int code;
+        try
+        {
+            Action<string> failure = args.Length > 0 && args[0] == "sync" ? (Action<string>)(value =>
+            {
+                Note("dependency_failure=" + value);
+                switch (value)
+                {
+                    case "dependency_cache_denied": rendererFailure = "依赖缓存不可访问，原目录已保留；请在有访问权限的本机用户会话重试。"; break;
+                    case "dependency_disk_full": rendererFailure = "运行磁盘空间不足，依赖未准备完成。"; break;
+                    case "dependency_tls_failed": rendererFailure = "依赖下载证书验证失败；请检查系统时间与网络。"; break;
+                    case "dependency_download_timeout": rendererFailure = "依赖下载超时；请检查网络后重新准备。"; break;
+                    case "dependency_network_failed": rendererFailure = "依赖下载连接失败；请检查网络或代理。"; break;
+                    case "dependency_lock_failed": rendererFailure = "锁定依赖未能解析；请保留准备记录并核对构建版本。"; break;
+                    default: rendererFailure = "运行依赖未准备完成；请查看本次准备记录。"; break;
+                }
+            }) : null;
+            code = OwnedCommand.Run(Safe(Path.Combine(Root, "runtime", "uv.exe")), args, App,
+                environment, seconds, () => cancelled, empty => Note("owned_job_empty=" + empty), failure);
+        }
+        catch (TimeoutException)
+        {
+            Note("stage_failure=deadline_exceeded");
+            rendererFailure = currentStage + "超时；本次进程已停止，请核对准备记录后重试。";
+            throw;
+        }
+        catch (System.ComponentModel.Win32Exception error)
+        {
+            Note("process_start_system_code=" + error.NativeErrorCode);
+            rendererFailure = "准备进程未能启动（系统错误 " + error.NativeErrorCode + "）；请保留准备记录。";
+            throw;
+        }
+        finally
+        {
+            if (timer != null)
+            {
+                using (ManualResetEvent stopped = new ManualResetEvent(false))
+                {
+                    timer.Dispose(stopped);
+                    stopped.WaitOne(5000);
+                }
+                if (renderer) ReadRendererProgress(report);
+                activeRendererReport = null;
+            }
+        }
         Note("exit_code=" + code);
+        if (rendererFailure != null) Note((renderer ? "renderer_failure=" : "stage_failure=") + rendererFailure);
         if (code != 0) throw new InvalidOperationException("Stage exit " + code);
     }
 
@@ -192,13 +339,14 @@ internal static class InstalledLiX
 
     private static void Prepare()
     {
+        rendererFailure = null;
         Stage("1 / 4  准备 Python 与锁定依赖");
         Execute(new[] { "sync", "--locked", "--no-dev", "--no-default-groups",
             "--python", config.python, "--link-mode", "copy" }, 900);
         Stage("2 / 4  核对文档编辑资源");
-        Execute(Python("tools.install_frontend_assets"), 150);
+        Execute(Python("tools.install_frontend_assets"), 210);
         Stage("3 / 4  准备文档渲染器");
-        Execute(Python("tools.installed_runtime"), 900);
+        Execute(Python("tools.installed_runtime"), 900, true);
         Stage("4 / 4  检查桌面运行环境");
         Execute(Python("tools.installed_preflight"), 60);
         string ready = ReadyPath();
@@ -243,7 +391,7 @@ internal static class InstalledLiX
                 {
                     starting = false;
                     preparing = false;
-                    status.Text = cancelled ? "准备已停止，已下载内容保留。" : currentStage + "未完成；请查看准备记录，修复后再试。";
+                    status.Text = cancelled ? "准备已停止，已下载内容保留。" : rendererFailure ?? currentStage + "未完成；请查看准备记录，修复后再试。";
                     action.Text = "重新准备";
                     action.Enabled = true;
                     progress.Style = ProgressBarStyle.Blocks;
@@ -261,8 +409,8 @@ internal static class InstalledLiX
         window.Icon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
         Label heading = new Label { Text = "首次准备", Location = new Point(24, 24), Size = new Size(470, 32), Font = new Font(window.Font.FontFamily, 18) };
         Label detail = new Label { Text = "联网准备 Python、运行依赖和文档资源。\n无需安装开发工具，不会发送模型请求。\n请预留约 3 GB 空间；下载可能需要数分钟。", Location = new Point(26, 72), Size = new Size(480, 80) };
-        status = new Label { Text = "点击后开始准备。", Location = new Point(26, 158), Size = new Size(480, 25) };
-        progress = new ProgressBar { Location = new Point(26, 192), Size = new Size(480, 5), Style = ProgressBarStyle.Blocks };
+        status = new Label { Text = "点击后开始准备。", Location = new Point(26, 152), Size = new Size(480, 50) };
+        progress = new ProgressBar { Location = new Point(26, 208), Size = new Size(480, 5), Style = ProgressBarStyle.Blocks };
         Button logs = new Button { Text = "准备记录", Location = new Point(26, 230), Size = new Size(110, 36), FlatStyle = FlatStyle.Flat };
         logs.Click += (sender, args) => Process.Start(new ProcessStartInfo { FileName = Path.GetDirectoryName(diagnostic), UseShellExecute = true });
         action = new Button { Text = "准备并启动", Location = new Point(360, 230), Size = new Size(146, 36), FlatStyle = FlatStyle.Flat };

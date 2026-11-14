@@ -2,6 +2,7 @@
    按钮不再固定在卡片里，而是挂到「最近一次成功渲染」的图表消息内。 */
 "use strict";
 (() => {
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   let revision = 0, metadata = null, saved = null, inflight = false;
   let save = null, savePng = null, undo = null, status = null;
   const authenticated = () => Boolean(window.OfficeAuth?.isAuthenticated());
@@ -83,7 +84,7 @@
           (png && (!hash(plan.png_sha256) || plan.renderer !== "host-qt-svg-v1"))))) {
         say("保存方案格式不对，没有提交。"); return;
       }
-      const approved = window.confirm(rollback ?
+      const approved = await ask(rollback ?
         "确认撤销？只会删除没被改动过的这张图：\n" + previous.path + "\n记录保留，历史不会恢复。" :
         "确认保存？请先自己看一眼图对不对。\n所在文档：" + plan.selected_document +
         "\n在同一目录新建：" + plan.destination_basename + "\n原文档不会被覆盖；提交后无法中途撤销。");

@@ -67,5 +67,78 @@
   "publication_authorized": false,
   "source_or_permissions_expanded": false,
   "remaining_REL_conditions": 9,
-  "fixed_deadline": "2026-11-13T23:59:00+08:00"
+  "fixed_deadline": "2026-11-13T23:59:00+08:00",
+  "latest_evidence_stage": "Q1-Q6-20261114",
+  "full_gate_applies_to": "Historical R5 frozen candidate only; not the current source",
+  "current_unreleased": {
+    "schema": 1,
+    "recorded_unix": 1794644954.023268,
+    "version": "0.7.11",
+    "build_id": "q-final-20261114",
+    "status": "automated_passed_installation_and_release_open",
+    "previous_evidence": "deliverables/issue-repair-20261114/VALIDATION.json",
+    "diagnostic_full_gate": {
+      "summary": "91 failed, 4175 passed, 2 skipped, 165 subtests passed in 3278.16s (0:54:38)",
+      "exit_code": 1,
+      "evidence": "deliverables/issue-repair-completion-20261114/run-12"
+    },
+    "final_full_gate": {
+      "command": "uv run pytest -q",
+      "argv_evidence": "FINAL_GATE_COMMAND.json",
+      "environment": "GATE_ENVIRONMENT.json",
+      "summary": "4266 passed, 2 skipped, 165 subtests passed in 3297.90s (0:54:57)",
+      "exit_code": 0,
+      "collected_testcases": 4268,
+      "passed": 4266,
+      "skipped": [
+        {
+          "class": "tests.test_auth",
+          "name": "test_real_symlink_ancestor_never_followed",
+          "reason": "Windows symlink privilege is not assumed; reparse checks tested with lstat metadata"
+        },
+        {
+          "class": "tests.test_com.COMWriteProbeTests",
+          "name": "test_real_office_roundtrip_is_explicitly_opt_in",
+          "reason": "real Office disabled; explicitly set OFFICE_AGENT_REAL_COM=1"
+        }
+      ],
+      "subtests_passed": 165,
+      "owned_job": {
+        "schema": 1,
+        "pid": 11600,
+        "token": "6fb8803d37f245ccb3c5cbcdf9c4f578",
+        "timeout_seconds": 6000,
+        "timed_out": false,
+        "process_exit_code": 0,
+        "remaining_descendants_before_cleanup": 0,
+        "owned_job_empty_confirmed": true,
+        "finished": 1794644892.461462
+      },
+      "input_manifest": "FINAL_GATE_INPUT_MANIFEST.json",
+      "log_sha256": "bc41a17d71d5d22ca9d9192b7454fc73f029e6cdd36abfb6e198a0c3189db454",
+      "runtime_test_resource_inputs_unchanged": 730,
+      "documentation_results_updated_after_start": true
+    },
+    "native": "standard source entry; self-created DOCX original opened; cancel keeps document/input/1120x760 bounds; settings enlarge/restore; drag unverified; no new model request",
+    "previous_real_service": "real DeepSeek ordinary Word table modified and verified copy reopened, separately bound in previous NATIVE_AI.json",
+    "installer": "Normal-pipeline diagnostic candidate first dependency preparation failed existing cache access; final installed preparation is not certified",
+    "uploaded": false,
+    "new_dependencies": false,
+    "release_ready": false,
+    "not_verified": [
+      "clean Windows and standard user install",
+      "physical drag/IME/DPI/multiple monitors/screen reader",
+      "Microsoft Office",
+      "complete provider matrix and billing",
+      "signature and 360 resolution",
+      "signed application update",
+      "complete corresponding source rebuild"
+    ],
+    "evidence": "deliverables/issue-repair-completion-20261114/README.md",
+    "same_runtime_test_source_full_rerun": true,
+    "new_binary": true,
+    "binary_scope": "normal pipeline candidates; final unique q-final-20261114 identity is in local CANDIDATE.json",
+    "source_candidate_manifest": "deliverables/issue-repair-completion-20261114/SOURCE_MANIFEST.json",
+    "candidate_evidence": "deliverables/issue-repair-completion-20261114/CANDIDATE.json"
+  }
 }

@@ -11,6 +11,16 @@ from tests.test_model_connections import connection, payload, save
 from tests.test_professional_browser import STATIC, EDGE
 
 
+def open_floating_menu(page, group=None):
+    summary = page.locator('#floating-root > header > details > summary:visible, #paged-top > header > details > summary:visible')
+    if not summary.evaluate('node=>node.parentElement.open'):
+        summary.click()
+    if group:
+        folded = page.locator('.floating-menu > details').filter(has=page.get_by_text(group, exact=True))
+        if not folded.evaluate('node=>node.open'):
+            folded.locator(':scope > summary').click()
+
+
 @pytest.fixture
 def floating_browser(tmp_path, monkeypatch):
     if not EDGE.is_file():
@@ -111,11 +121,11 @@ def test_candidate_chooser_read_and_reparented_model_controls(floating_browser, 
     page.keyboard.press('Escape')
     assert page.locator('#simple-model-menu > summary').evaluate('n=>n===document.activeElement')
     assert page.locator('#model-selector').count() == 1
-    page.locator('#floating-root header details > summary').click()
-    assert page.get_by_role('button', name='恢复本文件历史要求到草稿', exact=True).is_visible()
+    open_floating_menu(page, '工具与记录')
+    assert page.get_by_role('button', name='复用历史要求', exact=True).is_visible()
     assert page.locator('#floating-send').bounding_box()['y'] < height
     page.keyboard.press('Escape')
-    assert page.locator('#floating-root header details > summary').evaluate('n=>n===document.activeElement')
+    assert page.locator('#floating-root > header > details > summary').evaluate('n=>n===document.activeElement')
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
     assert not [name for name in calls if name in {'ask','floating_submit','confirm_image_generation'}]
     assert errors == []
@@ -129,8 +139,8 @@ def test_secondary_image_plan_and_chat_events_share_the_single_event_consumer(fl
     from tests.test_model_connections import select
     select(api._connections, 'official', 'image', 'image-model')
     page.evaluate('window.relayed=[]; window.addEventListener("officedaily:event", event=>window.relayed.push(event.detail.type))')
-    page.locator('#floating-root header details > summary').click()
-    page.get_by_role('button', name='问答、图片与专业工具', exact=True).click()
+    open_floating_menu(page, '工具与记录')
+    page.get_by_role('button', name='问答与工具', exact=True).click()
     page.evaluate('window.OfficeModelSelector.refresh()')
     reply = api.ask('生成一张技术报告的实验流程配图。', {'size': '1024x1024', 'style': 'natural'})
     assert reply['ok'] and reply['generation_not_started']
@@ -182,8 +192,8 @@ def test_native_open_waiting_input_and_reference_have_no_implicit_model_call(flo
 
 
 def _open_main_workspace(page):
-    page.locator('#floating-root header details > summary').click()
-    page.get_by_role('button', name='问答、图片与专业工具', exact=True).click()
+    open_floating_menu(page, '工具与记录')
+    page.get_by_role('button', name='问答与工具', exact=True).click()
     page.locator('#floating-return').wait_for(state='visible')
 
 

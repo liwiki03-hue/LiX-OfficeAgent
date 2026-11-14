@@ -6,8 +6,7 @@ import threading
 
 from docx import Document
 
-from tests.test_paged_browser import paged_browser
-from tests.test_paged_inbox_browser import Suggestion, select_model, select_reference, wait
+from tests.test_paged_inbox_browser import paged_browser, Suggestion, select_model, select_reference, wait
 
 
 def send(page,text):
@@ -40,10 +39,9 @@ def test_edit_cancel_then_only_effective_goal_generates_verified_copy(paged_brow
     dialog.get_by_role('button',name='关闭',exact=True).click()
     select_model(page);select_reference(page)
     page.get_by_role('button',name='处理已保存要求',exact=True).click()
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible')
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     assert calls and all('无人机导航' not in text and '没有依据的结论' not in text for text in calls)
     assert all('精简所选实验描述' in text for text in calls)
-    page.get_by_role('button',name='采用到草稿',exact=True).click()
     wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     page.get_by_role('button',name='保存副本',exact=True).click()
     page.get_by_role('dialog').get_by_role('button',name='取消',exact=True).click()
@@ -95,7 +93,8 @@ def test_failed_change_preserves_text_and_escape_then_manual_retry(paged_browser
     dialog.get_by_role('button',name='保存修改',exact=True).click()
     wait(page,lambda:bool(dialog.get_by_role('alert').inner_text()))
     assert field.input_value()=='尚未保存的新要求。' and api._floating.runtime.revision==1
-    page.evaluate('window.confirm=()=>false');page.keyboard.press('Escape')
+    page.keyboard.press('Escape')
+    page.get_by_role('dialog',name='LiX',exact=True).get_by_role('button',name='取消',exact=True).click()
     assert dialog.is_visible() and field.input_value()=='尚未保存的新要求。'
     monkeypatch.setattr(api._floating.runtime,'persist',persist)
     dialog.get_by_role('button',name='保存修改',exact=True).click()
@@ -115,9 +114,11 @@ def test_stale_editor_requires_refresh_and_preserves_unsaved_draft(paged_browser
     dialog.get_by_role('button',name='保存修改',exact=True).click()
     wait(page,lambda:'列表已更新' in dialog.get_by_role('alert').inner_text())
     assert field.input_value()=='当前窗口的未保存文字。'
-    page.evaluate('window.confirm=()=>false');dialog.get_by_role('button',name='重新读取要求',exact=True).click()
+    dialog.get_by_role('button',name='重新读取要求',exact=True).click()
+    page.get_by_role('dialog',name='LiX',exact=True).get_by_role('button',name='取消',exact=True).click()
     assert field.input_value()=='当前窗口的未保存文字。'
-    page.evaluate('window.confirm=()=>true');dialog.get_by_role('button',name='重新读取要求',exact=True).click()
+    dialog.get_by_role('button',name='重新读取要求',exact=True).click()
+    page.get_by_role('dialog',name='LiX',exact=True).get_by_role('button',name='确认',exact=True).click()
     dialog.get_by_text('另一窗口已保存的要求。',exact=True).wait_for(state='visible')
     assert not dialog.get_by_role('textbox').count() and api._floating.runtime.revision==2 and errors==[]
 

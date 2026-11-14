@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('citations-' + id);
   if (!$('panel')) return;
   let epoch = 0, busy = false, unknown = false, stale = false, source = null, cards = [], mappings = [], plan = null, saved = null, dirty = false;
@@ -181,13 +182,13 @@
       const claimFields = node('div', '', root); claimFields.hidden = true;
       const text = field(claimFields, '新主张正文（不手写编号）'); text.value = item.text;
       const card = {item, index: source.offset + index, root, authorized, role, removal, claimFields, text, attributions: []}; cards.push(card);
-      authorized.addEventListener('input', () => {
+      authorized.addEventListener('input', async () => {
         if (authorized.checked) {
           if (drafts.size >= 12) { authorized.checked = false; status('每组最多授权12项，请先取消其他段落的授权。'); return; }
           drafts.set(item.locator_id, card);
         } else {
           if ((role.value !== 'keep' || removal.value || card.attributions.length || text.value !== item.text) &&
-              window.confirm('取消本段授权并放弃该段草稿？其他段落和编号映射保留。') !== true) { authorized.checked = true; return; }
+              await ask('取消本段授权并放弃该段草稿？其他段落和编号映射保留。') !== true) { authorized.checked = true; return; }
           drafts.delete(item.locator_id); renderTargets();
         }
         changed(); selectedSummary(); refresh();
@@ -250,8 +251,8 @@
   $('find').addEventListener('click', () => findLocations());
   $('find-more').addEventListener('click', () => findLocations(locationsNext));
   $('find-number').addEventListener('change', () => { locationsNext = null; $('locations').replaceChildren(); $('find-status').textContent = '编号已改变，请重新查找；草稿与计划保留。'; refresh(); });
-  $('load').addEventListener('click', () => {
-    if (dirty && window.confirm('重新读取会丢弃本面板草稿与未确认计划，是否继续？') !== true) return;
+  $('load').addEventListener('click', async () => {
+    if (dirty && await ask('重新读取会丢弃本面板草稿与未确认计划，是否继续？') !== true) return;
     run(async (api, current) => {
       status('正在读取版本、编号和文献候选…');
       const reply = await api.read_citation_workspace($('receipt').value);
@@ -299,7 +300,7 @@
   }));
   $('confirm').addEventListener('click', () => run(async (api, current, writing) => {
     const target = plan; plan = null;
-    const approved = window.confirm('确认按完整差异重排引文、更新书目及主张，写入新副本？原件不变。') === true;
+    const approved = await ask('确认按完整差异重排引文、更新书目及主张，写入新副本？原件不变。') === true;
     if (!current()) return;
     if (approved) writing();
     const reply = await api.confirm_citation_edit(target.id, approved);
@@ -312,7 +313,7 @@
     status('保存成功；归档依赖保留。另选副本并输入上述回执，可继续编排；新增主张需重新取证。');
   }));
   $('rollback').addEventListener('click', () => run(async (api, current, writing) => {
-    const approved = window.confirm('撤销本次未被外部修改的输出副本？原件、备份和审计保留。') === true;
+    const approved = await ask('撤销本次未被外部修改的输出副本？原件、备份和审计保留。') === true;
     if (!current()) return;
     if (approved) writing();
     const reply = await api.rollback_citation_edit(saved, approved);
@@ -323,11 +324,11 @@
     saved = null; $('output').textContent = '本次副本已撤销，已释放本次新增的归档依赖。';
   }));
   ['officeauth:unauthenticated', 'officeauth:authenticated', 'pagehide'].forEach(event => window.addEventListener(event, reset));
-  window.addEventListener('researchassist:transfer', event => {
+  window.addEventListener('researchassist:transfer', async event => {
     const value = event.detail;
     if (!auth() || busy || unknown || !value || !Number.isInteger(value.index) || value.index < 0) return;
     if (source && source.document.source_sha256 !== value.source_sha256) { status('研究建议与当前引文草稿版本不同，请重新读取；草稿保留。'); return; }
-    if (drafts.has(value.locator_id) && !window.confirm('用人工编辑的研究建议替换本段引文草稿？此段支持关系审阅将清除，其他草稿保留。')) return;
+    if (drafts.has(value.locator_id) && !await ask('用人工编辑的研究建议替换本段引文草稿？此段支持关系审阅将清除，其他草稿保留。')) return;
     if (!drafts.has(value.locator_id) && drafts.size >= 12) { status('已达12项，请先取消其他段落授权。'); return; }
     value.received = true; $('panel').open = true;
     run(async (api, current) => {

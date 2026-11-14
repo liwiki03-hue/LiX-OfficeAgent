@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('grounded-' + id);
   if (!$('panel')) return;
   let epoch = 0, busy = false, unknown = false, version = null, capture = null, ocrCapture = null, plan = null, saveId = null;
@@ -70,8 +71,8 @@
   function option(select, value, label) {
     const node = document.createElement('option'); node.value = value; node.textContent = label; select.append(node);
   }
-  $('load').addEventListener('click', () => {
-    if (capture && window.confirm('重新读取将丢弃当前证据选择与待确认计划，是否继续？') !== true) return;
+  $('load').addEventListener('click', async () => {
+    if (capture && await ask('重新读取将丢弃当前证据选择与待确认计划，是否继续？') !== true) return;
     run(async (api, current) => {
       status('正在读取纳入条目与目标结构…');
       const sources = await api.get_grounded_sources();
@@ -135,8 +136,8 @@
   $('range').addEventListener('click', () => readRange(false));
   $('continue').addEventListener('click', () => readRange(true));
   $('reading-status').addEventListener('click', () => run(async (api, current) => { const reply = await api.get_pdf_reading_status(); if (!current()) return; if (!reply?.ok) { failed(reply); return; } $('coverage').textContent = JSON.stringify(reply.result.sources, null, 2); status('仅显示本次来源版本的阅读覆盖、失败范围与索引状态；不自动补读或联网。'); }));
-  $('ocr').addEventListener('click', () => {
-    if (!window.confirm('使用本机已安装的 Windows OCR 识别所选页？结果可能含数字、单位及阅读顺序错误，必须对照原页核对。')) return;
+  $('ocr').addEventListener('click', async () => {
+    if (!await ask('使用本机已安装的 Windows OCR 识别所选页？结果可能含数字、单位及阅读顺序错误，必须对照原页核对。')) return;
     run(async (api, current) => {
       const reply = await api.ocr_evidence_page(capture.capture_id, Number($('ocr-page').value));
       if (!current()) return;
@@ -194,7 +195,7 @@
   }));
   $('confirm').addEventListener('click', () => run(async (api, current, writing) => {
     const target = plan; plan = null;
-    const approved = window.confirm('确认按已展示的主张、证据和书目写入新副本？人工判断不等于机器证明。') === true;
+    const approved = await ask('确认按已展示的主张、证据和书目写入新副本？人工判断不等于机器证明。') === true;
     if (!current()) return;
     if (approved) writing();
     const reply = await api.confirm_grounded_edit(target.id, approved);
@@ -207,7 +208,7 @@
     status('本次副本可撤销；输出需另行选择并建立检索索引。');
   }));
   $('rollback').addEventListener('click', () => run(async (api, current, writing) => {
-    const approved = window.confirm('确认撤销本次未被外部修改的输出副本？保留原件、备份和审计。') === true;
+    const approved = await ask('确认撤销本次未被外部修改的输出副本？保留原件、备份和审计。') === true;
     if (!current()) return;
     if (approved) writing();
     const reply = await api.rollback_grounded_edit(saveId, approved);

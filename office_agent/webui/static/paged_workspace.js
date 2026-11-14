@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const $=id=>document.getElementById(id);
+  const ask=message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const make=(tag,text,parent,id)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(id)node.id=id;parent?.append(node);return node;};
   const button=(text,parent,action,id)=>{const node=make('button',text,parent,id);node.type='button';node.addEventListener('click',()=>Promise.resolve(action()).catch(error=>{if(!error.stale)notice(error.message);}));return node;};
   const tool=(text,icon,parent,action,id)=>window.OfficeAgentElements.iconButton(button(text,parent,action,id),icon);
@@ -8,6 +9,8 @@
   let announcedState='', announcementTimer, instructionEpoch=0,requirementsDialog=null,pendingFeedback=null;
   const retiredSessions=new Set();
   const retiredInboxes=new Set();
+  const automaticAttempts=new Set();
+  let automaticSaving=null;
   const api=()=>window.OfficeAuth.wrapApi(window.pywebview.api);
   const active=()=>!!adapter;
   function notice(text){pendingFeedback=null;const target=$('paged-feedback')||$('floating-status');if(target){target.textContent=text||'';errorGeneration++;}}
@@ -48,6 +51,7 @@
   function olderState(state){
     if(!lastState)return false;
     if(lastState.inbox_id!==state.inbox_id)return retiredInboxes.has(state.inbox_id);
+    if(state.draft_revision<lastState.draft_revision)return true;
     if(lastState.requirement_session_id!==state.requirement_session_id)return retiredSessions.has(state.requirement_session_id||'');
     return lastState.instruction_revision>state.instruction_revision;
   }
@@ -60,6 +64,7 @@
   function renderState(state){
     if(!state||!$('paged-save-state'))return;
     state=acceptState(state);
+    if(host&&state.document_id===host.document?.id&&state.access?.serial>=(host.access?.serial??-1))host.access=state.access;
     if(pendingFeedback){
       const current=pendingFeedback.generation===errorGeneration&&pendingFeedback.inbox===state.inbox_id&&pendingFeedback.session===state.requirement_session_id;
       if(!current)pendingFeedback=null;
@@ -71,7 +76,7 @@
     $('paged-save-state').title=!state.editable&&!state.uncertain&&!state.publishing?'只读'+((state.reasons||[]).length?'：'+state.reasons.join('、'):''):$('paged-save-state').textContent;
     if(state.publication_rolled_back&&!state.uncertain&&!state.publishing){
       $('paged-save-state').textContent='副本已撤销 · 草稿未交付';
-      $('paged-save-state').title='原稿与草稿保留；再次生成副本仍需独立确认';
+      $('paged-save-state').title='原稿与草稿保留，可重新生成副本';
       if($('paged-feedback')?.textContent.startsWith('草稿 ')&&$('paged-feedback').textContent.includes('副本已通过验证'))notice('副本已撤销，草稿保留；可重新审阅后生成新副本。');
     }
     const status=state.uncertain?'结果待核实':state.publishing?'正在生成并验证副本':!state.editable?'当前文档只读':unsynced||state.dirty?'有未保存编辑':state.published_revision>0?'副本已验证':'原稿未修改';
@@ -84,6 +89,7 @@
     $('paged-use-original').hidden=!state.recovery_available||state.dirty;
     $('paged-recovery-actions').hidden=!state.recovery_available||state.dirty;
     $('paged-reference').disabled=!opened||!state.editable||state.recovery_available;
+    $('paged-table-reference').disabled=$('paged-reference').disabled;
     $('paged-pending').hidden=!state.pending_requirements;
     $('paged-pending').disabled=sending||applying||host?.busy||state.publishing||state.uncertain||!state.editable||!reference||reference.draft_revision!==adapter?.revision;
     $('paged-pending').title=$('paged-pending').disabled?'请等待当前步骤完成，并引用最新草稿后处理':'使用当前引用处理已保存要求';
@@ -96,7 +102,7 @@
     const recoveryState=state.recovery_state||(state.recovery_available?'available':null);
     if(state.recovery_status&&['available','invalid','failed'].includes(recoveryState)&&recoveryNotice!==state.recovery_status){recoveryNotice=state.recovery_status;notice(state.recovery_status);}
     if(recoveryState==='saved'||recoveryState==='none')recoveryNotice='';
-    if(state.published_revision>0&&!state.publishing&&!state.uncertain&&$('paged-feedback')?.textContent==='正在生成并验证草稿 '+state.published_revision+' 的副本；后续输入仍属于新草稿。')notice('草稿 '+state.published_revision+' 的副本已通过验证；原文件未改动。'+(state.dirty?'后续编辑尚未交付。':''));
+    if(state.published_revision>0&&!state.publishing&&!state.uncertain&&['正在生成并验证草稿 '+state.published_revision+' 的副本；后续输入仍属于新草稿。','正在保存并验证草稿 '+state.published_revision+' 的副本；原文件不变。'].includes($('paged-feedback')?.textContent))notice('草稿 '+state.published_revision+' 的副本已通过验证；原文件未改动。'+(state.dirty?'后续编辑尚未交付。':''));
     if(state.editable_copy_id&&!state.publishing&&!state.uncertain&&$('paged-feedback')?.textContent==='正在创建并验证简化副本；原稿保持只读。')notice('简化副本已生成，可在结果中打开副本编辑；原稿未改动。');
     const proposals=state.proposals||[],key=JSON.stringify(proposals);
     if(key===signature)return;signature=key;
@@ -105,7 +111,13 @@
       const item=make('article','',list);item.className='paged-proposal';
       const labels={pending:'待审阅',stale:'已过期，请重新生成',adopted:'已采用到草稿',rejected:'已拒绝'};
       item.dataset.status=proposal.status;
-      const actions=window.OfficeAgentElements.edit(item,{title:'文字修改',before:proposal.old,after:proposal.new,status:labels[proposal.status]||proposal.status,reason:proposal.reason});
+      let actions;
+      if(proposal.edits){
+        make('h3','表格修改 · '+proposal.edits.length+'处',item);make('p',labels[proposal.status]||proposal.status,item);
+        if(proposal.reason)make('p',proposal.reason,item);
+        for(const edit of proposal.edits)window.OfficeAgentElements.edit(item,{title:'表格文字',before:edit.old,after:edit.new,status:labels[proposal.status]||proposal.status});
+        actions=make('div','',item);actions.className='agent-tool-actions';
+      }else actions=window.OfficeAgentElements.edit(item,{title:'文字修改',before:proposal.old,after:proposal.new,status:labels[proposal.status]||proposal.status,reason:proposal.reason});
       for(const change of proposal.allowed_changes||[])make('p','按明确要求修改年份：'+change.before+' → '+change.after+'；其余数字、单位、公式和引文保持。',item);
       if(proposal.model)make('p','本条建议模型：'+proposal.model.model_id+' · '+(proposal.model.connection_name||proposal.model.connection_id),item);
       tool('定位','locate-fixed',actions,()=>adapter.request('locate',{id:proposal.reference.node_id}));
@@ -115,24 +127,33 @@
       }
     }
   }
-  async function adopt(proposal){
+  async function adopt(proposal,accessId=null){
     if(applying||sending)throw Error('当前操作尚未完成，请稍后采用');
     applying=true;
     try{
       await changes;const mine=generation,rev=adapter.revision;
-      const grant=await call('paged_prepare_apply',proposal.id,host.document.id,rev);
+      if(accessId)await adapter.request('instruction',{revision:lastState.instruction_revision});
+      const grant=await call('paged_prepare_apply',proposal.id,host.document.id,rev,accessId);
       if(mine!==generation)throw Error('当前文档已改变');
       const result=await adapter.applyApprovedProposal(grant.proposal,rev,grant.proposal.instruction_revision,grant.token);
       await changes;
       const response=await call('paged_applied',grant.token,host.document.id,result.prior_revision,result.revision);
-      reference=null;$('paged-reference-state').textContent='建议已采用到工作草稿；生成副本仍需独立确认';renderState(response);
+      reference=null;$('paged-reference-state').textContent='已修改草稿';renderState(response);
       await sync();
+      if(accessId&&host.access?.id===accessId){
+        try{
+          const target=proposal.edits?{nodes:proposal.edits.map(edit=>{const cell=proposal.reference.cells.find(row=>row.node_id===edit.node_id);return {node_id:edit.node_id,start:cell.start,end:cell.start+edit.new.length};}),whole_table:false}:{node_id:proposal.reference.node_id,start:proposal.reference.start,end:proposal.reference.start+proposal.new.length};
+          reference=(await call('paged_reference',host.document.id,adapter.revision,target)).reference;
+          $('paged-reference-state').textContent='继续修改：'+reference.old.slice(0,100);
+        }catch(error){if(error.stale)throw error;$('paged-reference-state').textContent='已修改草稿；下次发送时使用当前选区或光标所在段落';}
+        if(host.access.level==='save_copy')automaticSaving={accessId,revision:adapter.revision};
+      }
     }finally{applying=false;}
   }
-  async function capture(){
+  async function capture(allowParagraph=false,table=false){
     if(!opened)throw Error('编辑器仍在打开');
     const feedbackVersion=errorGeneration;
-    await sync();const target=await adapter.getSelectionReference();
+    await sync();const target=await adapter.getSelectionReference(allowParagraph,table);
     const result=await call('paged_reference',host.document.id,adapter.revision,target);
     reference=result.reference;$('paged-reference-state').textContent='已引用：'+reference.old.slice(0,100);
     if(feedbackVersion===errorGeneration)notice('');
@@ -142,6 +163,9 @@
     const mine=generation,feedbackVersion=errorGeneration,receivedEpoch=instructionEpoch,inbox=lastState?.inbox_id;
     sending=true;
     try{
+      if(!applying&&lastState?.editable&&['edit','save_copy'].includes(host.access?.level||'save_copy')&&reference?.draft_revision!==adapter.revision){
+        try{await capture(true);}catch(error){if(error.stale)throw error;reference=null;}
+      }
       const target=!applying&&reference?.draft_revision===adapter.revision?reference.id:null;
       const result=await call('paged_submit',clientId,text,target,host.document.id,host.document.version,lastState?.requirement_session_id||'',lastState?.inbox_id);
       if(receivedEpoch!==instructionEpoch||lastState?.inbox_id!==inbox){const error=Error('本轮已停止或切换，旧接收结果不更新当前输入');error.stale=true;throw error;}
@@ -201,10 +225,10 @@
     const controls=disabled=>{for(const item of node.querySelectorAll('button'))item.disabled=disabled;if(editing)editing.disabled=disabled;};
     const current=()=>mine===generation&&lastState?.inbox_id===owner.inbox&&lastState.requirement_session_id===owner.session&&!stale;
     const invalidate=()=>{stale=true;message.textContent='文档或要求会话已改变；本页不能提交。可复制未保存内容后关闭。';controls(true);closing.disabled=false;if(editing){editing.disabled=false;editing.readOnly=true;}};
-    const close=()=>{if(busy)return;if(dirty&&!window.confirm('放弃尚未保存的要求修改？'))return;node.close();};
+    const close=async()=>{if(busy)return;if(dirty&&!await ask('放弃尚未保存的要求修改？'))return;node.close();};
     const refresh=button('重新读取要求',footer,async()=>{
       if(!current()){invalidate();return;}
-      if(dirty&&!window.confirm('重新读取会放弃当前未保存的要求修改，是否继续？'))return;
+      if(dirty&&!await ask('重新读取会放弃当前未保存的要求修改，是否继续？'))return;
       busy=true;controls(true);
       try{const result=await call('paged_requirements',owner.document,owner.source,owner.inbox);if(!current())return invalidate();shown=acceptState(result);dirty=false;editing=null;message.textContent='';renderState(shown);render();}
       catch(error){if(!error.stale)message.textContent=error.message;}
@@ -239,8 +263,8 @@
         if(row.history?.length){const history=make('details','',item);make('summary','原文与变更记录',history);for(const old of row.history){make('p',(old.status==='superseded'?'已被替代：':'取消前内容：')+old.text,history);}}
         if(['cancelled','stopped'].includes(row.status))continue;
         const actions=make('div','',item);actions.className='paged-requirement-actions';
-        button('修改要求',actions,()=>{
-          if(dirty&&!window.confirm('放弃尚未保存的要求修改？'))return;
+        button('修改要求',actions,async()=>{
+          if(dirty&&!await ask('放弃尚未保存的要求修改？'))return;
           dirty=false;editing=null;
           render();const target=body.querySelector('[data-requirement="'+row.id+'"]');
           editing=make('textarea','',target);editing.value=row.text;editing.maxLength=4000;editing.setAttribute('aria-label','修改要求 '+row.revision);
@@ -248,8 +272,8 @@
           button('保存修改',target,()=>commit(row,'replace',editing.value,pending));
           button('放弃修改',target,()=>{dirty=false;editing=null;render();});editing.focus();
         });
-        button('取消要求',actions,()=>{
-          if(dirty&&!window.confirm('放弃尚未保存的要求修改？'))return;
+        button('取消要求',actions,async()=>{
+          if(dirty&&!await ask('放弃尚未保存的要求修改？'))return;
           dirty=false;editing=null;render();const target=body.querySelector('[data-requirement="'+row.id+'"]');
           make('p','仅取消后续处理；已发请求不保证撤回，已采用草稿和已生成副本保留。',target);const pending={};
           button('确认取消要求',target,()=>commit(row,'cancel','',pending));button('保留要求',target,render);
@@ -284,13 +308,16 @@
       make('p',plan.retained,node);
       const limits=make('ul','',node);for(const text of plan.limitations)make('li',text,limits);
       const target=make('details','',node);make('summary','新文件位置',target);make('p',plan.output,target);
+      const continuation=make('label','',node);continuation.className='document-access-continue';
+      const continueEditing=make('input','',continuation);continueEditing.type='checkbox';continueEditing.checked=true;
+      make('span','创建后直接打开，按当前方式修改副本',continuation);
       const actions=make('div','',node);actions.className='paged-dialog-actions';
       button('取消',actions,()=>node.close());
       const confirm=button('确认创建简化副本',actions,async()=>{
         if(mine!==generation){node.close();return;}
         confirm.disabled=true;
         try{
-          await call('paged_publish_editable_copy',plan.id,documentId,rev,true);finished=true;node.close();
+          await call('paged_publish_editable_copy',plan.id,documentId,rev,true,continueEditing.checked);finished=true;node.close();
           notice('正在创建并验证简化副本；原稿保持只读。');
         }catch(error){if(!error.stale)notice(error.message);node.close();}
       });confirm.className='paged-primary';
@@ -306,6 +333,11 @@
       const result=await call('paged_plan',host.document.id,rev);
       if(mine!==generation)return;
       const plan=result.plan;
+      if(host.access?.level==='save_copy'&&host.access.id){
+        await call('paged_publish',plan.id,host.document.id,rev,false,host.access.id);
+        notice('正在保存并验证草稿 '+rev+' 的副本；原文件不变。');
+        return;
+      }
       dialog('生成验证副本',node=>{
         make('p','原文件保持不变。以下是当前草稿的实际变化；确认后备份、写候选、重开并通过渲染闸门。',node);
         make('p','草稿 '+rev+' · '+plan.changes.length+' 项变化 · 输出为新的 DOCX 净稿副本',node);
@@ -327,9 +359,30 @@
       },$('paged-save'));
     }finally{saving=false;renderState(lastState);}
   }
+  async function driveAutomatic(){
+    const access=host?.access;
+    if(!opened||!access?.id||sending||applying||saving||host.busy||lastState?.publishing||lastState?.uncertain||!lastState?.editable||host.stage==='stopped'||document.querySelector('dialog[open]'))return;
+    const proposals=(lastState.proposals||[]).filter(row=>row.status==='pending'&&row.draft_revision===adapter.revision&&row.instruction_revision===lastState.instruction_revision);
+    if(proposals.length>1){
+      const key=access.id+':alternatives:'+adapter.revision;
+      if(!automaticAttempts.has(key)){automaticAttempts.add(key);notice('有多条备选建议，请选择一条采用；未自动选择。');}
+      return;
+    }
+    const proposal=proposals[0];
+    if(proposal){
+      const key=access.id+':apply:'+proposal.id;
+      if(automaticAttempts.has(key))return;
+      automaticAttempts.add(key);await adopt(proposal,access.id);return;
+    }
+    if(access.level==='save_copy'&&automaticSaving?.accessId===access.id&&automaticSaving.revision===adapter.revision&&!lastState.pending_requirements&&lastState.dirty){
+      const key=access.id+':save:'+adapter.revision;
+      if(automaticAttempts.has(key))return;
+      automaticAttempts.add(key);automaticSaving=null;await save();
+    }
+  }
   async function beforeSwitch(){
     if(requirementsDialog?.busy){notice('正在保存要求，请等待接收结果后切换');return false;}
-    if(requirementsDialog?.dirty&&!window.confirm('切换文档将放弃尚未保存的要求修改，是否继续？'))return false;
+    if(requirementsDialog?.dirty&&!await ask('切换文档将放弃尚未保存的要求修改，是否继续？'))return false;
     requirementsDialog?.node.close();
     if(!active()||adapter.revision===(lastState?.published_revision||0))return true;
     return new Promise(resolve=>dialog('当前有未保存编辑',node=>{
@@ -360,12 +413,13 @@
     tool('收起对话侧栏','panel-right-close',$('floating-conversation-heading'),()=>setSidebar(true,true),'paged-close-ai').setAttribute('aria-controls','floating-conversation');
     $('floating-conversation').append($('floating-controls'));
     const referenceBar=make('div','',$('floating-controls'),'paged-reference-bar');
-    tool('引用选区','quote',referenceBar,capture,'paged-reference');make('p','选择正文后引用，AI 使用当前未保存草稿。',referenceBar,'paged-reference-state');
+    tool('引用选区','quote',referenceBar,()=>capture(),'paged-reference');make('p','选择文字讨论修改',referenceBar,'paged-reference-state');
+    tool('引用整表，最多8个段落','freeze',referenceBar,()=>capture(false,true),'paged-table-reference');
     make('span','',referenceBar,'paged-requirement-state').setAttribute('role','status');
     tool('查看已收到要求','chat',referenceBar,manageRequirements,'paged-requirement-details').hidden=true;
     button('处理已保存要求',referenceBar,startPending,'paged-pending').hidden=true;
     $('floating-controls').prepend(referenceBar);
-    make('div','',$('floating-scroll'),'paged-proposals');
+    $('floating-scroll').insertBefore(make('div','',null,'paged-proposals'),$('floating-outputs'));
     const bottom=make('footer','',root,'paged-statusbar'),metadata=make('div','',bottom,'paged-metadata');
     make('span','分页中…',metadata,'paged-statistics');
     make('span','正在打开…',metadata,'paged-save-state').setAttribute('aria-live','off');
@@ -402,7 +456,7 @@
     const supported=window.isSecureContext&&state.document?.ready&&state.document.name.toLowerCase().endsWith('.docx')&&typeof api().paged_open==='function';
     if(!supported){if(adapter||$('floating-root')?.classList.contains('paged-active'))close();return;}
     host=state;const key=state.document.id+':'+state.document.version;
-    if(identity===key){if(state.paged){if(olderState(state.paged))return;renderState(state.paged);const desired=state.stage==='stopped'?-1:lastState.instruction_revision;if(adapter&&!sending&&!applying&&instruction!==desired){instruction=desired;adapter.request('instruction',{revision:instruction}).catch(()=>{});}}return;}
+    if(identity===key){if(state.paged){if(olderState(state.paged))return;renderState(state.paged);const desired=state.stage==='stopped'?-1:lastState.instruction_revision;if(adapter&&!sending&&!applying&&instruction!==desired){instruction=desired;await adapter.request('instruction',{revision:instruction});}await driveAutomatic();}return;}
     if(opening){close();opening=false;}
     close();identity=key;host=state;opening=true;const mine=++generation;
     try{
@@ -431,6 +485,7 @@
     finally{if(mine===generation)opening=false;}
   }
   function close(){
+    automaticAttempts.clear();automaticSaving=null;
     requirementsDialog?.invalidate();
     retiredSessions.clear();retiredInboxes.clear();lastState=null;pendingFeedback=null;
     generation++;opened=false;clearTimeout(autosave);clearTimeout(announcementTimer);announcedState='';adapter?.closeDocument();adapter=null;reference=null;identity='';signature='';recoveryNotice='';

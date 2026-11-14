@@ -57,7 +57,7 @@ class MockModel:
 class SessionDiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         self.path = self.root / "selected.docx"
         self.path.write_bytes(b"stable")
         self.editor = Editor(self.root)
@@ -109,7 +109,10 @@ class SessionDiscoveryTests(unittest.TestCase):
             audit.symlink_to(outside, target_is_directory=True)
         except OSError as exc:
             self.skipTest(f"symlink unavailable: {exc}")
-        self.assertIsNone(self.desktop._discover_session(self.path, self.editor))
+        try:
+            self.assertIsNone(self.desktop._discover_session(self.path, self.editor))
+        finally:
+            audit.unlink()
 
 
 class AskFeedbackTests(unittest.TestCase):
@@ -1308,7 +1311,7 @@ class WriteConfirmationGateTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.base = Path(self.tmp.name)
+        self.base = Path(self.tmp.name).resolve()
         self.root = self.base / "authorized"          # the granted document folder
         self.root.mkdir()
         self.appstate = self.base / "appstate"        # stands in for the app-owned fallback

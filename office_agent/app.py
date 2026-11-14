@@ -285,6 +285,7 @@ def build_dispatcher(editor: Editor, path: Path, *, on_plan=None, ocr_provider: 
     editor.require_confirmation = True
     if type(image_count) is not int or not 1 <= image_count <= MAX_PLANS:
         raise ValueError(f"图片张数须为 1–{MAX_PLANS}")
+    path = editor.space.file(str(path))
     expected = digest(path) if expected_version is None else expected_version
     image_service = None
     image_batch_planned = False

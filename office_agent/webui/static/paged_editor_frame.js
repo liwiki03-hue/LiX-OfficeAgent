@@ -224,11 +224,23 @@
     editor().dispatch(editor().state.tr.scrollIntoView());
     return row;
   }
-  function selection() {
+  function selection(options={}) {
+    const context=tableContext(), active=editor().state.selection;
+    if(context&&(options.table===true||!active.empty&&rows().filter(row=>row.from<active.to&&row.to>active.from).length>1)){
+      const picked=rows().filter(row=>row.position>context.position&&row.position<context.position+context.node.nodeSize&&row.text&&(options.table===true||row.from<active.to&&row.to>active.from));
+      if(!picked.length||picked.length>8)throw Error('表格引用限1—8个非空段落，请缩小范围');
+      return {nodes:picked.map(row=>{const positions=batchPositions(row),start=options.table===true?0:positions.findIndex(position=>position>=active.from),end=options.table===true?row.text.length:positions.findIndex(position=>position>=active.to);return {node_id:row.id,start:start<0?row.text.length:start,end:end<0?row.text.length:end};}).filter(row=>row.end>row.start),whole_table:options.table===true};
+    }
+    if(options.table===true)throw Error('请先将光标放入表格，再引用整表');
     const value = editor().doc.selection.current();
     const segments = value.target?.segments;
-    if (value.empty || !segments || segments.length !== 1) throw Error('首版AI修改请选择一个段落内的明确文字范围');
-    const segment=segments[0], row=rows().find(item=>item.id===segment.blockId);
+    let segment=segments?.length===1?segments[0]:null;
+    if(value.empty&&options.allowParagraph===true){
+      const caret=editor().state.selection.from,row=rows().find(item=>caret>=item.from&&caret<=item.to);
+      if(row&&row.text.trim())segment={blockId:row.id,range:{start:0,end:row.text.length}};
+      else throw Error('请在要修改的段落中放置光标，或选择一段文字');
+    }else if(value.empty||!segment)throw Error('首版AI修改请选择一个段落内的明确文字范围');
+    const row=rows().find(item=>item.id===segment.blockId);
     if (!row) throw Error('首版AI仅支持正文或普通表格内文字；请重新选择');
     const styles=new Set(),fonts=new Set(),sizes=new Set(),marks=new Set();
     editor().state.doc.nodesBetween(editor().state.selection.from,Math.max(editor().state.selection.from,editor().state.selection.to),node=>{
@@ -268,6 +280,11 @@
   }
   function apply(value) {
     if (!editable || value.revision!==revision || value.instruction!==instruction) throw Error('草稿或要求已改变，旧建议未采用');
+    if(Array.isArray(value.proposal.edits)){
+      const cells=new Map(value.proposal.reference.cells.map(row=>[row.node_id,row]));
+      const operations=value.proposal.edits.map(edit=>{const cell=cells.get(edit.node_id);if(!cell?.editable||edit.old!==cell.old)throw Error('表格建议目标无效');return {target_id:edit.node_id,start:cell.start,end:cell.end,expected_before:edit.old,after:edit.new};});
+      return applyBatch({...value,operations});
+    }
     const reference=value.proposal.reference, row=rows().find(item=>item.id===reference.node_id);
     if (!row || row.text.slice(reference.start,reference.end)!==value.proposal.old) throw Error('选区原文不匹配，未采用');
     const prior=revision;

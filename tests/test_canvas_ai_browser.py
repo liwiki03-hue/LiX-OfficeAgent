@@ -12,6 +12,7 @@ from tests.test_model_connections import connection, payload, save, select
 def test_current_unsaved_draft_ai_through_existing_composer_and_copy(native_browser, monkeypatch):
     page, api, source, errors = native_browser
     service = api._floating.canvas
+    api._floating.access.set(api._floating.document['id'], api._floating.document['version'], api._floating.epoch, 'edit', True)
     configured = connection('local-test')
     configured['name'] = '隔离模拟接口'
     configured['models'] = [{'id': 'simulated-model', 'capabilities': ['agent']}]
@@ -43,20 +44,19 @@ def test_current_unsaved_draft_ai_through_existing_composer_and_copy(native_brow
     page.locator('#floating-input').fill('仅修改所选内容，保留其他位置和单位。')
     page.locator('#floating-input').press('Enter')
     try:
-        page.get_by_role('button', name='采用到草稿', exact=True).wait_for(timeout=15000)
+        page.wait_for_function("document.getElementById('canvas-ai-panel').textContent.includes('已采用')", timeout=15000)
     except Exception:
         raise AssertionError({'calls': connections.calls, 'ai': service.ai.state(),
                               'feedback': page.locator('#floating-status').text_content(),
                               'panel': page.locator('#canvas-ai-panel').text_content()}) from None
     assert connections.calls == 2 and not list(source.parent.glob('*.agent-*'))
-    assert service.revision == 1 and not errors
+    assert service.revision == 2 and not errors
     evidence = os.environ.get('CANVAS_AI_BROWSER_EVIDENCE')
     folder = Path(evidence)/source.suffix[1:] if evidence else None
     if folder:
         folder.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(folder/'proposal.png'))
-    page.get_by_role('button', name='采用到草稿', exact=True).click()
-    page.wait_for_function("document.getElementById('canvas-feedback').textContent.includes('已采用到草稿')")
+    assert any(row['status'] == 'adopted' for row in service.ai.proposals.values())
     assert service.revision == 2 and source.read_bytes() == original
     page.get_by_label('保存副本', exact=True).click()
     confirmation = page.get_by_role('dialog', name='确认保存副本', exact=True)

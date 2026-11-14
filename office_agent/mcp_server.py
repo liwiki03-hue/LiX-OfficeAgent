@@ -216,7 +216,18 @@ def main():
     parser = argparse.ArgumentParser(description='LiX MCP stdio；本机登录及文件许可独立于其他窗口，默认不返回正文。')
     parser.add_argument('--headless', action='store_true', help='无控制窗口，仅协议诊断；无登录/文件授权入口，业务调用始终拒绝')
     args = parser.parse_args()
-    logging.disable(logging.CRITICAL)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('%(name)s %(levelname)s'))
+    logger = logging.getLogger('mcp')
+    logger.handlers = [handler]
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
+    for name in ('httpx', 'httpx2', 'httpcore', 'httpcore2', 'openai', 'langchain'):
+        logging.getLogger(name).handlers = [handler]
+        logging.getLogger(name).propagate = False
+        logging.getLogger(name).setLevel(logging.WARNING)
+    from .diagnostics import record
+    record('mcp', 'start', 'started')
     host = McpHost()
     if args.headless:
         try:

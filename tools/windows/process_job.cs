@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -93,11 +95,34 @@ internal static class OwnedCommand
     internal static int Run(string executable, string[] arguments, string directory,
         SortedDictionary<string, string> environment, int seconds, Func<bool> cancelled, Action<bool> cleaned)
     {
+        return Run(executable, arguments, directory, environment, seconds, cancelled, cleaned, null);
+    }
+
+    private static string FailureCode(string output, int code)
+    {
+        string text = output.ToLowerInvariant();
+        if ((text.Contains("cache") || text.Contains("缓存")) && (text.Contains("os error 5") || text.Contains("access is denied") || text.Contains("拒绝访问"))) return "dependency_cache_denied";
+        if (text.Contains("os error 112") || text.Contains("no space left")) return "dependency_disk_full";
+        if (text.Contains("certificate") || text.Contains("tls")) return "dependency_tls_failed";
+        if (text.Contains("timed out") || text.Contains("timeout")) return "dependency_download_timeout";
+        if (text.Contains("connection") || text.Contains("dns") || text.Contains("network")) return "dependency_network_failed";
+        if (text.Contains("no solution found") || text.Contains("failed to resolve") || text.Contains("lockfile")) return "dependency_lock_failed";
+        return code < 0 ? "dependency_start_failed" : "dependency_prepare_failed";
+    }
+
+    internal static int Run(string executable, string[] arguments, string directory,
+        SortedDictionary<string, string> environment, int seconds, Func<bool> cancelled, Action<bool> cleaned,
+        Action<string> diagnostics)
+    {
         IntPtr job = CreateJobObject(IntPtr.Zero, null);
         if (job == IntPtr.Zero) throw new Win32Exception();
         IntPtr environmentBlock = IntPtr.Zero;
         ProcessInfo process = new ProcessInfo();
         bool resumed = false;
+        int completedCode = -1;
+        AnonymousPipeServerStream output = null, input = null;
+        Thread collector = null;
+        StringBuilder captured = new StringBuilder();
         try
         {
             ExtendedLimits limits = new ExtendedLimits();
@@ -113,9 +138,36 @@ internal static class OwnedCommand
             foreach (string argument in arguments) command.Append(' ').Append(Quote(argument));
             StartInfo startup = new StartInfo();
             startup.size = Marshal.SizeOf(startup);
-            if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, false,
+            if (diagnostics != null)
+            {
+                output = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+                input = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
+                startup.flags = 0x100;
+                startup.output = startup.error = output.ClientSafePipeHandle.DangerousGetHandle();
+                startup.input = input.ClientSafePipeHandle.DangerousGetHandle();
+                collector = new Thread(() =>
+                {
+                    byte[] buffer = new byte[4096];
+                    try
+                    {
+                        int count;
+                        while ((count = output.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            captured.Append(Encoding.UTF8.GetString(buffer, 0, count));
+                            if (captured.Length > 65536) captured.Remove(0, captured.Length - 65536);
+                        }
+                    }
+                    catch (IOException) { }
+                    catch (ObjectDisposedException) { }
+                });
+                collector.IsBackground = true;
+                collector.Start();
+            }
+            if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, diagnostics != null,
                     4 | 0x400 | 0x08000000, environmentBlock, directory, ref startup, out process))
                 throw new Win32Exception();
+            if (output != null) output.DisposeLocalCopyOfClientHandle();
+            if (input != null) { input.DisposeLocalCopyOfClientHandle(); input.Dispose(); input = null; }
             if (!AssignProcessToJobObject(job, process.process)) throw new Win32Exception();
             if (ResumeThread(process.thread) != 1) throw new Win32Exception();
             resumed = true;
@@ -127,7 +179,8 @@ internal static class OwnedCommand
             }
             uint exitCode;
             if (!GetExitCodeProcess(process.process, out exitCode)) throw new Win32Exception();
-            return (int)exitCode;
+            completedCode = (int)exitCode;
+            return completedCode;
         }
         finally
         {
@@ -146,8 +199,14 @@ internal static class OwnedCommand
             if (process.process != IntPtr.Zero) CloseHandle(process.process);
             if (environmentBlock != IntPtr.Zero) Marshal.FreeHGlobal(environmentBlock);
             CloseHandle(job);
+            if (input != null) input.Dispose();
+            bool readerStopped = collector == null || collector.Join(2000);
+            if (output != null) output.Dispose();
+            if (!readerStopped) readerStopped = collector.Join(1000);
+            empty = empty && readerStopped;
             cleaned(empty);
             if (!empty) throw new InvalidOperationException("Owned process cleanup could not be confirmed");
+            if (diagnostics != null && completedCode > 0 && !cancelled()) diagnostics(FailureCode(captured.ToString(), completedCode));
         }
     }
 }

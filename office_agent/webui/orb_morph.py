@@ -183,12 +183,14 @@ class MorphVisual:
         actions = [('选择文档', 'folder-open', self.owner.choose),
                    ('返回工作区', 'message-square', lambda: self.owner.present('compact')),
                    ('历史记录', 'history', self.owner.recent), ('设置', 'settings', self.owner.settings)]
+        descriptions = ('选择文档：打开本地文件选择窗口', '返回工作区：打开助手对话与文档工作区',
+                        '历史记录：查看最近文档与历史任务', '设置：管理模型接口与应用偏好')
         for index, (label, icon, callback) in enumerate(actions):
             form = self.Form()
             form.Text = 'LiX · ' + label
             form.AccessibleName = label
             form.AccessibleRole = AccessibleRole.PushButton
-            form.AccessibleDescription = '悬浮球快捷操作；方向键或Tab切换，Enter打开，Esc收起'
+            form.AccessibleDescription = descriptions[index] + '；方向键或Tab切换，Enter打开，Esc收起'
             form.FormBorderStyle = getattr(FormBorderStyle, 'None')
             form.StartPosition = FormStartPosition.Manual
             form.ShowInTaskbar = False
@@ -196,7 +198,8 @@ class MorphVisual:
             form.KeyPreview = True
             surface = PixelSurface(form, noactivate=False)
             self.buttons.append((form, surface, icon, callback))
-            self.owner.tooltip.SetToolTip(form, label)
+            self.owner.tooltip.SetToolTip(form, descriptions[index])
+            self._bind(form.MouseDown, lambda sender, event: self.owner.tooltip.Hide(sender))
             self._bind(form.MouseUp, lambda sender, event, i=index: self._activate(i) if event.Button == self.MouseButtons.Left else None)
             self._bind(form.KeyDown, lambda sender, event, i=index: self._action_key(i, event))
             self._bind(form.Activated, lambda sender, event, i=index: self._paint_action(i, True))
@@ -263,6 +266,8 @@ class MorphVisual:
             self.expanded = False
             self.owner.warning(str(error))
             return
+        self.owner.tooltip.Hide(self.owner.orb)
+        self.owner.tooltip.SetToolTip(self.owner.orb, '收起快捷菜单')
         self.motion.update(expanded=True)
         for index, (form, surface, icon, callback) in enumerate(self.buttons):
             self._paint_action(index)
@@ -288,6 +293,10 @@ class MorphVisual:
             return
         was_expanded = self.expanded
         self.expanded = False
+        self.owner.tooltip.Hide(self.owner.orb)
+        self.owner.tooltip.SetToolTip(self.owner.orb, '打开助手；右键展开快捷菜单，拖动可移动，拖入文档可打开')
+        for form, surface, icon, callback in self.buttons:
+            self.owner.tooltip.Hide(form)
         self.motion.update(expanded=False)
         if immediate or self.reduced_motion:
             self.motion.menu.move(0, time.monotonic(), 0)

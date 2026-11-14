@@ -54,7 +54,7 @@ def test_controller_has_only_local_text_and_explicit_native_management():
                       "sessionStorage", "fetch(", "XMLHttpRequest", "eval(", "new Function",
                       "console.", "document.write", "execute_script", "run_script"):
         assert forbidden not in source
-    for required in ("textContent", "createElement", "OfficeAuth.wrapApi", "window.confirm",
+    for required in ("textContent", "createElement", "OfficeAuth.wrapApi", "OfficeConfirm",
                      "list_skills()", "get_skill(item.slug, item.source)", "plan_skill_change",
                      "plan_skill_import()", "confirm_skill_change", "plan_skill_rollback",
                      "confirm_skill_rollback", "officeauth:unauthenticated", "pywebviewready",
@@ -89,7 +89,7 @@ const methods={list_skills:async()=>({ok:true,skills:[item]}),get_skill:async()=
   plan_skill_rollback:async()=>rollback(),confirm_skill_rollback:async()=>({ok:true,result:{status:'rolled_back',restored:true,verified:true}})};
 Object.keys(methods).forEach(key=>raw[key]=async(...args)=>{calls.push([key,...args]);return methods[key](...args);});
 const window={pywebview:{api:raw},OfficeAuth:{isAuthenticated:()=>authenticated,wrapApi:api=>api,ensure:async()=>{ensured++;authenticated=true;}},
-  addEventListener:(name,fn)=>(events[name] ||= []).push(fn),confirm:text=>{calls.push(['modal']);modalTexts.push(text);modalHook();return modal;}};
+  addEventListener:(name,fn)=>(events[name] ||= []).push(fn),OfficeConfirm:{ask:async text=>{calls.push(['modal']);modalTexts.push(text);modalHook();return modal;}}};
 const document={readyState:'complete',getElementById:id=>nodes[id]||null,createElement:()=>new Element(),addEventListener:()=>{}};
 vm.runInNewContext(source,{window,document,TextEncoder,MutationObserver:class{constructor(fn){this.fn=fn;}observe(el){observers.push([el,this.fn]);}}});
 const fire=async(name)=>{for(const fn of events[name]||[])await fn();};

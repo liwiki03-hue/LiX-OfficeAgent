@@ -2961,6 +2961,9 @@ class Editor:
             log["status"] = "rolled_back"
             record.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
             return log
+        backup = job / ('backup' + source.suffix)
+        if log.get('backup') != str(backup) or self.space.file(str(backup)) != backup or digest(backup) != log.get('source_sha256'):
+            raise GuardError('backup changed since publication; refusing rollback')
         output = self.space.file(log["output"])
         if output != expected or digest(output) != log.get("output_sha256"):
             raise GuardError("output changed since publication; refusing deletion")

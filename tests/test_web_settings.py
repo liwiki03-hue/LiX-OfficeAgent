@@ -54,7 +54,8 @@ def test_settings_form_mount_auth_scope_and_private_key_contract():
     for prohibited in ('innerHTML', 'localStorage', 'sessionStorage', 'fetch(', 'console.', 'eval('):
         assert prohibited not in source
     assert 'delete changes.api_key' in source
-    assert 'window.confirm(' in source
+    assert 'OfficeConfirm' in source
+    assert 'window.confirm(' not in source
     assert 'OfficeAuth.wrapApi' in source
     dialog = (STATIC / 'settings_dialog.js').read_text(encoding='utf-8')
     for prohibited in ('innerHTML', 'localStorage', 'sessionStorage', 'fetch(', 'console.', 'eval('):
@@ -83,7 +84,7 @@ const api={
  async plan_settings_rollback(save){calls.push(['rollback_plan',save]);return {ok:true,plan:{rollback_id:rollback,restores_absent_source_as_empty_env:true}};},
  async confirm_settings_rollback(plan,approved){calls.push(['rollback_confirm',plan,approved]);return {ok:true,result:approved?mode==='partial_rollback'?{status:'uncertain',restored:null,wrote_nothing:false}:{status:'rolled_back',restored:true}:{status:'rejected',restored:false,wrote_nothing:true}};}
 };
-const window={OfficeAuth:{isAuthenticated:()=>authenticated,wrapApi:x=>x},pywebview:{api},confirm:text=>{assert(!text.includes('NewSecretFixture'));confirms.push(text);return mode==='nonliteral'?'true':mode==='deny_save'?false:mode==='deny_rollback'&&confirms.length===2?false:true;},addEventListener:(name,fn)=>events[name]=fn};
+const window={OfficeAuth:{isAuthenticated:()=>authenticated,wrapApi:x=>x},pywebview:{api},OfficeConfirm:{ask:async text=>{assert(!text.includes('NewSecretFixture'));confirms.push(text);return mode==='nonliteral'?'true':mode==='deny_save'?false:mode==='deny_rollback'&&confirms.length===2?false:true;}},addEventListener:(name,fn)=>events[name]=fn};
 vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),{window,document:{
   getElementById:id=>id==='model-settings'?null:node(id),
   addEventListener:(name,fn)=>documentEvents[name]=fn

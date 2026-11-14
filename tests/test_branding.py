@@ -57,7 +57,9 @@ def test_brand_assets_are_decodable_packaged_and_match_supplied_art():
         assert right - left >= 240 and bottom - top >= 240
 
 
-def test_browser_brand_and_existing_chrome_with_real_local_assets(tmp_path):
+def test_browser_brand_and_existing_chrome_with_real_local_assets(tmp_path, monkeypatch):
+    monkeypatch.setenv('TEMP', str(tmp_path))
+    monkeypatch.setenv('TMP', str(tmp_path))
     from playwright.sync_api import sync_playwright
     from tests.test_professional_browser import EDGE, STATIC
 

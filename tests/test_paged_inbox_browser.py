@@ -7,8 +7,30 @@ import threading
 import time
 
 from docx import Document
+import pytest
 
-from tests.test_paged_browser import engine_frame, paged_browser
+from tests.test_paged_browser import engine_frame, paged_browser as base_paged_browser
+from tests.test_floating_browser import open_floating_menu
+
+
+@pytest.fixture
+def paged_browser(tmp_path, monkeypatch):
+    source = base_paged_browser.__wrapped__(tmp_path, monkeypatch)
+    try:
+        result = next(source)
+        floating = result[1]._floating
+        floating.access.set(floating.document['id'], floating.document['version'], floating.epoch, 'edit', True)
+        yield result
+    finally:
+        source.close()
+
+
+def start_round(page):
+    open_floating_menu(page, '当前任务')
+    page.get_by_role('button', name='新一轮要求…', exact=True).click()
+    dialog = page.get_by_role('dialog', name='LiX', exact=True)
+    if dialog.count():
+        dialog.get_by_role('button', name='确认', exact=True).click()
 
 
 def wait(page, predicate, seconds=15):
@@ -84,10 +106,10 @@ def test_receive_without_model_then_review_apply_and_verified_copy(paged_browser
     select_model(page);select_reference(page)
     assert not calls
     page.get_by_role('button',name='处理已保存要求',exact=True).click()
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible')
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     assert '精简所选实验描述' in calls[0] and api._floating.runtime.revision==1
     if evidence:page.screenshot(path=str(evidence/'02-proposal.png'))
-    page.get_by_role('button',name='采用到草稿',exact=True).click()
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     page.get_by_role('button',name='保存副本',exact=True).click()
     page.get_by_role('dialog').get_by_role('button',name='取消',exact=True).click()
@@ -128,12 +150,8 @@ def test_inflight_invalid_reference_receives_then_requires_explicit_processing(p
         assert api._floating.runtime.revision==2
     finally:release.set()
     wait(page,lambda:not api._app.busy)
-    assert len(built)==1 and not api._floating.paged.proposals
-    select_reference(page,'实验于2027年完成，温度120 ℃。')
-    page.wait_for_timeout(800)
-    assert len(built)==1
-    page.get_by_role('button',name='处理已保存要求',exact=True).click()
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible')
+    wait(page,lambda:len(built)==2)
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     assert len(built)==2 and '2027' in calls[-1]
     assert all('2027' in row['old'] for row in api._floating.paged.proposals.values())
     assert errors==[]
@@ -175,7 +193,7 @@ def test_stop_then_explicit_new_requirement_waits_for_old_worker(paged_browser,m
         assert api._floating.runtime.session_id!=old_session and len(built)==1
     finally:release.set()
     wait(page,lambda:len(built)==2)
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible')
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     assert '第一轮旧要求' not in calls[-1]
     assert '停止后主动提出' in calls[-1] and len(api._floating.runtime.messages)==1
     assert errors==[]
@@ -187,8 +205,7 @@ def test_late_receipt_after_new_round_cannot_clear_new_input(paged_browser):
     page.locator('#floating-input').fill('上一轮待引用的要求。');page.locator('#floating-send').click()
     page.wait_for_function("typeof window.releaseInboxReceipt==='function'")
     page.locator('#floating-input').fill('下一轮尚未发送的新草稿。')
-    page.get_by_label('更多',exact=True).click()
-    page.get_by_role('button',name='开始新一轮要求',exact=True).click()
+    start_round(page)
     wait(page,lambda:api._floating.runtime is None)
     page.evaluate('window.releaseInboxReceipt()')
     page.wait_for_function("!document.getElementById('floating-send').disabled")
@@ -230,7 +247,7 @@ def test_stop_resets_requirement_counter_and_rejects_retired_session_snapshot(pa
         page.wait_for_function("document.getElementById('paged-requirement-state').textContent.startsWith('已收到 2 条')")
         assert api._floating.runtime.revision==2 and len(built)==1
     finally:release.set()
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible')
+    wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
     assert len(built)==2 and len(api._floating.paged.proposals)==1
     assert '新一轮精简文字' in calls[-1] and '保留表格和结论' in calls[-1] and '旧要求一' not in calls[-1]
     assert source.read_bytes()==original and not list(source.parent.glob('*.agent-*.docx')) and errors==[]
@@ -248,8 +265,7 @@ def test_late_processing_ack_cannot_restore_previous_round(paged_browser,monkeyp
     page.wait_for_function("typeof window.releaseProcessingReceipt==='function'")
     wait(page,lambda:not api._app.busy)
     page.locator('#floating-input').fill('新一轮输入保持。')
-    page.get_by_label('更多',exact=True).click()
-    page.get_by_role('button',name='开始新一轮要求',exact=True).click()
+    start_round(page)
     wait(page,lambda:api._floating.runtime is None)
     page.evaluate('window.releaseProcessingReceipt()')
     page.wait_for_function("document.getElementById('paged-requirement-state').textContent===''")

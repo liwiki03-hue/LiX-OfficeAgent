@@ -149,6 +149,10 @@ def plan_catalog(store, payload, session, revision):
         previous = old_rows.get(row.get('id'), {})
         if action not in ('keep', 'replace', 'clear') or (action != 'replace' and key) or (action == 'replace' and not key):
             raise SettingsError()
+        from .network import endpoint_identity
+        _validate({'base_url': row.get('base_url', '')})
+        if action == 'keep' and previous.get('api_key') and (endpoint_identity(row.get('base_url', '')) != endpoint_identity(previous.get('base_url', '')) or row.get('protocol') != previous.get('protocol')):
+            raise SettingsError('settings_invalid', field='api_key')
         row['api_key'] = key if action == 'replace' else previous.get('api_key', '') if action == 'keep' else ''
         rows.append(row)
         if row != previous:

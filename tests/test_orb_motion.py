@@ -139,6 +139,7 @@ def test_hidden_native_visual_stops_timer_and_actions_without_redraw_or_recursio
             self.enabled = False
     hidden = []
     owner = SimpleNamespace(orb=SimpleNamespace(Visible=True), hidden=True, exiting=False,
+                            tooltip=SimpleNamespace(Hide=lambda *args: None, SetToolTip=lambda *args: None),
                             _moved=False, _drag=None, _accept=False, _status='busy', observation=lambda *args: None)
     visual = MorphVisual.__new__(MorphVisual)
     visual.owner, visual.disposed, visual.expanded = owner, False, True
@@ -208,7 +209,8 @@ def test_native_menu_reversal_reuses_visible_forms_without_showing_them_twice():
     def show_again(owner):
         pytest.fail('An already visible action window was shown again')
     window = SimpleNamespace(Visible=True, Show=show_again, Activate=lambda: activated.append(True))
-    visual.owner = SimpleNamespace(orb=object(), observation=lambda *args: None)
+    visual.owner = SimpleNamespace(orb=object(), observation=lambda *args: None,
+                                   tooltip=SimpleNamespace(Hide=lambda *args: None, SetToolTip=lambda *args: None))
     visual.expanded, visual.buttons, visual.motion = False, [(window, None, None, None)] * 4, motion
     visual._place_actions = lambda: None
     visual._paint_action = lambda *args: None

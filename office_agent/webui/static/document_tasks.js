@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
   const $ = id => document.getElementById('doc-task-' + id);
   if (!$('panel')) return;
   let epoch = 0, busy = false, uncertain = false, task = null, plan = null, next = null, navigationOffset = null, returnOffset = null;
@@ -52,9 +53,9 @@
     $('return-baseline').value = handoff.baseline_name; $('return-delivered').value = handoff.delivered_name;
     $('return-receipts').value = handoff.receipts.join(', '); $('return-panel').open = true;
   }
-  $('prepare-return').onclick = () => {
+  $('prepare-return').onclick = async () => {
     if (busy || uncertain || !authenticated() || !task?.return_context) return;
-    if (['return-baseline', 'return-delivered', 'return-receipts', 'return-find', 'return-replacement', 'return-reason'].some(id => $(id).value) && !window.confirm('用当前已知交付链替换回流草稿？未保存的回流输入将清除，不写磁盘。')) return;
+    if (['return-baseline', 'return-delivered', 'return-receipts', 'return-find', 'return-replacement', 'return-reason'].some(id => $(id).value) && !await ask('用当前已知交付链替换回流草稿？未保存的回流输入将清除，不写磁盘。')) return;
     const directory = document.getElementById('file-dir')?.textContent.trim();
     handoff = {...task.return_context, receipts: [...task.return_context.receipts], directory};
     clearComparison(); returnOffset = null; $('return-output').textContent = ''; fillHandoff();
@@ -103,7 +104,7 @@
     }
     refresh();
   }
-  const replaceTask = () => !task || window.confirm('建立新任务会结束当前会话任务及其撤销批准；已有副本和审计保留。需要继续恢复时请先保存任务。是否继续？');
+  const replaceTask = async () => !task || await ask('建立新任务会结束当前会话任务及其撤销批准；已有副本和审计保留。需要继续恢复时请先保存任务。是否继续？');
   function navigate(offset) { return run(false, async (api, current) => {
     const reply = await api.navigate_document_task({query: $('query').value, offset, limit: 20});
     if (!current()) return; if (!reply?.ok) { fail(reply); return; }
@@ -120,7 +121,7 @@
   $('navigate-next').onclick = () => navigate(navigationOffset);
   $('query').addEventListener('input', () => { navigationOffset = null; refresh(); });
   $('block-create').onclick = () => run(false, async (api, current) => {
-    if (!replaceTask() || !current()) return;
+    if (!await replaceTask() || !current()) return;
     const action = $('block-action').value;
     let bookmark = null; if (action === 'bookmark_text') { try { bookmark = JSON.parse($('block-bookmark').value); } catch (_) { status('未找到已登记的受限书签目标。'); return; } }
     const payload = {action, first: bookmark?.locator_id || (action === 'chapter_move' ? $('section').value : $('block-first').value), last: $('block-last').value,
@@ -130,10 +131,10 @@
       inheritance: $('block-inheritance').value, bookmark_name: bookmark?.name || null, acknowledge_stale_fields: $('block-ack').checked};
     const reply = await api.create_docx_block_task(payload); if (!current()) return; if (reply?.ok) { show(reply.result); status('结构任务已建立；先预览并独立确认，不提供结构原生修订。'); } else fail(reply);
   });
-  $('create').onclick = () => run(false, async (api, current) => { if (!replaceTask() || !current()) return; const protection = protectionInput(); const payload = protection.editing_profile === 'general' && !protection.protected_literals.length ? $('request').value : {request: $('request').value, ...protection}; const reply = await api.create_document_task(payload); if (!current()) return; if (reply?.ok) { show(reply.result); status('整体范围与分组已生成，尚未批准写入。'); } else fail(reply); });
-  $('create-spec').onclick = () => run(false, async (api, current) => { if (!replaceTask() || !current()) return; let spec; try { spec = JSON.parse($('spec').value); } catch (_) { status('任务规格不是有效JSON。'); return; } const reply = await api.create_document_task(spec); if (!current()) return; if (reply?.ok) show(reply.result); else fail(reply); });
-  $('polish').onclick = () => run(false, async (api, current) => { if (!$('section').value) { status('先读取大纲并明确选择章节。'); return; } if (!replaceTask() || !window.confirm('主动调用已配置模型生成所选章节候选？最多24段、4次调用；可能产生费用。内容与条件仍需人工核对，不自动写入。') || !current()) return; const reply = await api.propose_document_task_polish($('request').value, $('section').value); if (!current()) return; if (reply?.ok) { show(reply.result); status('模型候选已生成；遗漏、受限和未处理范围见账本，不作为语义正确证明。'); } else fail(reply); });
-  $('import').onclick = () => run(false, async (api, current) => { if (!replaceTask() || !current()) return; const reply = await api.import_document_task_preview(); if (!current()) return; if (reply?.ok) show(reply.result); else fail(reply); });
+  $('create').onclick = () => run(false, async (api, current) => { if (!await replaceTask() || !current()) return; const protection = protectionInput(); const payload = protection.editing_profile === 'general' && !protection.protected_literals.length ? $('request').value : {request: $('request').value, ...protection}; const reply = await api.create_document_task(payload); if (!current()) return; if (reply?.ok) { show(reply.result); status('整体范围与分组已生成，尚未批准写入。'); } else fail(reply); });
+  $('create-spec').onclick = () => run(false, async (api, current) => { if (!await replaceTask() || !current()) return; let spec; try { spec = JSON.parse($('spec').value); } catch (_) { status('任务规格不是有效JSON。'); return; } const reply = await api.create_document_task(spec); if (!current()) return; if (reply?.ok) show(reply.result); else fail(reply); });
+  $('polish').onclick = () => run(false, async (api, current) => { if (!$('section').value) { status('先读取大纲并明确选择章节。'); return; } if (!await replaceTask() || !await ask('主动调用已配置模型生成所选章节候选？最多24段、4次调用；可能产生费用。内容与条件仍需人工核对，不自动写入。') || !current()) return; const reply = await api.propose_document_task_polish($('request').value, $('section').value); if (!current()) return; if (reply?.ok) { show(reply.result); status('模型候选已生成；遗漏、受限和未处理范围见账本，不作为语义正确证明。'); } else fail(reply); });
+  $('import').onclick = () => run(false, async (api, current) => { if (!await replaceTask() || !current()) return; const reply = await api.import_document_task_preview(); if (!current()) return; if (reply?.ok) show(reply.result); else fail(reply); });
   $('next').onclick = () => run(false, async (api, current) => { const reply = await api.get_document_task(task.task_id, next); if (!current()) return; if (reply?.ok) show(reply.result, true); else fail(reply); });
   function previewRoute(route) { return run(false, async (api, current) => {
     const reply = await api.plan_document_task_group(task.task_id, route); if (!current()) return; if (!reply?.ok) { fail(reply); return; }
@@ -146,15 +147,15 @@
   }, '实际输入版本的计划预览'); }
   $('plan').onclick = () => previewRoute('ranges');
   $('route').onclick = () => previewRoute('auto');
-  $('confirm').onclick = () => run(true, async (api, current) => { phase = "本组副本执行"; const target = plan; if (!target) return; const approved = window.confirm('独立确认本组DOCX副本？取消不写入。\n' + $('preview').textContent) === true; if (!current()) return; plan = null; const reply = await api.confirm_document_task_group(task.task_id, target.id, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'uncertain') uncertain = true; show(reply.result.task); if (reply.result.status === 'saved') { const layout = reply.result.layout_observations || {}; $('visual').textContent = '审计回执：' + reply.result.save_id + '\n字符越页/原生空文字页观察：原稿 ' + JSON.stringify(layout.source_counts || {}) + '；副本 ' + JSON.stringify(layout.output_counts || {}) + '\n新增观察：' + (layout.increased_observations?.join('、') || '未登记') + '\n仅原生字符与页面边界检查；图片页、表格越格、遮挡、孤立标题、页眉页脚和页码仍需人工核对。合理分页不自动判失败。'; } status(reply.result.status === 'saved' ? '本组已重开/渲染/审计验证；当前副本：' + reply.result.task.current_name + '。是否完整完成以账本和检查为准。' : reply.result.status === 'cancelled' ? '已取消本组写入。' : '执行结果不确定，请核对审计。'); });
-  $('undo').onclick = () => run(true, async (api, current) => { phase = "独立逆序撤销"; if (!window.confirm('独立撤销最后一组？只能逆序逐个事务撤销，不是整体原子回滚。') || !current()) return; const reply = await api.undo_document_task_group(task.task_id, true); if (!current()) return; if (reply?.ok) { show(reply.result.task); status('最后一组已撤销或保守拒绝；原文件、备份和审计保留。'); } else fail(reply); });
-  $('save').onclick = () => run(true, async (api, current) => { phase = "任务存档"; const planned = await api.plan_document_task_archive(task.task_id); if (!current()) return; if (!planned?.ok) { fail(planned); return; } const approved = window.confirm('独立保存任务规格、版本摘要、计划与完成账本？包含待改文字；不保存写入或撤销批准。') === true; if (!current()) return; const reply = await api.confirm_document_task_archive(planned.result.plan_id, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'saved') { $('receipt').value = reply.result.save_id; status('任务已存档；恢复前重新选择当前版本：' + task.current_name); } else if (reply.result.status === 'uncertain') { uncertain = true; status('存档结果不确定，不自动重试。'); } else status('已取消任务存档。'); });
-  $('restore').onclick = () => run(false, async (api, current) => { phase = "重新准入恢复"; if (!replaceTask() || !current()) return; const reply = await api.restore_document_task($('receipt').value.trim()); if (!current()) return; if (reply?.ok) { show(reply.result); status('已重新核验当前版本并恢复账本；旧写入和撤销批准未恢复，下一组必须新预览确认。'); } else fail(reply); });
+  $('confirm').onclick = () => run(true, async (api, current) => { phase = "本组副本执行"; const target = plan; if (!target) return; const approved = await ask('独立确认本组DOCX副本？取消不写入。\n' + $('preview').textContent) === true; if (!current()) return; plan = null; const reply = await api.confirm_document_task_group(task.task_id, target.id, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'uncertain') uncertain = true; show(reply.result.task); if (reply.result.status === 'saved') { const layout = reply.result.layout_observations || {}; $('visual').textContent = '审计回执：' + reply.result.save_id + '\n字符越页/原生空文字页观察：原稿 ' + JSON.stringify(layout.source_counts || {}) + '；副本 ' + JSON.stringify(layout.output_counts || {}) + '\n新增观察：' + (layout.increased_observations?.join('、') || '未登记') + '\n仅原生字符与页面边界检查；图片页、表格越格、遮挡、孤立标题、页眉页脚和页码仍需人工核对。合理分页不自动判失败。'; } status(reply.result.status === 'saved' ? '本组已重开/渲染/审计验证；当前副本：' + reply.result.task.current_name + '。是否完整完成以账本和检查为准。' : reply.result.status === 'cancelled' ? '已取消本组写入。' : '执行结果不确定，请核对审计。'); });
+  $('undo').onclick = () => run(true, async (api, current) => { phase = "独立逆序撤销"; if (!await ask('独立撤销最后一组？只能逆序逐个事务撤销，不是整体原子回滚。') || !current()) return; const reply = await api.undo_document_task_group(task.task_id, true); if (!current()) return; if (reply?.ok) { show(reply.result.task); status('最后一组已撤销或保守拒绝；原文件、备份和审计保留。'); } else fail(reply); });
+  $('save').onclick = () => run(true, async (api, current) => { phase = "任务存档"; const planned = await api.plan_document_task_archive(task.task_id); if (!current()) return; if (!planned?.ok) { fail(planned); return; } const approved = await ask('独立保存任务规格、版本摘要、计划与完成账本？包含待改文字；不保存写入或撤销批准。') === true; if (!current()) return; const reply = await api.confirm_document_task_archive(planned.result.plan_id, approved); if (!current()) return; if (!reply?.ok) { fail(reply); return; } if (reply.result.status === 'saved') { $('receipt').value = reply.result.save_id; status('任务已存档；恢复前重新选择当前版本：' + task.current_name); } else if (reply.result.status === 'uncertain') { uncertain = true; status('存档结果不确定，不自动重试。'); } else status('已取消任务存档。'); });
+  $('restore').onclick = () => run(false, async (api, current) => { phase = "重新准入恢复"; if (!await replaceTask() || !current()) return; const reply = await api.restore_document_task($('receipt').value.trim()); if (!current()) return; if (reply?.ok) { show(reply.result); status('已重新核验当前版本并恢复账本；旧写入和撤销批准未恢复，下一组必须新预览确认。'); } else fail(reply); });
   const returnLabels = {unchanged: '保持', system_suggestion_still_present: '系统建议仍存在', system_revision_still_present: '本系统文字修订仍存在', system_revision_accepted: '本系统文字修订已接受', system_revision_rejected: '本系统文字修订已拒绝', system_revision_partially_resolved: '部分修订已处理', revision_projection_ambiguous: '修订处理含歧义', structure_changed_unmapped: '结构变化无法可靠定位', ambiguous_position: '位置含歧义', stored_field_result_changed_unverified: '域缓存变化，尚未证明刷新正确', baseline_restored_resolution_unknown: '恢复基线内容，处理方式未知', format_or_structure_changed: '格式或结构变化', user_content_change: '用户新增文字修改', same_position_conflict: '同位置冲突'};
   const continuationLabels = {comparison_requires_review: '变化或位置尚需人工核对', unmapped_or_unsupported: '未映射或未主动纳入的结构', sensitive_or_oversize: '内容敏感或超过范围上限', table_structure_changed: '三版本表格位置或网格属性变化', table_structure_unsupported: '表格含合并、嵌套、多段或特殊标记，或超过预算'};
   function compareReturn(offset) { return run(false, async (api, current) => {
-    if (['return-find', 'return-replacement', 'return-reason'].some(id => $(id).value) && !window.confirm('重新读取比较会放弃尚未建立候选的文字输入；不写磁盘。是否继续？')) return;
-    if (offset === 0 && !window.confirm('同意读取当前已选版本及下列两个同目录DOCX进行只读比较？不合并、不恢复旧批准。') || !current()) return;
+    if (['return-find', 'return-replacement', 'return-reason'].some(id => $(id).value) && !await ask('重新读取比较会放弃尚未建立候选的文字输入；不写磁盘。是否继续？')) return;
+    if (offset === 0 && !await ask('同意读取当前已选版本及下列两个同目录DOCX进行只读比较？不合并、不恢复旧批准。') || !current()) return;
     clearComparison(); returnOffset = null; $('return-output').textContent = '';
     const reply = await api.compare_document_return({baseline_name: $('return-baseline').value.trim(), delivered_name: $('return-delivered').value.trim(), receipts: $('return-receipts').value.split(/[,，\s]+/).filter(Boolean), approved_read: true, offset, include_plain_tables: $('return-tables').checked});
     if (!current()) return; if (!reply?.ok) { fail(reply); return; }
@@ -172,7 +173,7 @@
   $('return-compare').onclick = () => compareReturn(0);
   $('return-next').onclick = () => compareReturn(returnOffset);
   $('return-create').onclick = () => run(false, async (api, current) => {
-    if (!comparison || !replaceTask() || !current()) return;
+    if (!comparison || !await replaceTask() || !current()) return;
     const reply = await api.create_document_return_continuation({comparison_id: comparison, row_id: $('return-target').value,
       find: $('return-find').value, replacement: $('return-replacement').value, reason: $('return-reason').value.trim(),
       mode: $('return-mode').value, acknowledge_current: $('return-ack').checked, ...protectionInput()});

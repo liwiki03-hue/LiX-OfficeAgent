@@ -1,7 +1,7 @@
 import json
 from urllib.parse import urlsplit
 
-from tests.test_floating_browser import floating_browser
+from tests.test_floating_browser import floating_browser, open_floating_menu
 from tests.test_professional_browser import STATIC
 from tests.test_skill_discovery import response
 
@@ -27,10 +27,10 @@ def test_compact_menu_history_and_public_search(floating_browser):
     page.evaluate("() => {const base=document.createElement('base');base.href='http://lix.invalid/';document.head.prepend(base);}")
     page.evaluate("document.querySelectorAll('img[src]').forEach(n=>{n.src=new URL(n.getAttribute('src'),document.baseURI).href;})")
     page.evaluate("document.getElementById('floating-input').value='保留数字，精简说明'")
-    summary = page.locator('#floating-root > header details > summary')
+    summary = page.locator('#floating-root > header > details > summary')
     page.set_viewport_size({'width':520, 'height':800})
     summary.click()
-    assert page.locator('.floating-menu section').count() == 4
+    assert page.locator('.floating-menu > section, .floating-menu > details').count() == 4
     assert page.locator('.floating-menu button').count() == 13
     assert page.locator('.floating-menu button').first.bounding_box()['height'] <= 40
     page.screenshot(path=str(OUT / 'menu-520.png'))
@@ -40,7 +40,7 @@ def test_compact_menu_history_and_public_search(floating_browser):
     page.keyboard.press('Escape')
     assert summary.evaluate('(n)=>n===document.activeElement&&!n.parentElement.open')
     page.set_viewport_size({'width':1120, 'height':800})
-    summary.click()
+    open_floating_menu(page, '工具与记录')
     page.get_by_role('button', name='历史记录', exact=True).click()
     page.wait_for_function('!document.getElementById("simple-history").hidden')
     page.locator('#simple-session-list > summary').click()
@@ -48,7 +48,7 @@ def test_compact_menu_history_and_public_search(floating_browser):
     assert page.locator('#simple-session-list').get_attribute('open') is not None
     page.keyboard.press('Escape')
     page.set_viewport_size({'width':1120,'height':800})
-    assert page.locator('#simple-history-chats > h2 + label').count() == 1
+    assert page.locator('#simple-history-chats #chat-search').count() == 1
     page.screenshot(path=str(OUT / 'history-1120.png'))
     page.evaluate('window.OfficeSettings.show()')
     page.locator('#tab-skills').click()

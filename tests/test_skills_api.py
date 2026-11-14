@@ -73,7 +73,8 @@ def test_missing_selected_document_is_not_a_sticky_failure(tmp_path):
     assert api.list_skills()['reason']=='no_file'
     assert not api._skills._disabled
     app.path=root/'fixture.docx'
-    assert api.list_skills()=={'ok':True,'skills':[]}
+    listed=api.list_skills()
+    assert listed['ok'] and listed['skills']==[] and listed['agent_catalog']['available']==0
 
 
 def test_busy_and_diagram_retire_authorities_without_writing(tmp_path):

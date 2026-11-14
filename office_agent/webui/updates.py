@@ -9,16 +9,49 @@ import sys
 import time
 from urllib.parse import urlsplit
 import uuid
+from urllib.error import HTTPError
+from urllib.request import Request
 
 import httpx2
 
 from ..update_core import UpdateError, MAX_PACKAGE, channel, check_installed, digest, local_info, read_json, safe_path, unpack, version, write_json
 
 
+def pinned_open(request, timeout):
+    from ..network import urlopen
+    origin, url, deadline = request.full_url, request.full_url, time.monotonic() + timeout
+    hosts = {'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com', 'github-releases.githubusercontent.com'}
+    for _ in range(4):
+        parsed = urlsplit(url)
+        if parsed.scheme != 'https' or parsed.hostname not in hosts or parsed.port not in (None, 443) or parsed.username or parsed.password or parsed.fragment:
+            raise UpdateError('update_url_refused')
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError()
+        try:
+            response = urlopen(Request(url, headers=dict(request.header_items())), timeout=remaining)
+        except HTTPError as error:
+            if error.code not in (301, 302, 303, 307, 308):
+                raise
+            url = error.headers.get('Location', '')
+            error.close()
+            continue
+        class Response:
+            status, headers = response.status, response.headers
+            def geturl(self): return origin
+            def read(self, count): return response.read(count)
+            def read1(self, count): return getattr(response, 'read1', response.read)(count)
+            def __enter__(self): return self
+            def __exit__(self, *args): response.close()
+        return Response()
+    raise UpdateError('update_url_refused')
+
+
 def fetch(url, limit, *, transport=None):
     started = time.monotonic()
     hosts = {'api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com', 'github-releases.githubusercontent.com'}
-    with httpx2.Client(transport=transport or httpx2.HTTPTransport(retries=0, trust_env=False), trust_env=False, follow_redirects=False, timeout=15) as client:
+    from ..network import transport as network_transport
+    with httpx2.Client(transport=transport or network_transport(url), trust_env=False, follow_redirects=False, timeout=15) as client:
         for _ in range(4):
             parsed = urlsplit(url)
             if parsed.scheme != 'https' or parsed.hostname not in hosts or parsed.port not in (None, 443) or parsed.username or parsed.password or parsed.fragment:
@@ -148,9 +181,22 @@ class Updates:
                 release = self.release
                 if not release or not release['asset'] or time.monotonic() - release['created'] > 300:
                     raise UpdateError('update_plan_expired')
+                epoch = self.epoch
             check_installed(self.root)
             asset = release['asset']
-            body = fetch(asset['browser_download_url'], MAX_PACKAGE, transport=self.transport)
+            if self.transport is not None:
+                body = fetch(asset['browser_download_url'], MAX_PACKAGE, transport=self.transport)
+            else:
+                from ..downloads import fetch as download, DownloadError
+                cache = safe_path(self.root, '.office-agent-updates', internal=True) / 'downloads'
+                cache.mkdir(parents=True, exist_ok=True)
+                try:
+                    path = download(asset['browser_download_url'], cache / (asset['digest'][7:] + '.zip'), asset['digest'][7:],
+                                    size=asset['size'], limit=MAX_PACKAGE, seconds=120, opener=pinned_open,
+                                    cancelled=lambda: self.epoch != epoch)
+                except DownloadError as error:
+                    raise UpdateError('update_download_' + str(error)) from None
+                body = path.read_bytes()
             fingerprint = hashlib.sha256(body).hexdigest()
             if len(body) != asset['size'] or 'sha256:' + fingerprint != asset['digest']:
                 raise UpdateError('update_package_invalid')

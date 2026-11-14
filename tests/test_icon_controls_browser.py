@@ -1,4 +1,4 @@
-from tests.test_floating_browser import floating_browser
+from tests.test_floating_browser import floating_browser, open_floating_menu
 from tests.test_paged_browser import engine_frame, paged_browser
 
 
@@ -81,7 +81,7 @@ def test_window_controls_remain_single_and_available_in_secondary_views(floating
     page.get_by_role('tooltip').wait_for(state='visible')
     assert page.get_by_role('tooltip').inner_text() == '最大化窗口'
     page.locator('#floating-input').fill('保留原输入。')
-    page.locator('#floating-root > header details > summary').click()
+    open_floating_menu(page, '工具与记录')
     page.get_by_role('button', name='历史记录', exact=True).click()
     assert page.locator('#desktop-window-bar').is_visible()
     assert page.locator('.desktop-window-controls').count() == 1

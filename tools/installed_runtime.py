@@ -1,15 +1,45 @@
 import hashlib
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
+import socket
+import ssl
 import time
-from urllib.request import Request, urlopen
-import uuid
+import sys
+from urllib.error import HTTPError, URLError
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from office_agent.network import urlopen
 
 from tools.install_frontend_assets import checked
 
 
 ROOT = Path(__file__).absolute().parents[1]
+DOWNLOAD_SECONDS = 600
+CHUNK_BYTES = 4 * 1024 * 1024
+
+
+class PreparationError(ValueError):
+    def __init__(self, code, system_code=None):
+        self.code = code
+        self.system_code = system_code
+        super().__init__(code)
+
+
+def report(state, *, code='', received=0, total=0, attempt=1, system_code=None):
+    target = os.environ.get('LIX_RENDERER_REPORT')
+    if not target:
+        return
+    path = checked(Path(target), missing=True)
+    temporary = checked(path.with_name(path.name + '.tmp'), missing=True)
+    value = {'schema': 1, 'state': state, 'code': code, 'received': received, 'total': total, 'attempt': attempt,
+             'system_code': system_code, 'updated_at': time.time()}
+    with temporary.open('w', encoding='utf-8') as stream:
+        json.dump(value, stream)
+    os.replace(temporary, path)
 
 
 def digest(path):
@@ -21,33 +51,33 @@ def digest(path):
 
 
 def download(folder, spec):
+    from office_agent.downloads import fetch, DownloadError
     folder = checked(folder, missing=True)
     folder.mkdir(parents=True, exist_ok=True)
-    checked(folder)
     archive = checked(folder / ('LibreOffice_' + spec['version'] + '_Win_x86-64.msi'), missing=True)
-    if archive.exists():
-        if archive.stat().st_size != spec['bytes'] or digest(archive) != spec['sha256']:
-            raise ValueError('Existing renderer download changed; retained, not overwritten')
-        return archive
-    partial = checked(folder / (archive.name + '.' + uuid.uuid4().hex + '.partial'), missing=True)
-    end, count = time.monotonic() + 600, 0
-    request = Request(spec['url'], headers={'User-Agent': 'LiX-installed-runtime-setup'})
-    with urlopen(request, timeout=30) as response, partial.open('xb') as stream:
-        if response.status != 200 or not response.geturl().startswith('https://'):
-            raise ValueError('Renderer archive request failed')
-        while chunk := response.read(1024 * 1024):
-            count += len(chunk)
-            if count > spec['bytes'] or time.monotonic() > end:
-                raise ValueError('Renderer download budget exceeded; partial retained')
-            stream.write(chunk)
-        stream.flush()
-        os.fsync(stream.fileno())
-    if count != spec['bytes'] or digest(partial) != spec['sha256']:
-        raise ValueError('Renderer archive checksum mismatch; nothing extracted')
-    os.link(partial, archive)
-    partial.unlink()
-    return archive
-
+    partial = checked(folder / (archive.name + '.partial'), missing=True)
+    if not partial.exists():
+        candidates = []
+        with os.scandir(folder) as entries:
+            for index, entry in enumerate(entries):
+                if index >= 128:
+                    raise PreparationError('download_directory_limit')
+                suffix = entry.name.removeprefix(archive.name + '.').removesuffix('.partial')
+                if entry.name.startswith(archive.name + '.') and entry.name.endswith('.partial') and len(suffix) == 32 and all(c in '0123456789abcdef' for c in suffix):
+                    candidate = checked(Path(entry.path))
+                    if candidate.is_file() and candidate.stat().st_size <= spec['bytes']:
+                        candidates.append(candidate)
+        if candidates:
+            previous = max(candidates, key=lambda value: (value.stat().st_size, value.name))
+            os.link(previous, partial)
+            previous.unlink()
+    try:
+        return fetch(spec['url'], archive, spec['sha256'], size=spec['bytes'], limit=spec['bytes'],
+                     seconds=DOWNLOAD_SECONDS, chunk_bytes=CHUNK_BYTES, opener=urlopen, progress=report)
+    except DownloadError as error:
+        raise PreparationError(str(error)) from None
+    except EOFError:
+        raise PreparationError('download_incomplete') from None
 
 def extract(archive, destination):
     from office_agent.diagram_process import _WindowsJob
@@ -58,8 +88,10 @@ def extract(archive, destination):
         end = time.monotonic() + 180
         while process.poll() is None and time.monotonic() < end:
             time.sleep(.1)
+        if process.poll() is None:
+            raise PreparationError('extract_timeout')
         if process.poll() != 0:
-            raise ValueError('Renderer extraction failed or timed out; incomplete files retained')
+            raise PreparationError('installer_service_unavailable' if process.poll() == 1601 else 'extract_failed', process.poll())
     finally:
         empty = job.close()
         if process:
@@ -92,7 +124,15 @@ def prepare(root):
                 or saved.get('executable_sha256') != digest(binary)):
             raise ValueError('Installed renderer changed; repair requires user action')
         return {'ok': True, 'status': 'already_verified', 'rendering_verified': False}
-    archive = download(runtime / 'downloads', spec)
+    bundled = checked(root.parent / 'runtime' / ('LibreOffice_' + spec['version'] + '_Win_x86-64.msi'), missing=True)
+    if bundled.exists():
+        report('verify')
+        if not bundled.is_file() or bundled.stat().st_size != spec['bytes'] or digest(bundled) != spec['sha256']:
+            raise PreparationError('download_checksum')
+        archive = bundled
+    else:
+        archive = download(runtime / 'downloads', spec)
+    report('extract')
     extract(archive, destination)
     if not checked(binary).is_file():
         raise ValueError('Expected renderer executable is missing')
@@ -106,8 +146,38 @@ def prepare(root):
     return result
 
 
-if __name__ == '__main__':
+def main(root=ROOT):
     try:
-        print(json.dumps(prepare(ROOT)))
-    except (OSError, ValueError, KeyError) as error:
-        raise SystemExit('Renderer preparation failed: ' + type(error).__name__) from None
+        report('starting')
+        result = prepare(root)
+        report('ready')
+        print(json.dumps(result))
+        return 0
+    except (OSError, ValueError, KeyError, HTTPException) as error:
+        if isinstance(error, PreparationError):
+            code = error.code
+        elif isinstance(error, HTTPError):
+            code = 'download_http'
+        elif isinstance(error, (TimeoutError, socket.timeout)):
+            code = 'download_timeout'
+        elif isinstance(error, URLError):
+            if isinstance(error.reason, (TimeoutError, socket.timeout)):
+                code = 'download_timeout'
+            else:
+                code = 'download_tls' if isinstance(error.reason, ssl.SSLError) else 'download_network'
+        elif isinstance(error, HTTPException):
+            code = 'download_incomplete'
+        elif isinstance(error, PermissionError):
+            code = 'disk_permission'
+        else:
+            code = 'runtime_integrity_or_extraction'
+        try:
+            report('failed', code=code, system_code=getattr(error, 'system_code', None))
+        except (OSError, ValueError):
+            pass
+        print('Renderer preparation failed: ' + code)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

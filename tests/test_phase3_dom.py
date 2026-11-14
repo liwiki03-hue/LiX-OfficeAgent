@@ -33,7 +33,7 @@ const service={
   confirm_task_documents:async(id,confirmed)=>{writes.push({id,confirmed});return {ok:false};}
 };
 const context={document:{getElementById:get,createElement:tag=>new Element(tag),createTextNode:text=>({textContent:text})},
-  window:{OfficeAuth:{isAuthenticated:()=>authenticated},pywebview:{api:service},confirm:()=>{confirmCount++;return confirmResult;},addEventListener:(name,fn)=>handlers.set(name,fn)},console};
+  window:{OfficeAuth:{isAuthenticated:()=>authenticated},pywebview:{api:service},OfficeConfirm:{ask:async()=>{confirmCount++;return confirmResult;}},addEventListener:(name,fn)=>handlers.set(name,fn)},console};
 vm.createContext(context);vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),context);
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{

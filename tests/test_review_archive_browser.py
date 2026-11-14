@@ -2,6 +2,7 @@ from docx import Document
 
 from office_agent.writes import digest
 from test_professional_browser import _browser, STATIC
+from tests.ui_confirmation import respond_to_confirmation
 
 
 def exercise(tmp_path, monkeypatch, real_render=False, capture=None, restart=None):
@@ -44,12 +45,14 @@ def exercise(tmp_path, monkeypatch, real_render=False, capture=None, restart=Non
         assert not list(tmp_path.glob('.office-rag-evidence-*'))
         page.evaluate('window.approved=false')
         page.locator('#cr-review-save-confirm').click()
+        respond_to_confirmation(page, approved=False)
         page.wait_for_function("document.getElementById('cr-review-save-confirm').disabled")
         assert not list(tmp_path.glob('.office-rag-evidence-*'))
         page.locator('#cr-review-save-plan').click()
         page.wait_for_function("!document.getElementById('cr-review-save-confirm').disabled")
         page.evaluate('window.approved=true')
         page.evaluate("document.getElementById('cr-review-save-confirm').click();document.getElementById('cr-review-save-confirm').click()")
+        respond_to_confirmation(page, approved=True)
         page.wait_for_function("document.getElementById('cr-status').textContent.includes('集合已保存')")
         receipt = page.locator('#cr-review-archive-receipt').input_value()
         assert len(receipt) == 32 and calls.count('confirm_output_review_archive') == 2
@@ -64,6 +67,7 @@ def exercise(tmp_path, monkeypatch, real_render=False, capture=None, restart=Non
         page.wait_for_function("!document.getElementById('cr-review-remove-confirm').disabled")
         page.evaluate('window.approved=false')
         page.locator('#cr-review-remove-confirm').click()
+        respond_to_confirmation(page, approved=False)
         page.wait_for_function("document.getElementById('cr-review-remove-confirm').disabled")
         artifact = tmp_path / ('.office-rag-evidence-' + receipt) / 'output-review-set.json'
         assert artifact.exists()
@@ -71,6 +75,7 @@ def exercise(tmp_path, monkeypatch, real_render=False, capture=None, restart=Non
         page.wait_for_function("!document.getElementById('cr-review-remove-confirm').disabled")
         page.evaluate('window.approved=true')
         page.locator('#cr-review-remove-confirm').click()
+        respond_to_confirmation(page, approved=True)
         page.wait_for_function("document.getElementById('cr-status').textContent.includes('集合记录已删除')")
         assert not artifact.exists() and artifact.with_name('audit-removed.json').exists()
         assert len(list(tmp_path.glob('*.agent-*.docx'))) == 1 and digest(app.path) == before

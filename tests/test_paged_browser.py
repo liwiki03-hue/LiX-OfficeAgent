@@ -97,6 +97,8 @@ def test_real_engine_typing_undo_format_snapshot_and_source_unchanged(paged_brow
 
 def test_ai_sees_latest_draft_blocks_old_result_and_applies_only_current(paged_browser,monkeypatch):
     page,api,source,errors=paged_browser
+    floating=api._floating
+    floating.access.set(floating.document['id'],floating.document['version'],floating.epoch,'edit',True)
     entered,release=threading.Event(),threading.Event()
     contexts=[]
     class Model:
@@ -134,11 +136,13 @@ def test_ai_sees_latest_draft_blocks_old_result_and_applies_only_current(paged_b
         page.locator('#floating-input').fill('使用最新年份，继续精简。');page.locator('#floating-send').click()
         page.wait_for_function("document.getElementById('floating-input').value === ''")
     finally:release.set()
-    page.get_by_role('button',name='采用到草稿',exact=True).wait_for(state='visible',timeout=20000)
+    deadline=time.monotonic()+20
+    while not api._floating.paged.proposals or not all(row['status']=='adopted' for row in api._floating.paged.proposals.values()):
+        if time.monotonic()>deadline:raise AssertionError({'proposals':api._floating.paged.proposals,'feedback':page.locator('#paged-feedback').text_content()})
+        page.wait_for_timeout(50)
     proposals=list(api._floating.paged.proposals.values())
     assert len(proposals)==1 and '2027' in proposals[0]['old'] and '2026' not in proposals[0]['new']
     assert '2026' in contexts[0] and '2027' in contexts[-1]
-    page.get_by_role('button',name='采用到草稿',exact=True).click()
     deadline=time.monotonic()+10
     while api._floating.paged.proposals[proposals[0]['id']]['status']!='adopted':
         if time.monotonic()>deadline:raise AssertionError({'feedback':page.locator('#paged-feedback').text_content(),'revision':api._floating.paged.revision,'proposal':api._floating.paged.proposals[proposals[0]['id']]['status']})

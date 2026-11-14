@@ -1962,14 +1962,18 @@ function initProgressiveUI() {
 }
 
 /* ---------- 轮询 ---------- */
+let pollingEvents=false;
 async function poll() {
   if (window.OfficeFloating?.active) return;
   if (floatingEventOwner) return;
   if (!api || !window.OfficeAuth?.isAuthenticated()) return;
+  if(pollingEvents||document.hidden)return;
+  pollingEvents=true;
   try {
     const events = await api.poll();
     if (Array.isArray(events)) events.forEach(handleEvent);
   } catch (e) { /* API 尚未就绪或窗口关闭 */ }
+  finally { pollingEvents=false; }
 }
 
 initConversation();

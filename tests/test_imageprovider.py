@@ -195,15 +195,17 @@ def test_output_writer_cap_before_allocation(monkeypatch):
     assert buffer.getvalue() == b""
 
 
-def test_default_transport_does_not_inherit_environment_tls_or_proxy(monkeypatch):
+def test_default_transport_does_not_inherit_environment_tls_or_proxy(tmp_path, monkeypatch):
     options = []
     def fake_transport(**kwargs):
         options.append(kwargs)
-        return httpx2.MockTransport(lambda request: httpx2.Response(200, content=b"{}"))
+        return httpx2.MockTransport(lambda request: httpx2.Response(200, content=response_body(), headers={'Content-Type': 'application/json'}))
     monkeypatch.setattr(provider.httpx2, "HTTPTransport", fake_transport)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('OFFICE_NETWORK_MODE', 'direct')
+    monkeypatch.setenv('HTTPS_PROXY', 'http://untrusted.invalid:1234')
     instance = provider.OpenAIImageGenProvider()
-    transport = instance._transport_factory()
-    try:
-        assert options == [{"retries": 0, "trust_env": False}]
-    finally:
-        transport.close()
+    result = instance.generate(ImageRequest(prompt='测试'), config())
+    with Image.open(io.BytesIO(result)) as image:
+        assert image.size == (12, 8)
+    assert options == [{"proxy": None, "retries": 0, "trust_env": False}]
