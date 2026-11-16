@@ -115,7 +115,7 @@ def compare_structure(source: Path, output: Path) -> dict:
             "truncated": len(changed) > 100}
 
 
-def pdf_snapshot(path: Path) -> dict:
+def pdf_snapshot(path: Path, *, reading_order=False) -> dict:
     import pypdfium2 as pdfium
 
     data = bounded_bytes(path)
@@ -141,13 +141,15 @@ def pdf_snapshot(path: Path) -> dict:
                             raise FidelityError("page_text_limit")
                         from .layout_checks import character_geometry
                         geometry = character_geometry(textpage, count, width, height)
+                        from .pdf_reading_order import reading_text
+                        ordered = reading_text(textpage,text,count,width,height) if reading_order and not geometry['unknown_boxes'] and not geometry['outside_page_characters'] else None
                     with closing(page.render(scale=RENDER_DPI / 72)) as bitmap:
                         with bitmap.to_pil() as picture:
                             with picture.convert("RGB") as rgb:
                                 pixel_hash = hashlib.sha256(rgb.tobytes()).hexdigest()
                                 pixels = list(rgb.size)
                     pages.append({"size_points": [width, height], "size_pixels": pixels,
-                                  "text": text.replace("\r\n", "\n"), "pixel_sha256": pixel_hash, 'geometry': geometry})
+                                  "text": text.replace("\r\n", "\n"), "pixel_sha256": pixel_hash, 'geometry': geometry,'reading_text':ordered})
     except FidelityError:
         raise
     except Exception:

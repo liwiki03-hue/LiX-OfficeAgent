@@ -68,6 +68,13 @@ def locate(pages, context):
         candidate = _locate(pages, {'text': context.get('text', ''), 'prefix': local.get('prefix', ''), 'suffix': local.get('suffix', '')})
         if candidate['status'] == 'unique':
             return {**candidate, 'method': 'host-paragraph-context-fallback'}
+    if match['status']=='not_located' and any(page.get('reading_text') is not None for page in pages):
+        ordered=[{'text':page['reading_text'] if page.get('reading_text') is not None else page['text']} for page in pages]
+        candidate=_locate(ordered,context)
+        if candidate['status']=='not_located' and type(local) is dict:
+            candidate=_locate(ordered,{'text':context.get('text',''),'prefix':local.get('prefix',''),'suffix':local.get('suffix','')})
+            if candidate['status']=='unique':return {**candidate,'method':'host-paragraph-context-fallback','text_order':'pdfium-glyph-origin-v1'}
+        if candidate['status'] in {'unique','ambiguous'}:return {**candidate,'method':'pdfium-glyph-origin-v1'}
     return match
 
 
@@ -84,6 +91,7 @@ def align(anchors, snapshots):
                 row[side + '_matches'] = match['matches']
                 if 'method' in match:
                     row[side + '_method'] = match['method']
+                if 'text_order' in match:row[side+'_text_order']=match['text_order']
             else:
                 text = normalized(anchor[side])
                 pages = [i + 1 for i, page in enumerate(snapshot['pages']) if text and text in normalized(page['text'])]

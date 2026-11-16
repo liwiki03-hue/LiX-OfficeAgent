@@ -57,6 +57,13 @@ def host_diagnostics(api,app):
     return result
 
 
+def wait_for_browser_event(page,event,seconds):
+    deadline=time.monotonic()+seconds
+    while not event.is_set():
+        if time.monotonic()>=deadline:raise AssertionError('Owned model did not enter within the existing deadline')
+        page.wait_for_timeout(25)
+
+
 def respond_to_confirmation(page, *, approved=None):
     previous = getattr(page, '_lix_confirmation_responding', False)
     page._lix_confirmation_responding = True

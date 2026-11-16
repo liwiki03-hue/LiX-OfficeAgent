@@ -38,7 +38,7 @@ def main():
     from office_agent.fidelity import FidelityError, compare_pdf_snapshots, pdf_snapshot
     left, right, target = map(Path, sys.argv[1:4])
     try:
-        snapshots = (pdf_snapshot(left), pdf_snapshot(right))
+        snapshots = (pdf_snapshot(left,reading_order=len(sys.argv)==5), pdf_snapshot(right,reading_order=len(sys.argv)==5))
         report = compare_pdf_snapshots(*snapshots)
         if len(sys.argv) == 5:
             import re
