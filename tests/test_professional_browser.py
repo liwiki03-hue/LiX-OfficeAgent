@@ -64,8 +64,10 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
         return result
     if not real_render:
         monkeypatch.setattr('office_agent.advanced_writes.render_gate', fake_render)
-    monkeypatch.setenv('TEMP', str(tmp_path))
-    monkeypatch.setenv('TMP', str(tmp_path))
+    browser_runtime=tmp_path.parent/(tmp_path.name+'-browser-runtime')
+    browser_runtime.mkdir()
+    monkeypatch.setenv('TEMP', str(browser_runtime))
+    monkeypatch.setenv('TMP', str(browser_runtime))
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=str(EDGE), headless=True, args=['--disable-background-networking'])
         try:
@@ -109,7 +111,7 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             drive_legacy_confirmations(page, monkeypatch)
             yield page, api, app, calls, receipts
         finally:
-            if 'page' in locals() and page._lix_case.startswith(('test_read_continue_export','test_codex_layout_controls','test_two_group_review','test_real_render_page_review','test_real_return_workflow','test_real_table_review','test_actual_directory_incremental')):
+            if 'page' in locals() and page._lix_case.startswith(('test_read_continue_export','test_codex_layout_controls','test_two_group_review','test_real_render_page_review','test_real_return_workflow','test_real_table_review','test_actual_directory_incremen','test_browser_runtime_creation')):
                 try:record_browser_failure(page,'diagnostic fixture exit',0)
                 except Exception:pass
             browser.close()

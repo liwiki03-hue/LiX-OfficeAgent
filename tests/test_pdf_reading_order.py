@@ -38,3 +38,15 @@ def test_ordered_paragraph_context_keeps_its_method_without_overriding_ambiguity
         'method':'host-paragraph-context-fallback','text_order':'pdfium-glyph-origin-v1'}
     pages=[{'text':'stream records','reading_text':'before target after before target after'}]
     assert locate(pages,context)['status']=='ambiguous'
+
+
+def test_disjoint_runs_in_the_same_ink_band_keep_horizontal_reading_order(tmp_path):
+    source=tmp_path/'mixed-baselines.pdf'
+    source.write_bytes(pdf_bytes(text=') Tj ET BT /F1 11 Tf 100 103.2 Td (right) Tj ET BT /F1 11 Tf 20 100 Td (left '))
+    page=pdf_snapshot(source,reading_order=True)['pages'][0]
+    assert normalized(page['reading_text'])=='left right'
+    assert locate([page],{'text':'left right'})['status']=='unique'
+    source.write_bytes(pdf_bytes(text=') Tj ET BT /F1 11 Tf 100 103.2 Td (right) Tj ET BT /F1 11 Tf 20 100 Td (left words '))
+    assert normalized(pdf_snapshot(source,reading_order=True)['pages'][0]['reading_text'])=='left words right'
+    source.write_bytes(pdf_bytes(text=') Tj ET BT /F1 11 Tf 20 103.2 Td (right) Tj ET BT /F1 11 Tf 20 100 Td (left '))
+    assert [value.strip() for value in pdf_snapshot(source,reading_order=True)['pages'][0]['reading_text'].splitlines()]==['right','left']
