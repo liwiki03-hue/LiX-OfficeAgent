@@ -16,6 +16,7 @@ from office_agent.writes import digest
 from tests.test_office_canvas import fixtures
 from tests.test_paged_browser import serve_static
 from tests.test_professional_browser import EDGE
+from tests.ui_confirmation import record_browser_failure, track_browser
 
 
 @pytest.fixture(params=['.xlsx','.pptx'])
@@ -33,7 +34,14 @@ def native_browser(tmp_path, request, monkeypatch):
             page.add_init_script("""if(window===window.top){window.OfficeAuth={isAuthenticated:()=>true,ensure:async()=>true,wrapApi:x=>x};window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>window.testHost(name,args)})};window.confirm=()=>true;document.addEventListener('DOMContentLoaded',()=>{document.getElementById('workspace').hidden=false;document.getElementById('workspace').inert=false;document.getElementById('workspace').setAttribute('aria-hidden','false');});}""")
             page.route('**/auth.js',lambda route:route.fulfill(status=200,body=''))
             errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
-            page.goto(url);page.locator('#floating-choose').click();page.get_by_role('button',name='同意读取并打开',exact=True).click()
+            track_browser(page,tmp_path.name,lambda:{'document':api._floating.document,'stage':api._floating.stage,'busy':app.busy,'canvas_active':api._floating.canvas.active()})
+            try:
+                response=page.goto(url)
+                assert response is not None and response.ok
+                page.locator('#floating-choose').click();page.get_by_role('button',name='同意读取并打开',exact=True).click()
+            except Exception:
+                record_browser_failure(page,'canvas page bootstrap and file selection',60)
+                raise
             page.locator('#canvas-items button').first.wait_for()
             if request.param=='.pptx':page.locator('#canvas-slide img').wait_for()
             yield page,api,source,errors
@@ -56,7 +64,14 @@ def display_browser(tmp_path, monkeypatch):
             page.add_init_script("""if(window===window.top){window.OfficeAuth={isAuthenticated:()=>true,ensure:async()=>true,wrapApi:x=>x};window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>window.testHost(name,args)})};window.confirm=()=>true;document.addEventListener('DOMContentLoaded',()=>{document.getElementById('workspace').hidden=false;document.getElementById('workspace').inert=false;document.getElementById('workspace').setAttribute('aria-hidden','false');});}""")
             page.route('**/auth.js',lambda route:route.fulfill(status=200,body=''))
             errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
-            page.goto(url);page.locator('#floating-choose').click();page.get_by_role('button',name='同意读取并打开',exact=True).click()
+            track_browser(page,tmp_path.name,lambda:{'document':api._floating.document,'stage':api._floating.stage,'busy':app.busy,'canvas_active':api._floating.canvas.active()})
+            try:
+                response=page.goto(url)
+                assert response is not None and response.ok
+                page.locator('#floating-choose').click();page.get_by_role('button',name='同意读取并打开',exact=True).click()
+            except Exception:
+                record_browser_failure(page,'canvas page bootstrap and file selection',60)
+                raise
             page.locator('#canvas-items button').first.wait_for()
             yield page,api,source,errors
         finally:browser.close()

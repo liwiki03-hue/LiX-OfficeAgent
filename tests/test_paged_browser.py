@@ -30,7 +30,9 @@ def serve_static():
                 self.send_error(404);return
             self.send_response(200);self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream');self.end_headers();self.wfile.write(target.read_bytes())
         def log_message(self,*args):pass
-    server=ThreadingHTTPServer(('127.0.0.1',0),Handler);worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+    class Server(ThreadingHTTPServer):
+        request_queue_size=128
+    server=Server(('127.0.0.1',0),Handler);worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
     try:yield f'http://127.0.0.1:{server.server_port}/'
     finally:server.shutdown();server.server_close();worker.join(5);assert not worker.is_alive()
 

@@ -18,6 +18,7 @@ from office_agent.instruction_runtime import InstructionRuntime
 from office_agent.webui.bridge import WebviewApp
 from office_agent.webui.floating_session import FloatingApi
 from tests.test_paged_browser import EDGE, STATIC, engine_frame, serve_static
+from tests.ui_confirmation import record_browser_failure, track_browser
 
 
 def table_fixture(path, case):
@@ -55,7 +56,7 @@ def inspect_frame(frame):
       const e=window.__tableTestEngine.activeEditor,s=e.state.selection,blocks=[];
       e.state.doc.forEach((node,pos)=>blocks.push({type:node.type.name,pos,size:node.nodeSize,id:node.attrs.sdBlockId,text:node.textContent}));
       return {blocks,selection:{type:s.constructor.name,from:s.from,to:s.to,ancestors:Array.from({length:s.$from.depth+1},(_,i)=>s.$from.node(i).type.name)},
-        focus:document.activeElement?.className,revision:window.__tableEvents.filter(x=>x.type==='changed').at(-1)?.value?.revision||0,
+        focus:document.activeElement?.className,keys:window.__tableKeys||[],frame_state:window.__tableFrameState,navigation:{last_type:e.state.doc.lastChild.type.name,last_textblock:e.state.doc.lastChild.isTextblock,last_inline:e.state.doc.lastChild.inlineContent,end_parent:e.state.doc.resolve(e.state.doc.content.size-1).parent.type.name,end_inline:e.state.doc.resolve(e.state.doc.content.size-1).parent.inlineContent,near:typeof s.constructor.near},revision:window.__tableEvents.filter(x=>x.type==='changed').at(-1)?.value?.revision||0,
         paragraphDefaults:e.state.schema.nodes.paragraph.defaultAttrs,commands:Object.keys(e.commands).filter(x=>/paragraph|select|focus|history/i.test(x))};
     }""")
 
@@ -78,6 +79,7 @@ def open_table(tmp_path, monkeypatch, case):
             page.set_default_timeout(15000)
             script = (STATIC / 'paged_editor_frame.js').read_text(encoding='utf8')
             script = script.replace('engine = new Engine(', 'engine = window.__tableTestEngine = new Engine(')
+            script = script.replace('  const actions=', "  Object.defineProperty(window,'__tableFrameState',{get:()=>({ready,editable,composing})}); const actions=")
             script = script.replace("const send = (type, value) => port?.postMessage({type, value});", "window.__tableEvents=[]; const send=(type,value)=>{window.__tableEvents.push({type,value});port?.postMessage({type,value});};")
             page.route('**/paged_editor_frame.js', lambda route: route.fulfill(status=200, content_type='text/javascript', body=script))
             def host(name, args):
@@ -88,10 +90,12 @@ def open_table(tmp_path, monkeypatch, case):
                     (path / f'{case}-bootstrap.json').write_text(json.dumps({'before': projection(normalize(source.read_bytes())), 'after': projection(data)}, ensure_ascii=False, indent=2), encoding='utf8')
                 return getattr(api, name)(*args)
             page.expose_function('testHost', host)
+            page.add_init_script("""window.__tableKeys=[];window.addEventListener('keydown',event=>{if(!['Home','End'].includes(event.key))return;const take=phase=>{const e=window.__tableTestEngine?.activeEditor,s=e?.state.selection.$from;window.__tableKeys.push({phase,key:event.key,ctrl:event.ctrlKey,meta:event.metaKey,composing:event.isComposing,target:event.target?.id||event.target?.className,focus:document.activeElement?.className,prevented:event.defaultPrevented,ancestors:s?Array.from({length:s.depth+1},(_,depth)=>s.node(depth).type.name):[]});window.__tableKeys=window.__tableKeys.slice(-30);};take('capture');queueMicrotask(()=>take('after'));},true);""")
             page.add_init_script("""if(window===window.top){window.OfficeAuth={isAuthenticated:()=>true,ensure:async()=>true,wrapApi:x=>x};window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>window.testHost(name,args)})};window.confirm=()=>true;document.addEventListener('DOMContentLoaded',()=>{document.getElementById('workspace').hidden=false;document.getElementById('workspace').inert=false;document.getElementById('workspace').setAttribute('aria-hidden','false');});}""")
             page.route('**/auth.js', lambda route: route.fulfill(status=200, body=''))
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
+            track_browser(page,tmp_path.name,lambda:{'document':api._floating.document,'paged':api._floating.paged.state(),'busy':app.busy})
             page.goto(url)
             page.locator('#floating-choose').click()
             page.get_by_role('button', name='同意读取并打开', exact=True).click()
@@ -105,14 +109,15 @@ def open_table(tmp_path, monkeypatch, case):
             try:
                 yield page, api, source, errors
             except BaseException:
-                evidence(page, engine_frame(page), case+'-failure', {'feedback': page.locator('#paged-feedback').text_content(), 'errors': errors})
+                evidence(page, engine_frame(page), tmp_path.name+'-'+case+'-failure', {'feedback': page.locator('#paged-feedback').text_content(), 'errors': errors})
+                record_browser_failure(page,'table navigation and unchanged document',15)
                 raise
         finally:
             browser.close()
 
 
 def evidence(page, frame, name, extra=None):
-    folder = os.environ.get('TABLE_EXIT_EVIDENCE')
+    folder = os.environ.get('TABLE_EXIT_EVIDENCE') or os.environ.get('LIX_UI_FAILURE_DIR')
     if folder:
         path = Path(folder)
         path.mkdir(parents=True, exist_ok=True)
@@ -132,7 +137,9 @@ def test_existing_body_navigation_does_not_change_document(tmp_path, monkeypatch
         assert 'tableCell' not in after['selection']['ancestors']
         assert after['blocks'] == before['blocks'] and after['revision'] == before['revision'] == 0
         frame.locator('.superdoc-page').get_by_text('121 ms', exact=True).first.click()
+        frame.wait_for_function("""() => {const e=window.__tableTestEngine.activeEditor,s=e.state.selection.$from;return e.view.hasFocus()&&Array.from({length:s.depth+1},(_,depth)=>s.node(depth).type.name).includes('tableCell');}""")
         page.keyboard.press('Control+End')
+        frame.wait_for_function("""() => {const s=window.__tableTestEngine.activeEditor.state.selection.$from;return !Array.from({length:s.depth+1},(_,depth)=>s.node(depth).type.name).includes('tableCell');}""")
         assert 'tableCell' not in inspect_frame(frame)['selection']['ancestors']
         page.keyboard.press('Home')
         page.keyboard.press('Shift+End')

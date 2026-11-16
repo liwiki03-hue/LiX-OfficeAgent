@@ -411,7 +411,18 @@
   $('table-column-width').addEventListener('click',()=>{try{columnWidthDialog();}catch(error){$('frame-error').textContent=error.message;}});
   document.addEventListener('compositionstart',()=>{composing=true;});
   document.addEventListener('compositionend',()=>{composing=false;});
-  document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'&&!event.isComposing){event.preventDefault();send('save',{});}},true);
+  document.addEventListener('keydown',event=>{
+    if(!(event.ctrlKey||event.metaKey)||event.altKey||event.isComposing||composing)return;
+    if(event.key.toLowerCase()==='s'){event.preventDefault();send('save',{});return;}
+    if(event.shiftKey||!editable||!ready||!['Home','End'].includes(event.key)||event.target.closest('input,textarea,select,button,dialog'))return;
+    const e=editor();if((!event.target.closest('#editor')&&!e.view.dom.contains(event.target))||!tableContext())return;
+    const end=event.key==='End',node=end?e.state.doc.lastChild:e.state.doc.firstChild;
+    if(!node?.isTextblock)return;
+    const position=end?e.state.doc.content.size-node.nodeSize+1+node.content.size:1;
+    if(!e.state.doc.resolve(position).parent.inlineContent)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    e.commands.setTextSelection({from:position,to:position});e.dispatch(e.state.tr.setStoredMarks([]).scrollIntoView());e.view.focus();
+  },true);
   document.addEventListener('paste',event=>{
     if(!event.clipboardData?.getData('text/html'))return;
     event.preventDefault();if(!editable)return;
