@@ -36,7 +36,7 @@ def test_launcher_uses_own_directory_and_does_not_forward_arguments(executable, 
     folder.mkdir()
     shutil.copyfile(executable, folder / 'LiX.exe')
     (folder / 'Start-LiX.cmd').write_bytes(b'@echo off\r\ncall Start-OfficeAgent.cmd\r\nexit /b %ERRORLEVEL%\r\n')
-    (folder / 'Start-OfficeAgent.cmd').write_bytes(b'@echo off\r\ncd > launched.txt\r\necho %* > args.txt\r\nexit /b 0\r\n')
+    (folder / 'Start-OfficeAgent.cmd').write_bytes(b'@echo off\r\n"%ComSpec%" /d /u /c cd > launched.txt\r\necho %* > args.txt\r\nexit /b 0\r\n')
     job = _WindowsJob()
     process = None
     try:
@@ -45,7 +45,7 @@ def test_launcher_uses_own_directory_and_does_not_forward_arguments(executable, 
         while process.poll() is None and time.monotonic() < deadline:
             time.sleep(.05)
         assert process.poll() == 0
-        assert (folder / 'launched.txt').read_text('oem').strip() == str(folder)
+        assert (folder / 'launched.txt').read_text('utf-16-le').strip() == str(folder)
         assert not (folder / 'unexpected.txt').exists()
         assert 'unsafe' not in (folder / 'args.txt').read_text('oem')
     finally:

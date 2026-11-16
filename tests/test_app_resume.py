@@ -731,12 +731,23 @@ class DesktopWindowTests(unittest.TestCase):
                                            "excel": {"available": True, "note": "test"}})
         patcher.start()
         self.addCleanup(patcher.stop)
+        self._window_after_ids=set()
+        original_after=self.root.after
+        def after(milliseconds,callback=None,*args):
+            identifier=original_after(milliseconds,callback,*args)
+            if callback is not None:self._window_after_ids.add(identifier)
+            return identifier
+        self.root.after=after
+        self.addCleanup(setattr,self.root,'after',original_after)
         self.desktop = Desktop(self.root)
         self.addCleanup(self.root.update_idletasks)
         self.addCleanup(self._drop_widgets)
 
     def _drop_widgets(self):
         """Remove this test's window so the next one starts from a clean root."""
+        for identifier in self._window_after_ids:
+            self.root.after_cancel(identifier)
+        self._window_after_ids.clear()
         for child in list(self.root.winfo_children()):
             child.destroy()
 
@@ -835,6 +846,9 @@ class DesktopWindowTests(unittest.TestCase):
         """800x600 must keep every key control mapped, on-screen, clickable and usable."""
         root = self.root
         desktop = self.desktop
+        maximum=root.maxsize()
+        self.addCleanup(root.maxsize,*maximum)
+        root.maxsize(max(maximum[0],1400),max(maximum[1],900))
         try:
             root.attributes("-alpha", 0.0)      # realize real geometry without showing it
         except Exception as exc:                # pragma: no cover - platform dependent

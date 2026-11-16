@@ -3,6 +3,14 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      check:
+        description: Verification scope
+        type: choice
+        default: full
+        options:
+          - full
+          - ci-issues
 permissions:
   contents: read
 jobs:
@@ -13,6 +21,9 @@ jobs:
       OFFICE_AGENT_REAL_COM: '0'
       PYTHONNET_RUNTIME: netfx
       OFFICE_WEBVIEW_GUI: edgechromium
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      LIX_UI_FAILURE_DIR: test-results/ui-failures
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -46,5 +57,31 @@ jobs:
         shell: pwsh
         run: uv run python tools/ci_preflight.py
       - name: Full regression
+        if: github.event_name != 'workflow_dispatch' || inputs.check != 'ci-issues'
         shell: pwsh
         run: uv run pytest -q
+      - name: Diagnostic Tk geometry
+        if: github.event_name == 'workflow_dispatch' && inputs.check == 'ci-issues'
+        shell: pwsh
+        run: uv run python -c "import tkinter as tk,json; r=tk.Tk(); r.withdraw(); print(json.dumps({'screen':[r.winfo_screenwidth(),r.winfo_screenheight()],'maxsize':r.maxsize(),'tk_scaling':r.tk.call('tk','scaling')})); r.destroy()"
+      - name: Nine reported cases only
+        if: github.event_name == 'workflow_dispatch' && inputs.check == 'ci-issues'
+        shell: pwsh
+        run: >-
+          uv run pytest -q -x
+          tests/test_app_resume.py::DesktopWindowTests::test_narrow_geometry_keeps_every_control_inside_the_window
+          tests/test_lix_launcher.py::test_launcher_uses_own_directory_and_does_not_forward_arguments
+          tests/test_native_menu_style.py::test_native_menu_draws_and_preserves_actions
+          tests/test_long_review_browser.py::test_two_group_review_selection_fallback_and_logout
+          tests/test_range_delivery_browser.py::test_real_render_page_review_archive_restore_and_logout
+          tests/test_research_corpus_browser.py::test_actual_directory_incremental_rerank_fallback_context_and_rollback
+          tests/test_return_workflow_browser.py::test_real_return_workflow_and_frozen_ui_comparison
+          tests/test_review_handoff_browser.py::test_real_table_review_handoff_themes_and_undo
+      - name: Failed browser evidence
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: windows-browser-failures
+          path: test-results/ui-failures
+          if-no-files-found: ignore
+          retention-days: 7

@@ -57,6 +57,10 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
         browser = playwright.chromium.launch(executable_path=str(EDGE), headless=True, args=['--disable-background-networking'])
         try:
             page = browser.new_page(viewport={'width': 1100, 'height': 900})
+            page._lix_case=tmp_path.name
+            page._lix_api_receipts=receipts
+            page._lix_page_errors=[]
+            page.on('pageerror',lambda error:page._lix_page_errors.append(str(error)))
             page.set_default_timeout(65000 if real_render else 15000)
             page.route('**/*', lambda route: route.abort())
             page.expose_function('professionalHost', invoke)
@@ -78,6 +82,13 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             }''')
             if 'src="confirm_dialog.js"' in markup:
                 page.add_script_tag(path=str(STATIC / 'confirm_dialog.js'))
+                page.evaluate('''() => {
+                  const trace=window.__lixConfirmationTrace=[],add=value=>{trace.push({...value,at:performance.now()});if(trace.length>80)trace.shift();};
+                  const ask=OfficeConfirm.ask;
+                  OfficeConfirm.ask=async(...args)=>{add({kind:'request',message:String(args[0]).slice(0,1000)});const accepted=await ask(...args);add({kind:'resolved',accepted});return accepted;};
+                  for(const event of ['close','cancel','officeauth:authenticated','officeauth:unauthenticated','officeworkspace:clear'])document.addEventListener(event,()=>add({kind:event}),true);
+                  for(const id of ['file-name','file-dir']){const node=document.getElementById(id);if(node)new MutationObserver(()=>add({kind:'identity',id,text:node.textContent})).observe(node,{childList:true,characterData:true,subtree:true});}
+                }''')
             page.add_script_tag(path=str(STATIC / 'professional.js'))
             from tests.ui_confirmation import drive_legacy_confirmations
             page._lix_real_render = real_render

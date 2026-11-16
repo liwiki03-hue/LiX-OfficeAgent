@@ -1,4 +1,36 @@
+import hashlib
+import json
+import os
+from pathlib import Path
 import time
+
+
+def record_browser_failure(page, expression, seconds):
+    directory=os.environ.get('LIX_UI_FAILURE_DIR')
+    if not directory or getattr(page,'_lix_failure_recorded',False):return
+    page._lix_failure_recorded=True
+    root=Path(directory).resolve();root.mkdir(parents=True,exist_ok=True)
+    name=getattr(page,'_lix_case','browser')+'-'+hashlib.sha256(str(expression).encode()).hexdigest()[:12]
+    def bounded(value):
+        if isinstance(value,dict):return {str(key):('[redacted]' if any(word in str(key).lower() for word in ('secret','password','api_key','authorization')) else bounded(item)) for key,item in list(value.items())[:60]}
+        if isinstance(value,(list,tuple)):return [bounded(item) for item in value[-40:]]
+        if isinstance(value,str):return '[image bytes omitted]' if value.startswith('data:image/') else value[:2000]
+        if value is None or isinstance(value,(int,float,bool)):return value
+        return str(value)[:2000]
+    evidence={'expression':str(expression),'total_budget_seconds':seconds,'native_desktop':False,
+        'confirmations':getattr(page,'_lix_confirmation_receipts',[]),
+        'host_receipts':bounded(getattr(page,'_lix_api_receipts',[])),
+        'page_errors':getattr(page,'_lix_page_errors',[])}
+    try:
+        evidence['page']=page.evaluate('''() => ({url:location.href,ready:document.readyState,viewport:[innerWidth,innerHeight,devicePixelRatio],
+          labels:Object.fromEntries(['file-name','file-dir','range-status','range-before-caption','range-after-caption','range-review-note','rag-status','rag-snapshot','rag-profile'].map(id=>[id,document.getElementById(id)?.textContent?.slice(0,2000)])),
+          images:document.querySelectorAll('#range-before-pages img,#range-after-pages img').length,
+          dialogs:[...document.querySelectorAll('dialog[open]')].map(node=>({label:node.getAttribute('aria-label'),text:node.textContent.slice(0,1200)})),
+          trace:window.__lixConfirmationTrace||[]})''')
+        page.screenshot(path=str(root/(name+'.png')))
+    except Exception as error:evidence['capture_error']=type(error).__name__
+    (root/(name+'.json')).write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
+    print(json.dumps({'browser_failure_evidence':name,'total_budget_seconds':seconds},ensure_ascii=True))
 
 
 def respond_to_confirmation(page, *, approved=None):
@@ -49,6 +81,7 @@ def drive_legacy_confirmations(page, monkeypatch):
                 return original(expression, arg=arg, timeout=min(250, remaining), polling=polling)
             except BrowserTimeout:
                 if time.monotonic() >= deadline:
+                    record_browser_failure(page,expression,seconds)
                     raise
 
     monkeypatch.setattr(page, 'wait_for_function', wait)
