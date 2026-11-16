@@ -20,7 +20,8 @@ def record_browser_failure(page, expression, seconds):
     evidence={'expression':str(expression),'total_budget_seconds':seconds,'native_desktop':False,
         'confirmations':getattr(page,'_lix_confirmation_receipts',[]),
         'host_receipts':bounded(getattr(page,'_lix_api_receipts',[])),
-        'page_errors':getattr(page,'_lix_page_errors',[])}
+        'page_errors':getattr(page,'_lix_page_errors',[]),
+        'browser_events':bounded(getattr(page,'_lix_browser_events',[]))}
     inspect=getattr(page,'_lix_host_diagnostics',None)
     if inspect:
         try:evidence['host_diagnostics']=bounded(inspect())
@@ -30,12 +31,27 @@ def record_browser_failure(page, expression, seconds):
           labels:Object.fromEntries(['file-name','file-dir','range-status','range-before-caption','range-after-caption','range-review-note','rag-status','rag-snapshot','rag-profile','chat-notice','chat-export-result','chat-context-content'].map(id=>[id,document.getElementById(id)?.textContent?.slice(0,2000)])),
           horizontal:[document.documentElement.scrollWidth,innerWidth],reply_budget:document.getElementById('chat-reply-length')?.value,
           images:document.querySelectorAll('#range-before-pages img,#range-after-pages img').length,
+          menus:[...document.querySelectorAll('.simple-menu[open]')].map(node=>{const popup=node.querySelector('.simple-menu-body'),r=popup?.getBoundingClientRect();return {id:node.id,expanded:node.querySelector('summary')?.getAttribute('aria-expanded'),style:popup?.getAttribute('style'),box:r&&[r.x,r.y,r.width,r.height]};}),
           dialogs:[...document.querySelectorAll('dialog[open]')].map(node=>({label:node.getAttribute('aria-label'),text:node.textContent.slice(0,1200)})),
           trace:window.__lixConfirmationTrace||[]})''')
         page.screenshot(path=str(root/(name+'.png')))
+        evidence['frames']=[]
+        for frame in page.frames:
+            try:evidence['frames'].append(frame.evaluate('''() => ({url:location.href,ready:document.readyState,text:document.body?.textContent?.slice(0,800),resources:performance.getEntriesByType('resource').slice(-15).map(item=>({url:item.name,duration:item.duration,bytes:item.transferSize})),globals:Object.keys(window).filter(key=>/^(Office|SuperDoc|Paged)/.test(key)).slice(0,20)})'''))
+            except Exception as error:evidence['frames'].append({'url':frame.url,'error':type(error).__name__})
     except Exception as error:evidence['capture_error']=type(error).__name__
     (root/(name+'.json')).write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'browser_failure_evidence':name,'total_budget_seconds':seconds},ensure_ascii=True))
+
+
+def track_browser(page,case,inspect):
+    page._lix_case=case;page._lix_page_errors=[];page._lix_browser_events=[];page._lix_host_diagnostics=inspect
+    def event(kind,value):
+        page._lix_browser_events.append({'kind':kind,'value':str(value)[:1000]})
+        page._lix_browser_events=page._lix_browser_events[-30:]
+    page.on('pageerror',lambda error:page._lix_page_errors.append(str(error)))
+    page.on('console',lambda message:event('console:'+message.type,message.text) if message.type in {'warning','error'} else None)
+    page.on('requestfailed',lambda request:event('requestfailed',request.url+' '+str(request.failure)))
 
 
 def host_diagnostics(api,app):

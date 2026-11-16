@@ -467,6 +467,7 @@
   new MutationObserver(schedule).observe($('chat-transcript'), {childList:true});
   const closeMenu = node => {
     const focus = node.contains(document.activeElement); node.open = false;
+    if(node===sessions)historyChats.insertBefore(sessionSearch.closest('label'),historyChatList);
     const body=node.querySelector(':scope > .simple-menu-body');
     if (body?.matches(':popover-open')) body.hidePopover();
     node.querySelector('summary').setAttribute('aria-expanded','false');
@@ -482,17 +483,24 @@
     popup.style.left=Math.max(12,Math.min(anchor.left,innerWidth-width-12))+'px';
     popup.style.top=Math.max(12,below>=Math.min(height,240) ? Math.min(anchor.bottom+8,innerHeight-height-12) : anchor.top-height-8)+'px';
   };
-  function initializeMenu(node) {
+  const presentMenu = node => {
+    if (!node.open) { closeMenu(node); return; }
     const popup=node.querySelector(':scope > .simple-menu-body');
+    menus.filter(other => other!==node && !other.contains(node) && !node.contains(other)).forEach(closeMenu);
+    node.querySelector('summary').setAttribute('aria-expanded','true');
+    if (popup.hasAttribute('popover') && !popup.matches(':popover-open')) popup.showPopover();
+    placeMenu(node);
+  };
+  function initializeMenu(node) {
+    const popup=node.querySelector(':scope > .simple-menu-body'), summary=node.querySelector('summary');
     if (typeof popup.showPopover==='function') popup.setAttribute('popover','manual');
-    node.querySelector('summary').setAttribute('aria-expanded','false');
-    node.addEventListener('toggle', () => {
-      if (!node.open) { closeMenu(node); return; }
-      menus.filter(other => other!==node && !other.contains(node) && !node.contains(other)).forEach(closeMenu);
-      node.querySelector('summary').setAttribute('aria-expanded','true');
-      if (popup.hasAttribute('popover') && !popup.matches(':popover-open')) popup.showPopover();
-      placeMenu(node);
+    summary.setAttribute('aria-expanded','false');
+    summary.addEventListener('click', event => {
+      event.preventDefault();
+      if (node.open) closeMenu(node);
+      else { node.open=true; presentMenu(node); }
     });
+    node.addEventListener('toggle', () => presentMenu(node));
   }
   menus.forEach(initializeMenu);
   window.addEventListener('resize',()=>menus.forEach(placeMenu));
