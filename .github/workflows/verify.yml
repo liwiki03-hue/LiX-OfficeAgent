@@ -68,7 +68,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.check == 'ci-issues'
         shell: pwsh
         run: >-
-          uv run pytest -q -x
+          uv run pytest -q
           tests/test_app_resume.py::DesktopWindowTests::test_narrow_geometry_keeps_every_control_inside_the_window
           tests/test_lix_launcher.py::test_launcher_uses_own_directory_and_does_not_forward_arguments
           tests/test_native_menu_style.py::test_native_menu_draws_and_preserves_actions

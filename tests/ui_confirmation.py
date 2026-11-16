@@ -21,9 +21,14 @@ def record_browser_failure(page, expression, seconds):
         'confirmations':getattr(page,'_lix_confirmation_receipts',[]),
         'host_receipts':bounded(getattr(page,'_lix_api_receipts',[])),
         'page_errors':getattr(page,'_lix_page_errors',[])}
+    inspect=getattr(page,'_lix_host_diagnostics',None)
+    if inspect:
+        try:evidence['host_diagnostics']=bounded(inspect())
+        except Exception as error:evidence['host_diagnostic_error']=type(error).__name__
     try:
         evidence['page']=page.evaluate('''() => ({url:location.href,ready:document.readyState,viewport:[innerWidth,innerHeight,devicePixelRatio],
-          labels:Object.fromEntries(['file-name','file-dir','range-status','range-before-caption','range-after-caption','range-review-note','rag-status','rag-snapshot','rag-profile'].map(id=>[id,document.getElementById(id)?.textContent?.slice(0,2000)])),
+          labels:Object.fromEntries(['file-name','file-dir','range-status','range-before-caption','range-after-caption','range-review-note','rag-status','rag-snapshot','rag-profile','chat-notice','chat-export-result','chat-context-content'].map(id=>[id,document.getElementById(id)?.textContent?.slice(0,2000)])),
+          horizontal:[document.documentElement.scrollWidth,innerWidth],reply_budget:document.getElementById('chat-reply-length')?.value,
           images:document.querySelectorAll('#range-before-pages img,#range-after-pages img').length,
           dialogs:[...document.querySelectorAll('dialog[open]')].map(node=>({label:node.getAttribute('aria-label'),text:node.textContent.slice(0,1200)})),
           trace:window.__lixConfirmationTrace||[]})''')
@@ -31,6 +36,25 @@ def record_browser_failure(page, expression, seconds):
     except Exception as error:evidence['capture_error']=type(error).__name__
     (root/(name+'.json')).write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({'browser_failure_evidence':name,'total_budget_seconds':seconds},ensure_ascii=True))
+
+
+def host_diagnostics(api,app):
+    from contextlib import closing
+    from office_agent.render_handoff import _entries
+    result={'preview':api.preview_chat_context('diagnostic snapshot'),'pdfs':[]}
+    for entry in _entries():
+        import pypdfium2 as pdfium
+        for payload in entry['payloads']:
+            with closing(pdfium.PdfDocument(payload)) as document:
+                texts=[]
+                for index in range(min(2,len(document))):
+                    with closing(document[index]) as page,closing(page.get_textpage()) as text:
+                        texts.append(text.get_text_range()[:1800])
+                result['pdfs'].append({'pages':len(document),'text':texts})
+    if os.name=='nt':
+        root=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'
+        result['cjk_fonts']=[path.name for path in root.iterdir() if any(word in path.name.lower() for word in ('simsun','simhei','msyh','noto','mingliu'))]
+    return result
 
 
 def respond_to_confirmation(page, *, approved=None):

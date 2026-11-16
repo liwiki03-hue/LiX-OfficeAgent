@@ -8,6 +8,7 @@ import pytest
 from office_agent.webui.bridge import Api
 from office_agent.writes import Editor, digest
 from test_professional_edits import fake_render
+from tests.ui_confirmation import host_diagnostics,record_browser_failure
 
 STATIC = Path(__file__).resolve().parents[1] / 'office_agent/webui/static'
 from office_agent.browser_runtime import find_edge
@@ -60,6 +61,7 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             page._lix_case=tmp_path.name
             page._lix_api_receipts=receipts
             page._lix_page_errors=[]
+            page._lix_host_diagnostics=lambda:host_diagnostics(api,app)
             page.on('pageerror',lambda error:page._lix_page_errors.append(str(error)))
             page.set_default_timeout(65000 if real_render else 15000)
             page.route('**/*', lambda route: route.abort())
@@ -95,6 +97,9 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             drive_legacy_confirmations(page, monkeypatch)
             yield page, api, app, calls, receipts
         finally:
+            if 'page' in locals() and page._lix_case.startswith(('test_read_continue_export','test_codex_layout_controls','test_two_group_review','test_real_render_page_review','test_real_return_workflow','test_real_table_review','test_actual_directory_incremental')):
+                try:record_browser_failure(page,'diagnostic fixture exit',0)
+                except Exception:pass
             browser.close()
 
 
