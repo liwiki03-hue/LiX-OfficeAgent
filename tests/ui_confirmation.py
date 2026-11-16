@@ -32,6 +32,7 @@ def record_browser_failure(page, expression, seconds):
           horizontal:[document.documentElement.scrollWidth,innerWidth],reply_budget:document.getElementById('chat-reply-length')?.value,
           paged:Object.fromEntries(['paged-top','paged-filebar','paged-work','paged-editor-main','paged-editable-copy'].map(id=>{const node=document.getElementById(id);if(!node)return [id,null];const r=node.getBoundingClientRect(),s=getComputedStyle(node);return [id,{box:[r.x,r.y,r.width,r.height],style:node.getAttribute('style'),display:s.display,position:s.position,zIndex:s.zIndex,font:s.font,flex:s.flex,hits:document.elementsFromPoint(r.x+r.width/2,r.y+r.height/2).slice(0,6).map(hit=>[hit.id,hit.tagName,hit.className])}];})),
           images:document.querySelectorAll('#range-before-pages img,#range-after-pages img').length,
+          bootstrap:{auth:typeof window.OfficeAuth?.ensure,bridge:typeof window.pywebview?.api?.floating_snapshot,elements:typeof window.OfficeAgentElements?.iconButton,floating:window.OfficeFloating?.active,workspace:!!document.getElementById('workspace'),root:document.getElementById('floating-root')?.outerHTML.slice(0,1500),scripts:[...document.scripts].slice(-22).map(node=>node.src),resources:performance.getEntriesByType('resource').slice(-35).map(item=>({url:item.name,status:item.responseStatus,duration:item.duration,bytes:item.transferSize}))},
           menus:[...document.querySelectorAll('.simple-menu[open]')].map(node=>{const popup=node.querySelector('.simple-menu-body'),r=popup?.getBoundingClientRect();return {id:node.id,expanded:node.querySelector('summary')?.getAttribute('aria-expanded'),style:popup?.getAttribute('style'),box:r&&[r.x,r.y,r.width,r.height]};}),
           dialogs:[...document.querySelectorAll('dialog[open]')].map(node=>({label:node.getAttribute('aria-label'),text:node.textContent.slice(0,1200)})),
           trace:window.__lixConfirmationTrace||[]})''')
@@ -53,6 +54,7 @@ def track_browser(page,case,inspect):
     page.on('pageerror',lambda error:page._lix_page_errors.append(str(error)))
     page.on('console',lambda message:event('console:'+message.type,message.text) if message.type in {'warning','error'} else None)
     page.on('requestfailed',lambda request:event('requestfailed',request.url+' '+str(request.failure)))
+    page.on('response',lambda response:event('http_error',str(response.status)+' '+response.url) if response.status>=400 else None)
 
 
 def host_diagnostics(api,app):
