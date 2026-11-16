@@ -82,7 +82,7 @@ def main():
     assert report['actions'] == ['settings']
     assert report['checked'] and report['disabled_motion']
     assert report['root']['background'] == [32, 32, 32]
-    print(json.dumps(report, ensure_ascii=False))
+    print(json.dumps(report, ensure_ascii=True))
 
 
 if __name__ == '__main__':

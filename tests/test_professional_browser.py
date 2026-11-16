@@ -8,6 +8,7 @@ import pytest
 from office_agent.webui.bridge import Api
 from office_agent.writes import Editor, digest
 from test_professional_edits import fake_render
+from tests.ui_confirmation import host_diagnostics,record_browser_failure
 
 STATIC = Path(__file__).resolve().parents[1] / 'office_agent/webui/static'
 from office_agent.browser_runtime import find_edge
@@ -36,7 +37,19 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
     authenticated = [True]
     auth = SimpleNamespace(root=tmp_path / 'auth', status=lambda: {'authenticated': authenticated[0]})
     api = Api(app, auth=auth, settings_root=tmp_path)
-    calls, receipts = [], []
+    calls, receipts, corpus_trace = [], [], []
+    from office_agent.research_corpus import ResearchCorpus
+    inventory=ResearchCorpus.inventory
+    def inspect_corpus(corpus,name):
+        try:
+            value=inventory(corpus,name)
+            corpus_trace.append({'hash':value['hash'],'inventory':value['inventory'],
+                'snapshot':corpus.store.snapshot(),'identity':corpus.rag._identity()})
+            return value
+        except Exception as error:
+            corpus_trace.append({'error':type(error).__name__,'code':getattr(error,'code',None)})
+            raise
+    monkeypatch.setattr(ResearchCorpus,'inventory',inspect_corpus)
     allowed = {'enable_professional_tools', 'read_professional_structure', 'plan_professional_edit',
                'confirm_professional_edit', 'rollback_professional_edit', 'get_rag_snapshot',
                'plan_research_index', 'plan_research_query', 'confirm_rag_index', 'confirm_rag_query',
@@ -51,12 +64,19 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
         return result
     if not real_render:
         monkeypatch.setattr('office_agent.advanced_writes.render_gate', fake_render)
-    monkeypatch.setenv('TEMP', str(tmp_path))
-    monkeypatch.setenv('TMP', str(tmp_path))
+    browser_runtime=tmp_path.parent/(tmp_path.name+'-browser-runtime')
+    browser_runtime.mkdir()
+    monkeypatch.setenv('TEMP', str(browser_runtime))
+    monkeypatch.setenv('TMP', str(browser_runtime))
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=str(EDGE), headless=True, args=['--disable-background-networking'])
         try:
             page = browser.new_page(viewport={'width': 1100, 'height': 900})
+            page._lix_case=tmp_path.name
+            page._lix_api_receipts=receipts
+            page._lix_page_errors=[]
+            page._lix_host_diagnostics=lambda:{**host_diagnostics(api,app),'corpus_trace':corpus_trace[-12:]}
+            page.on('pageerror',lambda error:page._lix_page_errors.append(str(error)))
             page.set_default_timeout(65000 if real_render else 15000)
             page.route('**/*', lambda route: route.abort())
             page.expose_function('professionalHost', invoke)
@@ -78,12 +98,22 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             }''')
             if 'src="confirm_dialog.js"' in markup:
                 page.add_script_tag(path=str(STATIC / 'confirm_dialog.js'))
+                page.evaluate('''() => {
+                  const trace=window.__lixConfirmationTrace=[],add=value=>{trace.push({...value,at:performance.now()});if(trace.length>80)trace.shift();};
+                  const ask=OfficeConfirm.ask;
+                  OfficeConfirm.ask=async(...args)=>{add({kind:'request',message:String(args[0]).slice(0,1000)});const accepted=await ask(...args);add({kind:'resolved',accepted});return accepted;};
+                  for(const event of ['close','cancel','officeauth:authenticated','officeauth:unauthenticated','officeworkspace:clear'])document.addEventListener(event,()=>add({kind:event}),true);
+                  for(const id of ['file-name','file-dir']){const node=document.getElementById(id);if(node)new MutationObserver(()=>add({kind:'identity',id,text:node.textContent})).observe(node,{childList:true,characterData:true,subtree:true});}
+                }''')
             page.add_script_tag(path=str(STATIC / 'professional.js'))
             from tests.ui_confirmation import drive_legacy_confirmations
             page._lix_real_render = real_render
             drive_legacy_confirmations(page, monkeypatch)
             yield page, api, app, calls, receipts
         finally:
+            if 'page' in locals() and page._lix_case.startswith(('test_read_continue_export','test_codex_layout_controls','test_two_group_review','test_real_render_page_review','test_real_return_workflow','test_real_table_review','test_actual_directory_incremen','test_browser_runtime_creation')):
+                try:record_browser_failure(page,'diagnostic fixture exit',0)
+                except Exception:pass
             browser.close()
 
 

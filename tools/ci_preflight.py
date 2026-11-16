@@ -18,8 +18,20 @@ def inspect(root):
     checks = {'windows': sys.platform == 'win32', 'python_312': sys.version_info[:2] == (3, 12),
               'node': node.is_file(), 'edge': edge is not None, 'renderer': runtime.is_file(),
               'pythonnet': importlib.metadata.version('pythonnet') == '3.0.5'}
+    environment = {'python_utf8_mode': sys.flags.utf8_mode,
+                   'stdout_encoding': sys.stdout.encoding, 'filesystem_encoding': sys.getfilesystemencoding()}
+    if sys.platform == 'win32':
+        import ctypes
+        from ctypes import wintypes
+        user = ctypes.windll.user32
+        environment['desktop_pixels'] = [user.GetSystemMetrics(0), user.GetSystemMetrics(1)]
+        environment['oem_code_page'] = ctypes.windll.kernel32.GetOEMCP()
+        area = wintypes.RECT()
+        if user.SystemParametersInfoW(0x30, 0, ctypes.byref(area), 0):
+            environment['working_area'] = [area.left, area.top, area.right - area.left, area.bottom - area.top]
     return {'ok': all(checks.values()), 'checks': checks, 'python': platform.python_version(),
-            'node_directory': str(node.parent), 'real_office': False, 'real_service': False}
+            'node_directory': str(node.parent), 'environment': environment,
+            'real_office': False, 'real_service': False}
 
 
 if __name__ == '__main__':

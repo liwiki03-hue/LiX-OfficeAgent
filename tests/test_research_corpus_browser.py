@@ -53,3 +53,16 @@ def exercise_corpus_browser(browser, capture=None):
 
 def test_actual_directory_incremental_rerank_fallback_context_and_rollback(professional_browser):
     exercise_corpus_browser(professional_browser)
+
+
+def test_browser_runtime_creation_during_embedding_keeps_index_scope_stable(professional_browser,monkeypatch):
+    import os
+    import tempfile
+    embed=SyntheticEmbedder.embed
+    created=[]
+    def runtime_embedding(provider,texts):
+        created.append(tempfile.mkdtemp(prefix='browser-runtime-',dir=os.environ['TEMP']))
+        return embed(provider,texts)
+    monkeypatch.setattr(SyntheticEmbedder,'embed',runtime_embedding)
+    exercise_corpus_browser(professional_browser)
+    assert created

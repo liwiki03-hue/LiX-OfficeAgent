@@ -4,6 +4,7 @@ import importlib
 import json
 
 import pytest
+from tests.ui_confirmation import wait_for_browser_event
 
 from tests.test_professional_browser import _browser, STATIC
 from tests.test_daily_browser import setup_daily
@@ -141,6 +142,7 @@ def test_multiline_shortcuts_modal_and_next_draft(tmp_path,monkeypatch):
         assert not page.locator('#workspace').evaluate('n=>n.inert')
         page.locator('#prompt').press('Control+Enter')
         page.wait_for_function('document.getElementById("btn-stop").disabled===false')
+        wait_for_browser_event(page,ready,5)
         assert ready.wait(5)
         page.locator('#prompt').fill('下一条尚未发送的草稿 📄')
         release.set()

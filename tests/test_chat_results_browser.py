@@ -53,6 +53,7 @@ def test_read_continue_export_and_cancel(tmp_path,monkeypatch,width,theme):
         assert len(requests)==1
         page.locator('#chat-stream').uncheck(); page.locator('#btn-ask').click()
         page.wait_for_function('document.querySelectorAll(".daily-turn").length>=2')
+        page.wait_for_function('document.querySelectorAll("#chat-transcript .daily-answer").length>=2')
         assert len(requests)==2 and requests[1][0]['content']=='保留原问题' and requests[1][1]['content']==raw
         page.evaluate('window.approved=false')
         page.get_by_role('button',name='导出此回答',exact=True).first.click()

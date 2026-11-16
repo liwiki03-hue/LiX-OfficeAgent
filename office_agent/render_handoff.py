@@ -18,7 +18,7 @@ def implementation_identity():
     from .writes import digest
     folder = Path(__file__).parent
     names = ('fidelity.py', 'fidelity_worker.py', 'range_edits.py', 'range_alignment.py',
-             'render_identity.py', 'render_handoff.py', 'layout_checks.py')
+             'render_identity.py', 'render_handoff.py', 'layout_checks.py','pdf_reading_order.py')
     return hashlib.sha256(json.dumps([digest(Path(sys.executable)),
         {name: digest(folder / name) for name in names}], sort_keys=True).encode()).hexdigest()
 
