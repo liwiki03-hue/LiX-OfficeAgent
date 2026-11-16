@@ -11,6 +11,7 @@ on:
         options:
           - full
           - ci-issues
+          - ci-layout
 permissions:
   contents: read
 jobs:
@@ -57,7 +58,7 @@ jobs:
         shell: pwsh
         run: uv run python tools/ci_preflight.py
       - name: Full regression
-        if: github.event_name != 'workflow_dispatch' || inputs.check != 'ci-issues'
+        if: github.event_name != 'workflow_dispatch' || (inputs.check != 'ci-issues' && inputs.check != 'ci-layout')
         shell: pwsh
         run: uv run pytest -q
       - name: Diagnostic Tk geometry
@@ -77,6 +78,24 @@ jobs:
           tests/test_research_corpus_browser.py::test_actual_directory_incremental_rerank_fallback_context_and_rollback
           tests/test_return_workflow_browser.py::test_real_return_workflow_and_frozen_ui_comparison
           tests/test_review_handoff_browser.py::test_real_table_review_handoff_themes_and_undo
+      - name: Layout and bootstrap cases
+        if: github.event_name == 'workflow_dispatch' && inputs.check == 'ci-layout'
+        shell: pwsh
+        run: >-
+          uv run pytest -q
+          tests/test_agent_elements_browser.py::test_reference_composer_preserves_draft_and_has_one_active_popover
+          tests/test_codex_workspace_browser.py::test_codex_layout_controls_popups_and_scroll
+          tests/test_codex_workspace_browser.py::test_menu_placement_is_ready_before_deferred_toggle
+          tests/test_compact_discovery_browser.py::test_compact_menu_history_and_public_search
+          tests/test_paged_browser.py::test_fluid_type_sidebar_selection_and_instance_survive_resize
+      - name: Repeated editor bootstrap
+        if: github.event_name == 'workflow_dispatch' && inputs.check == 'ci-layout'
+        shell: pwsh
+        run: |
+          foreach ($attempt in 1..3) {
+            uv run pytest -q tests/test_paged_browser.py::test_fluid_type_sidebar_selection_and_instance_survive_resize --basetemp "$env:RUNNER_TEMP/lix-bootstrap-$attempt"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Failed browser evidence
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4

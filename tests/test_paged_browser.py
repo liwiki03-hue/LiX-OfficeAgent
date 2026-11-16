@@ -17,6 +17,7 @@ from office_agent.webui.bridge import WebviewApp
 from office_agent.webui.floating_session import FloatingApi
 from tests.test_model_connections import connection, payload, save
 from tests.test_professional_browser import STATIC, EDGE
+from tests.ui_confirmation import record_browser_failure,track_browser
 
 
 @contextmanager
@@ -51,6 +52,9 @@ def paged_browser(tmp_path,monkeypatch):
             page.add_init_script("""if(window===window.top){window.OfficeAuth={isAuthenticated:()=>true,ensure:async()=>true,wrapApi:x=>x};window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>window.testHost(name,args)})};window.confirm=()=>true;document.addEventListener('DOMContentLoaded',()=>{document.getElementById('workspace').hidden=false;document.getElementById('workspace').inert=false;document.getElementById('workspace').setAttribute('aria-hidden','false');});}""")
             page.route('**/auth.js',lambda route:route.fulfill(status=200,body=''))
             errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
+            track_browser(page,tmp_path.name,lambda:{'paged':api._floating.paged.state(),'document':api._floating.document,
+                'presentation':api._floating.native.mode if api._floating.native is not None else 'review',
+                'stage':api._floating.stage,'busy':app.busy,'threads':threading.active_count()})
             page.goto(url)
             page.locator('#floating-choose').click()
             deadline=time.monotonic()+10
@@ -62,7 +66,9 @@ def paged_browser(tmp_path,monkeypatch):
             while not api._floating.paged.manifest:
                 if api._floating.paged.document_id and not api._floating.paged.editable:
                     raise AssertionError({'readonly_reasons':api._floating.paged.reasons,'feedback':page.locator('#paged-feedback').text_content()})
-                if time.monotonic()>deadline:raise AssertionError({'feedback':page.locator('#paged-feedback').text_content() if page.locator('#paged-feedback').count() else '', 'errors':errors})
+                if time.monotonic()>deadline:
+                    record_browser_failure(page,'paged editor bootstrap',70)
+                    raise AssertionError({'feedback':page.locator('#paged-feedback').text_content() if page.locator('#paged-feedback').count() else '', 'errors':errors})
                 page.wait_for_timeout(100)
             yield page,api,source,errors
         finally:browser.close()

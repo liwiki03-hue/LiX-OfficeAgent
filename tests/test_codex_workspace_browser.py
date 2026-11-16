@@ -10,6 +10,34 @@ from tests.test_professional_browser import _browser, STATIC
 from tests.test_daily_browser import setup_daily
 from tests.test_model_connections import connection, payload, save
 from tests.test_ui_simplify_browser import simplify, mode, pick_model
+
+
+def test_menu_placement_is_ready_before_deferred_toggle(tmp_path,monkeypatch):
+    fixture=_browser(tmp_path,monkeypatch)
+    try:
+        page,api,original,calls,receipts=next(fixture)
+        page.evaluate('''() => {
+          const add=EventTarget.prototype.addEventListener;
+          EventTarget.prototype.addEventListener=function(type,listener,options){
+            if(type==='toggle'&&this.classList?.contains('simple-menu')&&typeof listener==='function'){
+              return add.call(this,type,function(event){setTimeout(()=>listener.call(this,event),180);},options);
+            }
+            return add.call(this,type,listener,options);
+          };
+        }''')
+        save(api._connections,payload([connection()]))
+        setup_daily(page,api,original,calls,receipts,monkeypatch)
+        simplify(page);pick_model(page,'chat','same-model')
+        for width,height in [(360,440),(520,800),(820,620)]:
+            page.set_viewport_size({'width':width,'height':height})
+            page.locator('#simple-model-menu > summary').click()
+            box=page.locator('#simple-model-menu > .simple-menu-body').bounding_box()
+            assert box and 0<=box['x'] and box['x']+box['width']<=width
+            assert 0<=box['y'] and box['y']+box['height']<=height
+            assert page.locator('#simple-model-menu > summary').get_attribute('aria-expanded')=='true'
+            page.keyboard.press('Escape')
+            assert page.locator('#simple-model-menu > summary').evaluate('n=>n===document.activeElement&&!n.parentElement.open')
+    finally:fixture.close()
 from tests.test_ui_simplify_browser import open_document
 
 
