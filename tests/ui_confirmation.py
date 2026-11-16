@@ -41,16 +41,24 @@ def record_browser_failure(page, expression, seconds):
 def host_diagnostics(api,app):
     from contextlib import closing
     from office_agent.render_handoff import _entries
+    from office_agent.pdf_reading_order import reading_text
     result={'preview':api.preview_chat_context('diagnostic snapshot'),'pdfs':[]}
     for entry in _entries():
         import pypdfium2 as pdfium
         for payload in entry['payloads']:
+            digest=hashlib.sha256(payload).hexdigest()
+            directory=os.environ.get('LIX_UI_FAILURE_DIR')
+            if directory and len(payload)<=4*1024*1024:
+                target=Path(directory);target.mkdir(parents=True,exist_ok=True)
+                (target/(digest+'.pdf')).write_bytes(payload)
             with closing(pdfium.PdfDocument(payload)) as document:
-                texts=[]
+                texts=[];ordered=[]
                 for index in range(min(2,len(document))):
                     with closing(document[index]) as page,closing(page.get_textpage()) as text:
-                        texts.append(text.get_text_range()[:1800])
-                result['pdfs'].append({'pages':len(document),'text':texts})
+                        value=text.get_text_range();texts.append(value[:1800])
+                        candidate=reading_text(text,value,text.count_chars(),*page.get_size())
+                        ordered.append(None if candidate is None else candidate[:1800])
+                result['pdfs'].append({'pages':len(document),'text':texts,'ordered_text':ordered,'sha256':digest})
     if os.name=='nt':
         root=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'
         result['cjk_fonts']=[path.name for path in root.iterdir() if any(word in path.name.lower() for word in ('simsun','simhei','msyh','noto','mingliu'))]

@@ -29,3 +29,12 @@ def test_rotated_text_does_not_offer_horizontal_order(tmp_path):
     assert pdf_snapshot(source,reading_order=True)['pages'][0]['reading_text'] is None
     source.write_bytes(pdf_bytes(text='AC) Tj ET BT /F1 12 Tf 29 100 Td (B'))
     assert pdf_snapshot(source,reading_order=True)['pages'][0]['reading_text'] is None
+
+
+def test_ordered_paragraph_context_keeps_its_method_without_overriding_ambiguity():
+    context={'text':'target','prefix':'before ','suffix':' after','paragraph':{'prefix':'before ','suffix':' after'}}
+    pages=[{'text':'stream records','reading_text':'before target after'}]
+    assert locate(pages,context)=={'pages':[1],'status':'unique','matches':1,
+        'method':'host-paragraph-context-fallback','text_order':'pdfium-glyph-origin-v1'}
+    pages=[{'text':'stream records','reading_text':'before target after before target after'}]
+    assert locate(pages,context)['status']=='ambiguous'

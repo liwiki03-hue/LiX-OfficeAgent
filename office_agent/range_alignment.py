@@ -71,9 +71,9 @@ def locate(pages, context):
     if match['status']=='not_located' and any(page.get('reading_text') is not None for page in pages):
         ordered=[{'text':page['reading_text'] if page.get('reading_text') is not None else page['text']} for page in pages]
         candidate=_locate(ordered,context)
-        if candidate['status']=='not_located' and type(local) is dict:
-            candidate=_locate(ordered,{'text':context.get('text',''),'prefix':local.get('prefix',''),'suffix':local.get('suffix','')})
-            if candidate['status']=='unique':return {**candidate,'method':'host-paragraph-context-fallback','text_order':'pdfium-glyph-origin-v1'}
+        if candidate['status']!='ambiguous' and type(local) is dict:
+            paragraph=_locate(ordered,{'text':context.get('text',''),'prefix':local.get('prefix',''),'suffix':local.get('suffix','')})
+            if paragraph['status']=='unique':return {**paragraph,'method':'host-paragraph-context-fallback','text_order':'pdfium-glyph-origin-v1'}
         if candidate['status'] in {'unique','ambiguous'}:return {**candidate,'method':'pdfium-glyph-origin-v1'}
     return match
 

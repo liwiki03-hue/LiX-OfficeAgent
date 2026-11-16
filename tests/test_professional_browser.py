@@ -37,7 +37,19 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
     authenticated = [True]
     auth = SimpleNamespace(root=tmp_path / 'auth', status=lambda: {'authenticated': authenticated[0]})
     api = Api(app, auth=auth, settings_root=tmp_path)
-    calls, receipts = [], []
+    calls, receipts, corpus_trace = [], [], []
+    from office_agent.research_corpus import ResearchCorpus
+    inventory=ResearchCorpus.inventory
+    def inspect_corpus(corpus,name):
+        try:
+            value=inventory(corpus,name)
+            corpus_trace.append({'hash':value['hash'],'inventory':value['inventory'],
+                'snapshot':corpus.store.snapshot(),'identity':corpus.rag._identity()})
+            return value
+        except Exception as error:
+            corpus_trace.append({'error':type(error).__name__,'code':getattr(error,'code',None)})
+            raise
+    monkeypatch.setattr(ResearchCorpus,'inventory',inspect_corpus)
     allowed = {'enable_professional_tools', 'read_professional_structure', 'plan_professional_edit',
                'confirm_professional_edit', 'rollback_professional_edit', 'get_rag_snapshot',
                'plan_research_index', 'plan_research_query', 'confirm_rag_index', 'confirm_rag_query',
@@ -61,7 +73,7 @@ def _browser(tmp_path, monkeypatch, *, real_render=False):
             page._lix_case=tmp_path.name
             page._lix_api_receipts=receipts
             page._lix_page_errors=[]
-            page._lix_host_diagnostics=lambda:host_diagnostics(api,app)
+            page._lix_host_diagnostics=lambda:{**host_diagnostics(api,app),'corpus_trace':corpus_trace[-12:]}
             page.on('pageerror',lambda error:page._lix_page_errors.append(str(error)))
             page.set_default_timeout(65000 if real_render else 15000)
             page.route('**/*', lambda route: route.abort())
