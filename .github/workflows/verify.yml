@@ -12,6 +12,7 @@ on:
           - full
           - ci-issues
           - ci-layout
+          - ci-readonly
 permissions:
   contents: read
 jobs:
@@ -58,7 +59,7 @@ jobs:
         shell: pwsh
         run: uv run python tools/ci_preflight.py
       - name: Full regression
-        if: github.event_name != 'workflow_dispatch' || (inputs.check != 'ci-issues' && inputs.check != 'ci-layout')
+        if: github.event_name != 'workflow_dispatch' || (inputs.check != 'ci-issues' && inputs.check != 'ci-layout' && inputs.check != 'ci-readonly')
         shell: pwsh
         run: uv run pytest -q
       - name: Diagnostic Tk geometry
@@ -96,6 +97,14 @@ jobs:
             uv run pytest -q tests/test_paged_browser.py::test_fluid_type_sidebar_selection_and_instance_survive_resize --basetemp "$env:RUNNER_TEMP/lix-bootstrap-$attempt"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Readonly copy cases
+        if: github.event_name == 'workflow_dispatch' && inputs.check == 'ci-readonly'
+        shell: pwsh
+        run: >-
+          uv run pytest -q
+          tests/test_document_access_browser.py
+          tests/test_editable_copy_browser.py
+          tests/test_paged_browser.py
       - name: Failed browser evidence
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
