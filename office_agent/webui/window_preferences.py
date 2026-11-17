@@ -18,9 +18,11 @@ class WindowPreferences:
             if not self.path.is_file() or self.path.stat().st_size > 16384:
                 return {}
             value = json.loads(self.path.read_text('utf-8'))
-            if not isinstance(value, dict) or set(value) - {'compact', 'review', 'topmost', 'intro_seen'}:
+            if not isinstance(value, dict) or set(value) - {'compact', 'review', 'topmost', 'intro_seen', 'theme'}:
                 return {}
             result = {key: val for key, val in value.items() if key in {'topmost', 'intro_seen'} and type(val) is bool}
+            if value.get('theme') in ('dark', 'light'):
+                result['theme'] = value['theme']
             for mode in ('compact', 'review'):
                 row = value.get(mode)
                 if (isinstance(row, dict) and set(row) == {'x', 'y', 'width', 'height', 'dpi', 'screen'}
@@ -42,11 +44,23 @@ class WindowPreferences:
             value['intro_seen'] = True
             self._write(value)
 
-    def _write(self, value):
+    def set_theme(self, theme):
+        if type(theme) is not str or theme not in ('dark', 'light'):
+            raise ValueError('主题偏好无效')
+        with _WRITE_LOCK:
+            self._write(self.read(), theme=theme)
+
+    def _write(self, value, *, theme=None):
         from ..downloads import safe
         value = dict(value)
-        if self.read().get('intro_seen') is True:
+        current = self.read()
+        if current.get('intro_seen') is True:
             value['intro_seen'] = True
+        saved_theme = theme if theme is not None else current.get('theme')
+        if saved_theme in ('dark', 'light'):
+            value['theme'] = saved_theme
+        else:
+            value.pop('theme', None)
         safe(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = safe(self.path.with_suffix('.tmp'))

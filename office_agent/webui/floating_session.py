@@ -18,6 +18,8 @@ from .document_open import OPEN_FORMATS, read_local_view
 from .paged_editor import PagedEditor
 from .office_canvas import OfficeCanvas, OfficeCanvasApi
 from .document_access import DocumentAccess
+from .document_conversation import DocumentConversation, intent as conversation_intent
+from .round_undo import RoundUndo
 
 
 class FloatingSession:
@@ -47,6 +49,7 @@ class FloatingSession:
         self.stage = 'idle'
         self.view = None
         self.queued_for_next_version = []
+        self.copy_continuation = None
         self.open_request = None
         self.open_trace = []
         self.local_read_grant = None
@@ -58,12 +61,16 @@ class FloatingSession:
         self.access = DocumentAccess(self)
         self.paged = PagedEditor(self)
         self.canvas = OfficeCanvas(self)
+        self.conversation = DocumentConversation(self)
+        self.round_undo = RoundUndo(self)
 
     def authenticated(self):
         if not self.api._auth.status().get('authenticated', False):
             raise ValueError('请先登录本机账户')
 
     def notice(self, kind, payload):
+        if hasattr(self, 'conversation'):
+            self.conversation.event(kind, payload)
         if kind in {'document_ready', 'admission_failed', 'draft_model_error', 'draft_publishing', 'draft_published', 'draft_publish_failed', 'stop_requested', 'stale_action_blocked'}:
             from ..diagnostics import record
             record('document', kind, 'failed' if kind.endswith(('failed', 'error')) else 'recorded',
@@ -77,6 +84,7 @@ class FloatingSession:
 
     def reset(self, *, preserve_open=None):
         with self.lock:
+            self.conversation.reset()
             self.access.reset(default=True)
             self.paged.close()
             self.canvas.close()
@@ -101,6 +109,7 @@ class FloatingSession:
             self.references.clear()
             self.protected_cells.clear()
             self.stage = 'idle'
+            self.copy_continuation = None
             self.view = None
             if self._open_cancel and self.open_request is not preserve_open:
                 self._open_cancel.set()
@@ -291,6 +300,8 @@ class FloatingSession:
 
     def _admit(self, candidate, *, _opening_request=None):
         self.authenticated()
+        if self.round_undo.busy:
+            raise ValueError('正在核对本轮撤销，请完成后再切换文档')
         self.paged.before_admit()
         self.canvas.before_admit()
         admission_epoch = self.epoch
@@ -433,6 +444,8 @@ class FloatingSession:
                                          'model_context': 'Agent按需读取获准范围，未声明全文已发送或理解'}
             self.view = deepcopy(view)
             self.app._read_authorized_path = path
+            self.conversation.restore()
+            self.conversation.resume_opening()
             self.notice('document_ready', {'view': view, 'version': document['version']})
         return {'ok': True, 'view': view}
 
@@ -722,6 +735,8 @@ class FloatingSession:
 
     def stop(self):
         self.authenticated()
+        self.conversation.stop()
+        self.copy_continuation = None
         had_access = bool(self.access.state()['id'])
         self.access.reset()
         self.paged.stop()
@@ -786,6 +801,13 @@ class FloatingSession:
         self.app.last_verified_id = output_id
         return self.app.undo()
 
+    def begin_round_undo(self, turn_id, document_id, revision, approved):
+        try:
+            return self.round_undo.begin(turn_id, document_id, revision, approved)
+        except (ValueError, OSError) as error:
+            self.round_undo.refuse(turn_id, '核对撤销所需文件时遇到问题，正文与结果文件保留。' if isinstance(error,OSError) else str(error))
+            raise
+
     def select_output(self, output_id, read_open=False, access_id=None):
         self.authenticated()
         if type(read_open) is not bool:
@@ -804,7 +826,20 @@ class FloatingSession:
                 level = consent['level']
             if self.protected or self.protected_cells:
                 level = None
+            continuation = []
+            model_limit = 12
+            if row.get('automatic_requirements'):
+                from ..requirement_history import active_requirements
+                runtime = self.runtime
+                if not access or not level or not runtime or runtime.closed or self.stage == 'stopped':
+                    raise ValueError('当前要求已停止或授权已改变，未自动打开或继续执行副本')
+                clients = {record['id']: client for client, record in runtime.ids.items() if record.get('kind') != 'requirement_change'}
+                continuation = [{**item, 'client_id': clients.get(item['id'], item['id'])} for item in active_requirements(runtime) if item['version'] > runtime.applied]
+                if not continuation:
+                    raise ValueError('当前没有待执行要求，未自动继续旧请求')
+                model_limit = None if runtime.model_limit is None else max(0, runtime.model_limit - runtime.model_calls)
             saved = deepcopy(self.outputs)
+            conversation = self.conversation.state()
             queued = [m['text'] for m in self.runtime.messages if m['revision'] > self.runtime.applied] if self.runtime else []
             result = self._admit(row['output'])
             if result.get('ok'):
@@ -814,8 +849,18 @@ class FloatingSession:
                     raise ValueError('副本在打开期间改变，未沿用修改权限，请重新选择文件')
                 if read_open:
                     self.read(self.read_token, True)
+                    self.conversation.rebind(conversation)
                     if level and self.access.serial == serial + 1:
                         self.access.set(self.document['id'], self.document['version'], self.epoch, level, True)
+                        if continuation:
+                            self.runtime = InstructionRuntime(self.document['version'], persist=self.persist,
+                                                              notify=self.notice, model_limit=model_limit)
+                            self.app.instruction_runtime = self.runtime
+                            for item in continuation:
+                                self.runtime.submit(item.get('client_id') or item['id'], item['text'])
+                            self.copy_continuation = self.document['id']
+                            self.queued_for_next_version = []
+                            self.conversation.update(self.conversation.active_task, 'loading_editor', '副本已验证并准入，正在载入编辑器。')
             return result
         finally:
             self.admission_lock.release()
@@ -925,6 +970,7 @@ class FloatingSession:
                     bool(self.open_request and self.open_request.get('phase') in {'receiving','admission_pending','parsing'}),
                     bool(plans or any(p['status']=='pending' for p in self.paged.proposals.values()))))
             return {'ok': True, 'epoch': self.epoch, 'cursor': self.seq,
+                    'conversation': self.conversation.state(),
                     'access': self.access.state(),
                     'gap': bool(self.events and cursor < self.events[0]['event_seq'] - 1),
                     'events': deepcopy([e for e in self.events if e['event_seq'] > cursor]),
@@ -969,6 +1015,14 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             if remember:
                 self._ui_preferences.set_intro_seen()
             return {'ok': True, 'intro_seen': self._ui_preferences.read().get('intro_seen', False)}
+        return self._floating_call(action)
+
+    def floating_theme(self, theme=None):
+        def action():
+            self._floating.authenticated()
+            if theme is not None:
+                self._ui_preferences.set_theme(theme)
+            return {'ok': True, 'theme': self._ui_preferences.read().get('theme')}
         return self._floating_call(action)
 
     def floating_download_cache(self, kind):
@@ -1025,6 +1079,20 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             return self._window_chrome.state() if self._window_chrome else {'ok': True, 'available': False}
         return self._floating_call(action)
 
+    def floating_window_trace(self, value):
+        def action():
+            self._floating.authenticated()
+            return self._window_chrome.trace(value) if self._window_chrome else {'ok': True, 'available': False}
+        return self._floating_call(action)
+
+    def floating_window_pointer(self, value):
+        def action():
+            self._floating.authenticated()
+            if not self._window_chrome:
+                raise ValueError('窗口尚未就绪')
+            return self._window_chrome.pointer(value)
+        return self._floating_call(action)
+
     def test_model_connection_draft(self, draft, refresh=False):
         return self._connections.probe_draft(draft, refresh)
 
@@ -1037,6 +1105,14 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             if type(action) is not str or action not in WINDOW_ACTIONS:
                 raise ValueError('不支持的窗口操作')
             return self._window_chrome.action(action)
+        return self._floating_call(apply)
+
+    def floating_window_regions(self, value):
+        def apply():
+            self._floating.authenticated()
+            if not self._window_chrome:
+                return {'ok': True, 'available': False}
+            return self._window_chrome.set_drag_regions(value)
         return self._floating_call(apply)
 
     def _clear_private_state(self):
@@ -1060,6 +1136,191 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def floating_snapshot(self, cursor=0):
         return self._floating_call(self._floating.collect, cursor)
 
+    def paged_editor_ready(self, document_id, revision):
+        def action():
+            self._floating.paged.guard(document_id, revision)
+            runtime = self._floating.runtime
+            if self._floating.paged.editable and runtime and not runtime.closed and runtime.applied < runtime.revision and not self._floating.paged.deferred:
+                from ..requirement_history import active_requirements
+                text = '\n'.join(row['text'] for row in active_requirements(runtime))
+                if re.search(r'最后|文末|末尾|结尾', text):
+                    self._floating.copy_continuation = document_id
+            if self._floating.paged.editable and self._floating.copy_continuation == document_id:
+                if any(row.get('kind') == 'paged_editable_copy' and row.get('output_sha256') == self._floating.document['version'] for row in self._floating.outputs.values()):
+                    self._floating.notice('draft_copy_continued', {'text': '可编辑副本已打开，正在继续处理已发送要求。'})
+                else:
+                    self._floating.conversation.update(self._floating.conversation.active_task, 'editor_ready', '编辑器已就绪，正在继续处理已发送要求。')
+            return {'ok': True}
+        return self._floating_call(action)
+
+    def conversation_observe(self, client_id, phase, elapsed_ms):
+        def action():
+            floating = self._floating
+            floating.authenticated()
+            if (client_id not in floating.conversation.turns or not isinstance(phase, str)
+                    or not re.fullmatch(r'(?:local_echo|accepted_visible|stage_visible:[a-z_]{1,32})', phase)
+                    or type(elapsed_ms) not in (int, float) or not 0 <= elapsed_ms <= 86400000):
+                raise ValueError('界面计时记录无效')
+            value = {'id': client_id, 'phase': phase, 'elapsed_ms': round(elapsed_ms, 2)}
+            floating.conversation.measurements.append(value)
+            floating.conversation.measurements = floating.conversation.measurements[-256:]
+            from ..diagnostics import record
+            record('conversation', 'client_phase', 'observed', correlation=client_id, code=phase, elapsed_ms=round(elapsed_ms))
+            return {'ok': True}
+        return self._floating_call(action)
+
+    def conversation_undo_begin(self, turn_id, document_id, revision, approved=False):
+        return self._floating_call(self._floating.begin_round_undo, turn_id, document_id, revision, approved)
+
+    def conversation_undo_restored(self, turn_id, token, document_id, revision, data, manifest):
+        return self._floating_call(self._floating.round_undo.restored, turn_id, token, document_id, revision, data, manifest)
+
+    def conversation_undo_status(self, turn_id, token, document_id):
+        return self._floating_call(self._floating.round_undo.status, turn_id, token, document_id)
+
+    def conversation_undo_finish(self, turn_id, token, document_id, revision):
+        return self._floating_call(self._floating.round_undo.finish, turn_id, token, document_id, revision)
+
+    def conversation_undo_abort(self, turn_id, token, document_id):
+        return self._floating_call(self._floating.round_undo.abort, turn_id, token, document_id)
+
+    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None):
+        def action():
+            floating = self._floating
+            floating.authenticated()
+            if not floating.document or floating.document['id'] != document_id or floating.document['version'] != version:
+                raise ValueError('文档或来源版本已改变；消息没有进入其他文件')
+            local = conversation_intent(text) in {'status', 'stop'}
+            opening = bool(floating.open_request and floating.open_request.get('phase') == 'parsing')
+            if local or opening and not floating.document.get('ready'):
+                reference_value = None
+            elif floating.paged.active():
+                floating.paged.guard(document_id, revision)
+                reference_value = floating.paged.references.get(reference) if isinstance(reference, str) else None
+            elif floating.canvas.active():
+                floating.canvas.guard(document_id, revision)
+                reference_value = next((item for item in [floating.canvas.ai.read_reference, floating.canvas.ai.reference] if item and item['id'] == reference), None)
+            else:
+                floating.check_source()
+                reference_value = None
+            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value)
+            if turn['intent'] == 'stop' and not duplicate:
+                result = floating.stop()
+                floating.conversation.update(client_id, 'stopped', '已停止后续派发；已开始的副本事务会安全收尾，已有要求与结果保留。', status='complete')
+            return {'ok': True, 'handled': turn['intent'] != 'edit', 'duplicate': duplicate,
+                    'turn': deepcopy(floating.conversation.turns[client_id]), 'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
+        return self._floating_call(action)
+
+    def conversation_retry(self, client_id, document_id, version):
+        def action():
+            floating = self._floating
+            floating.authenticated()
+            floating.check_source()
+            if floating.document['id'] != document_id or floating.document['version'] != version:
+                raise ValueError('文档已改变，未恢复旧任务')
+            row = floating.conversation.turns.get(client_id)
+            if not row or row['document_id'] != document_id or row['status'] not in {'failed', 'interrupted', 'uncertain'}:
+                raise ValueError('此回合当前不能重试；没有重复派发')
+            if row['intent'] == 'read':
+                if client_id in floating.conversation.readers:
+                    raise ValueError('原请求仍未释放，暂未重复请求模型')
+                floating.conversation.cancelled.discard(client_id)
+                floating.conversation.readers.add(client_id)
+                floating.conversation.update(client_id, 'reading', '正在按当前版本重新读取并回答。')
+                revision = floating.paged.revision if floating.paged.active() else floating.canvas.revision if floating.canvas.active() else 0
+                threading.Thread(target=floating.conversation._answer, args=(client_id, revision, None, floating.conversation.generation), daemon=True).start()
+                return {'ok': True}
+            if floating.app.busy or floating.paged.preparing or floating.paged.publishing or floating.canvas.publishing:
+                raise ValueError('已有步骤仍在安全收尾，未重复创建文件')
+            if floating.paged.uncertain or floating.canvas.uncertain or row['status'] == 'uncertain':
+                result = floating.paged.publication_result
+                if not result:
+                    raise ValueError('结果仍待核实，请先核对审计和文件；没有重新发布')
+                target = floating.app.editor.audit / result['id'] / 'audit.json'
+                _reject_links(target)
+                receipt = _read_bounded_json(target, 2 * 1024 * 1024)
+                output = floating.app.editor.space.file(receipt['output'])
+                if receipt.get('status') != 'verified' or receipt.get('source_sha256') != version or digest(output) != receipt.get('output_sha256') or receipt.get('output_sha256') != receipt.get('candidate_sha256'):
+                    raise ValueError('尚无可核验的成功回执；保留结果待核实，未重复执行')
+                receipt = {key: value for key, value in receipt.items() if key not in {'authorization', 'continue_editing', 'automatic_requirements'}}
+                receipt['source_version'] = receipt['source_sha256']
+                floating.paged.uncertain = False
+                floating.paged.publication_result = {**result, 'status': 'verified', 'text': '已核对成功回执，未重复发布。'}
+                floating.stage = 'verified'
+                floating.outputs[receipt['id']] = receipt
+                copy_only = receipt.get('kind') == 'paged_editable_copy'
+                if not copy_only:
+                    floating.paged.published_revision = result['draft_revision']
+                floating.conversation.update(client_id, 'copy_verified' if copy_only else 'complete',
+                    '可编辑副本的成功回执已核对；可以从这个已有文件继续。' if copy_only else '已找回并核对改稿成功回执；没有再次发布。', status='waiting' if copy_only else 'complete',
+                    results=[{'id': receipt['id'], 'name': output.name, 'kind': receipt.get('kind'), 'sha256': receipt['output_sha256'], 'verified': True}])
+                if copy_only:
+                    floating.access.reset()
+                    grant = floating.access.for_instruction()
+                    if not floating.runtime or floating.runtime.closed:
+                        floating.runtime = InstructionRuntime(version, persist=floating.persist, notify=floating.notice, model_limit=12)
+                        floating.app.instruction_runtime = floating.runtime
+                        floating.runtime.submit(client_id, row.get('effective_question', row['question']))
+                    receipt.update(automatic_requirements=True, authorization=grant,
+                                   continue_editing={'serial': floating.access.serial, 'level': grant['level']})
+                    return {'ok': True, 'reconciled': True, 'output_id': receipt['id'], 'access_id': grant['id']}
+                return {'ok': True, 'reconciled': True, 'output_id': receipt['id']}
+            for known in row['results']:
+                if known.get('verified') and known['id'] not in floating.outputs:
+                    restored = self.conversation_output(known['id'], document_id, version)
+                    if not restored.get('ok'):
+                        raise ValueError('已有结果无法核对；未重复生成文件，请先查看审计与产物')
+            final = next((item for item in reversed(list(floating.outputs.values())) if item.get('kind') != 'paged_editable_copy' and not item.get('undone') and any(known['id'] == item['id'] for known in row['results'])), None)
+            if final:
+                floating.conversation.update(client_id, 'existing_result', '找到已有验证改稿，将打开最新结果；原要求保留，没有重复执行。', status='waiting')
+                return {'ok': True, 'output_id': final['id']}
+            floating.access.reset()
+            floating.access.for_instruction()
+            floating.conversation.active_task = client_id
+            floating.conversation.update(client_id, 'resuming', '正在从最后已知阶段恢复；复用已验证成果，不重复创建工作副本。')
+            copy = next((item for item in floating.outputs.values() if item.get('kind') == 'paged_editable_copy' and item.get('source_version') == version and not item.get('undone')), None)
+            if copy:
+                if not floating.runtime or floating.runtime.closed:
+                    floating.runtime = InstructionRuntime(version, persist=floating.persist, notify=floating.notice, model_limit=12)
+                    floating.app.instruction_runtime = floating.runtime
+                    floating.runtime.submit(client_id, row.get('effective_question', row['question']))
+                copy.update(automatic_requirements=True, authorization=floating.access.state(),
+                            continue_editing={'serial': floating.access.serial, 'level': floating.access.state()['level']})
+                return {'ok': True, 'output_id': copy['id'], 'access_id': floating.access.state()['id']}
+            if floating.paged.active():
+                paged = floating.paged
+                paged.copy_error = None
+                paged.start_blocked = None
+                if not floating.runtime or floating.runtime.closed:
+                    paged.submit(uuid.uuid4().hex, row['question'], None, document_id, version, floating.runtime.session_id if floating.runtime else '', paged.inbox_id)
+                elif paged.editable:
+                    paged.automatic_reference(document_id, paged.revision, floating.runtime.session_id, floating.runtime.revision)
+                    paged.start()
+            return {'ok': True}
+        return self._floating_call(action)
+
+    def conversation_output(self, identifier, document_id, version):
+        def action():
+            floating = self._floating
+            floating.authenticated()
+            floating.check_source()
+            if floating.document['id'] != document_id or floating.document['version'] != version or not isinstance(identifier, str) or not re.fullmatch('[a-f0-9]{32}', identifier):
+                raise ValueError('结果归属已改变')
+            known = next((result for turn in floating.conversation.turns.values() for result in turn['results'] if result.get('id') == identifier and result.get('verified')), None)
+            if not known:
+                raise ValueError('此结果不属于当前对话')
+            target = floating.app.editor.audit / identifier / 'audit.json'
+            _reject_links(target)
+            receipt = _read_bounded_json(target, 2 * 1024 * 1024)
+            path = floating.app.editor.space.file(receipt['output'])
+            if receipt.get('id') != identifier or receipt.get('status') != 'verified' or digest(path) != known['sha256'] or receipt.get('output_sha256') != known['sha256']:
+                raise ValueError('结果文件或审计已改变，未打开旧记录')
+            receipt = {key: value for key, value in receipt.items() if key not in {'authorization', 'continue_editing', 'automatic_requirements'}}
+            receipt['source_version'] = receipt.get('source_sha256')
+            floating.outputs[identifier] = receipt
+            return {'ok': True, 'output': receipt}
+        return self._floating_call(action)
+
     def floating_set_access(self, document_id, version, epoch, level, confirmed=False):
         return self._floating_call(self._floating.access.set, document_id, version, epoch, level, confirmed)
 
@@ -1081,6 +1342,13 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
 
     def paged_start_pending(self, document_id, revision, reference_id, instruction_revision, session_id):
         return self._floating_call(self._floating.paged.start_pending,document_id,revision,reference_id,instruction_revision,session_id)
+
+    def paged_automatic_reference(self, document_id, revision, session_id, instruction_revision):
+        return self._floating_call(self._floating.paged.automatic_reference, document_id, revision, session_id, instruction_revision)
+
+    def paged_automatic_editable_copy(self, document_id, revision, inbox_id, session_id, instruction_revision, access_id):
+        return self._floating_call(self._floating.paged.automatic_editable_copy, document_id, revision,
+                                  inbox_id, session_id, instruction_revision, access_id)
 
     def paged_requirements(self, document_id, source_version, inbox_id):
         return self._floating_call(self._floating.paged.requirements,document_id,source_version,inbox_id)

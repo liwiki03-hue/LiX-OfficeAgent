@@ -29,7 +29,8 @@ def launch_floating(webview, gui, ocr_provider=None):
                        recent=lambda: window.evaluate_js('window.OfficeFloating?.history()'),
                        position=lambda value: api._floating.notice('orb_position', value),
                        hotkey=os.getenv('OFFICE_ORB_HOTKEY', ''), wake=instance.poll_wake,
-                       warning=lambda text: api._floating.notice('native_warning', {'text': text}))
+                       warning=lambda text: api._floating.notice('native_warning', {'text': text}),
+                       preferences=api._ui_preferences)
     api._floating.native = native
     def ready():
         if window.events.shown.wait(20):

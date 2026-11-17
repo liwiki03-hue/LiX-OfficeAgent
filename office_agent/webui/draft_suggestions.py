@@ -67,6 +67,15 @@ def model_failure(error):
     return 'response_incompatible', '模型响应未完成或格式不兼容，请核对接口。'
 
 
+def validate_append(text, reason):
+    from ..model_content import check_scope
+    check_scope(text, reason)
+    if (not text.strip() or len(text) > 6000 or len(text.splitlines()) > 20
+            or any(ord(char) < 32 and char not in '\r\n' for char in text)):
+        raise GuardError('追加内容限6000字、20段普通正文，不能包含控制字符')
+    return []
+
+
 class DraftModel:
     def __init__(self, model, failures):
         self.model = model

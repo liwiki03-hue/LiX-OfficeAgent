@@ -140,5 +140,48 @@
     "binary_scope": "normal pipeline candidates; final unique q-final-20261114 identity is in local CANDIDATE.json",
     "source_candidate_manifest": "deliverables/issue-repair-completion-20261114/SOURCE_MANIFEST.json",
     "candidate_evidence": "deliverables/issue-repair-completion-20261114/CANDIDATE.json"
-  }
+  },
+  "coding_candidate": {
+    "build_id": "q-code-20261115-01",
+    "status": "coded_pending_acceptance",
+    "coding_entry": "NEXT_CODING_EXECUTION_PLAN.md",
+    "acceptance_entry": "NEXT_ACCEPTANCE_PLAN.md",
+    "cloud_failure_run": 43604518261,
+    "cloud_failure_commit": "f6b77a5f4a67ee40929522af673049fc289f4841",
+    "cloud_failure_summary": "9 failed, 4257 passed, 2 skipped, 165 subtests passed in 4244.94s",
+    "old_local_full_gate_applicable": false,
+    "full_gate_pending": true,
+    "native_pending": true,
+    "installed_preparation_pending": true,
+    "published": false,
+    "release_ready": false,
+    "previous_published_build": "q-final-20261114",
+    "evidence": "deliverables/coding-q-followup-20261115-01",
+    "coding_date": "2026-11-15",
+    "acceptance_feedback_source": "deliverables/acceptance-q-final-20261114/FINDINGS.md",
+    "acceptance_feedback_fixes": [
+      "A-Q1-01",
+      "A-Q2-02",
+      "A-Q2-03"
+    ]
+  },
+  "previous_coding_candidates": [
+    {
+      "build_id": "q-code-20261114-02",
+      "status": "coded_pending_acceptance",
+      "coding_entry": "NEXT_CODING_EXECUTION_PLAN.md",
+      "acceptance_entry": "NEXT_ACCEPTANCE_PLAN.md",
+      "cloud_failure_run": 43578500899,
+      "cloud_failure_commit": "4dcaebd340aea2ddaf6b6f7701d3c5a39b852a8c",
+      "cloud_failure_summary": "10 failed, 4255 passed, 2 skipped, 1 error, 165 subtests passed",
+      "old_local_full_gate_applicable": false,
+      "full_gate_pending": true,
+      "native_pending": true,
+      "installed_preparation_pending": true,
+      "published": false,
+      "release_ready": false,
+      "previous_published_build": "q-final-20261114",
+      "evidence": "deliverables/coding-q-followup-20261114-01"
+    }
+  ]
 }

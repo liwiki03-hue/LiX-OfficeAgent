@@ -127,6 +127,7 @@
   button('chat-budget-configure', '调整上下文配置', budgetActions, () => $('model-configure').click());
   button('chat-budget-preview', '重新预览', budgetActions, previewContext);
   const transcript = make('div', 'chat-transcript', '', panel); transcript.setAttribute('aria-label', '当前问答消息');
+  const pendingMessage=make('article','chat-local-pending','',panel);pendingMessage.className='daily-turn';pendingMessage.hidden=true;
   const exportControls = make('div','chat-export-controls','',panel); exportControls.className = 'daily-actions';
   const exportFormatLabel = make('label','','导出格式 ',exportControls);
   const exportFormat = make('select','chat-export-format','',exportFormatLabel);
@@ -277,7 +278,7 @@
   Object.assign(errors, {chat_title_invalid:'会话名称需为1–80个字符，不含换行或控制字符。', chat_history_disabled:'本机保存尚未启用，请先通过保存偏好启用。', chat_history_uncertain:'本机历史保存结果不确定，磁盘可能已更新；不自动重试，请重新读取核对。'});
   Object.assign(errors, {chat_context_changed:'预览后输入、会话或模型配置已改变；没有发送，请重新预览核对。', chat_submission_uncertain:'未确认宿主是否受理；输入已保留，请先核对会话记录，不要重复发送。', model_selection_required:'请先选择普通问答模型；没有模型时可点击“配置接口”。', model_selection_invalid:'所选接口或模型不可用，请重新选择或修复配置。', model_configuration_changed:'接口配置已改变，请重新选择模型后再预览。'});
   Object.assign(errors,{chat_continuation_changed:'原回答或会话已改变，请重新选择续写并预览。',chat_continuation_unavailable:'此回复不能续写，请核对结束原因。',chat_continuation_limit:'续写链已达到16段，请调整任务范围。',chat_output_parameter_unsupported:'此模型未配置可用的输出限制字段，请在连接中按接口文档配置。',chat_export_in_progress:'当前回答仍在生成；请停止并核对已收到内容或等待完成后导出，不会把运行中内容当作完整答案。',chat_export_invalid:'请选择当前会话中有效的消息。',chat_export_capacity:'导出超过512 KiB或本窗口8项事务上限，请缩小范围或在新窗口重试。',chat_export_expired:'导出批准已失效，请重新核对范围并创建计划。',chat_export_io_failed:'导出文件或目录无法安全访问，请核对位置与权限。',evidence_path_changed:'目标路径不安全或已改变，请重新选择目录。',evidence_uncertain:'写入结果不确定，请核对目标文件与审计；不要重复写入。',cancelled:'已取消，没有创建文件。'});
-  const error = result => errors[result?.reason] || '操作未完成，请重新读取状态核对；没有自动重试。';
+  const error = result => result?.error_code==='too_long'||result?.reason==='too_long'?'输入有 '+result.characters+' 字符，最多 '+result.limit+' 字符；原文保留。':errors[result?.reason] || '操作未完成，请重新读取状态核对；没有自动重试。';
   const imageErrors = {not_authenticated:'请先登录。',image_history_expired:'记录读取身份已失效，请重新打开图片记录。',image_history_changed:'与原生成记录不一致；请重新选择文件并授权读取，未预览。',image_history_missing:'记录的图片不存在；没有重新生成。',image_history_too_large:'图片大小超限，未读取或预览。',image_history_not_saved:'此记录没有仍有效的保存结果。',image_history_prompt_unavailable:'原记录没有保存提示词，不能恢复。',image_history_sensitive:'提示词包含当前敏感配置，拒绝复用。',model_selection_required:'没有有效的当前生图模型，请配置或重新选择。'};
   function setNotice(text, source = null) {
     noticeFeedback = {source};
@@ -511,6 +512,7 @@
   });
   window.OfficeDaily = {
     viewSnapshot,
+    completed:(session,id)=>state?.sessions.find(row=>row.id===session)?.turns.find(turn=>turn.id===id)?.status==='complete',
     feedbackSnapshot: () => noticeFeedback,
     send: async question => {
       if (submitting) return {ok:false,reason:'busy'};
@@ -524,8 +526,12 @@
       const submission = {}; submitting = submission;
       const previousNotice = noticeFeedback;
       sending = {mode: usedMode, session: usedSession, question};
+      if(usedMode==='chat'){
+        pendingMessage.replaceChildren();make('strong','','你',pendingMessage);make('p','',question,pendingMessage);make('p','','正在发送…',pendingMessage).setAttribute('role','status');pendingMessage.hidden=false;
+      }
       const current = () => born === epoch && usedMode === mode && (usedMode !== 'chat' || usedSession === selected);
       try {
+        if(usedMode==='chat')await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         let result = await host().ask(question, options);
         if (!current()) return {ok:false,reason:'stale'};
         if (result?.reason === 'chat_transfer_required') {
@@ -539,15 +545,19 @@
           continuation = null;
           budgetFeedback.hidden = true; budgetMessage.textContent = ''; budgetFeedbackToken = null;
           retry.hidden = true;
-          if (noticeFeedback === previousNotice || result.turn_id && noticeFeedback?.source?.turn_id === result.turn_id && noticeFeedback.source.session_id === usedSession) setNotice('请求已受理；实际发送' + result.context_turns + '组历史，较早' + result.omitted_turns + '组未发送。', result.turn_id ? {turn_id:result.turn_id,session_id:usedSession} : null);
+          if (noticeFeedback === previousNotice || result.turn_id && noticeFeedback?.source?.turn_id === result.turn_id && noticeFeedback.source.session_id === usedSession && !noticeFeedback.source.terminal) setNotice('请求已受理；实际发送' + result.context_turns + '组历史，较早' + result.omitted_turns + '组未发送。', result.turn_id ? {turn_id:result.turn_id,session_id:usedSession} : null);
           await refresh();
+          pendingMessage.hidden=true;
           if (!current()) return {ok:false,reason:'stale'};
         } else if (!result?.ok && usedMode === 'chat') {
-          setNotice(error(result), result?.reason === 'model_context_budget' ? 'chat-budget' : null);
+          const message=result?.reason==='too_long'?'输入有 '+result.characters+' 字符，最多 '+result.limit+' 字符；原文保留。':error(result);
+          pendingMessage.querySelector('[role="status"]').textContent=message;
+          setNotice(message, result?.reason === 'model_context_budget' ? 'chat-budget' : null);
           if (result?.reason === 'model_context_budget') showBudget(result.budget);
         }
         return result;
       } catch (_) {
+        if(usedMode==='chat')pendingMessage.querySelector('[role="status"]').textContent='消息还在等待应用接收；原文保留，请先重新连接核对。';
         if (current()) setNotice(errors.chat_submission_uncertain);
         return {ok:false,reason:current() ? 'chat_submission_uncertain' : 'stale'};
       } finally {

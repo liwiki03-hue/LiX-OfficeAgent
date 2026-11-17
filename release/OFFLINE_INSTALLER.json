@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "channel": "offline-preview",
+  "platform": "windows-x64",
+  "python": {
+    "version": "3.12.14",
+    "build": "20260929",
+    "bytes": 46425719,
+    "sha256": "28728baf30b65e263f0b25c5a85be8226e7ab0d212fbadd6a8f0f796139fa804",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260929/cpython-3.12.14%2B20260929-x86_64-pc-windows-msvc-install_only.tar.gz"
+  },
+  "uv_version": "0.12.18",
+  "environment_mode": "assemble-local",
+  "hard_budgets": {
+    "application": {
+      "files": 5000,
+      "bytes": 268435456,
+      "single_bytes": 67108864
+    },
+    "python": {
+      "files": 15000,
+      "bytes": 805306368,
+      "single_bytes": 134217728
+    },
+    "wheels": {
+      "files": 512,
+      "bytes": 2147483648,
+      "single_bytes": 536870912
+    },
+    "renderer": {
+      "files": 20000,
+      "bytes": 2147483648,
+      "single_bytes": 268435456
+    },
+    "prerequisites": {
+      "files": 16,
+      "bytes": 805306368,
+      "single_bytes": 402653184
+    },
+    "licenses": {
+      "files": 2000,
+      "bytes": 134217728,
+      "single_bytes": 33554432
+    }
+  },
+  "prerequisites": [
+    {
+      "id": "webview2",
+      "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/52cfd0a8-f256-48d4-9b18-467f2b3cda78/MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+      "bytes": 215116512,
+      "sha256": "d3cbe8fedb104282d745fff106993efead51ae94f5595a4e75804446a974f9c3",
+      "signature_status": "Valid",
+      "signer": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "version": "1.3.315.17"
+    },
+    {
+      "id": "net48",
+      "url": "https://download.microsoft.com/download/f/3/a/f3a6af84-da23-40a5-8d1c-49cc10c8e76f/NDP48-x86-x64-AllOS-ENU.exe",
+      "bytes": 121346568,
+      "sha256": "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40",
+      "signature_status": "Valid",
+      "signer": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "version": "4.8.04115.00"
+    }
+  ],
+  "superdoc_distribution_blocked": true,
+  "release_authorized": false
+}

@@ -53,6 +53,20 @@ def inspect(root):
         from office_agent import fidelity
         from tools.installed_runtime import digest
         binary = checked(root / '.runtime/libreoffice/program/soffice.com')
+        offline = checked(root.parent / 'LiX.install.json', missing=True)
+        if os.environ.get('LIX_DEPLOYMENT_MODE') == 'offline':
+            if not offline.is_file() or offline.stat().st_size > 2 * 1024 * 1024:
+                return False
+            manifest = json.loads(offline.read_text('utf-8'))
+            if manifest.get('schema') != 2 or manifest.get('deployment_mode') != 'offline':
+                return False
+            component = next(item for item in manifest['components'] if item['id'] == 'renderer')
+            listing = checked(root.parent / component['path'])
+            if listing.stat().st_size != component['bytes'] or digest(listing) != component['sha256']:
+                return False
+            rows = json.loads(listing.read_text('utf-8'))['files']
+            expected = next(row for row in rows if row['path'] == 'app/.runtime/libreoffice/program/soffice.com')
+            return fidelity.runtime_path() == binary.resolve() and digest(binary) == expected['sha256']
         receipt = checked(root / '.runtime/installed-renderer.json')
         if receipt.stat().st_size > 65536:
             return False
@@ -69,7 +83,27 @@ def inspect(root):
         checks[name] = run(name, lambda name=name: importlib.import_module(name), '重新准备第 1 阶段')
     for name, passed in checks.items():
         details.setdefault(name, {'status': 'passed' if passed else 'failed', 'next_step': '' if passed else '使用安装器固定的 Python 3.12.14 x64 重新准备'})
+    if os.environ.get('LIX_DEPLOYMENT_MODE') == 'offline':
+        def packages():
+            import re
+            from packaging.requirements import Requirement
+            path = checked(root.parent / 'runtime/requirements.txt')
+            if path.stat().st_size > 128 * 1024:
+                return False
+            lines = path.read_text('utf-8').splitlines()
+            if not 1 <= len(lines) <= 256:
+                return False
+            for line in lines:
+                if not re.fullmatch(r'[a-z0-9-]+==[A-Za-z0-9.+_-]+ --hash=sha256:[a-f0-9]{64}', line):
+                    return False
+                requirement = Requirement(line.split(' --hash=')[0])
+                if importlib.metadata.version(requirement.name) not in requirement.specifier:
+                    return False
+            return True
+        checks['locked_packages'] = run('locked_packages', packages, '使用同一离线安装介质重新装配运行依赖')
     return {'ok': all(checks.values()), 'checks': checks, 'gui_visible_verified': False,
+            'deployment_mode': os.environ.get('LIX_DEPLOYMENT_MODE', 'network-preview'),
+            'cloud_ai_requires_network': True,
             'details': details, 'network_requests': 0, 'preparation_performed': False,
             'rendering_verified': False, 'model_requests': 0, 'new_windows_verified': False}
 

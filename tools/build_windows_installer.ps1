@@ -5,14 +5,19 @@ param(
     [Parameter(Mandatory=$true)][string]$LicenseRoot,
     [Parameter(Mandatory=$true)][string]$InnoSetup,
     [string]$RendererArchive = '',
-    [string]$BuildId = ''
+    [string]$BuildId = '',
+    [string]$OfflineInputs = '',
+    [string]$OfflineRenderer = '',
+    [string]$OfflinePrerequisites = '',
+    [string]$BuildDirectory = '',
+    [switch]$InternalOnly
 )
 $ErrorActionPreference = 'Stop'
 if ($BuildId -and $BuildId -notmatch '^[a-z0-9][a-z0-9-]{0,63}$') { throw 'Build ID must use 1 to 64 lowercase letters, digits or hyphens' }
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $originalTemp = $env:TEMP
 $originalTmp = $env:TMP
-$temporaryParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$temporaryParent = if ($BuildDirectory) { [IO.Path]::GetFullPath($BuildDirectory) } else { [IO.Path]::GetFullPath([IO.Path]::GetTempPath()) }
 $buildRoot = Join-Path $temporaryParent ('lix-installer-build-' + [guid]::NewGuid().ToString('N'))
 $utf8 = [Text.UTF8Encoding]::new($false)
 
@@ -109,10 +114,18 @@ public static class LiXInstallerFileSecurity
     }
     [LiXInstallerFileSecurity]::Check($buildRoot)
     $uv = (Get-Command uv -CommandType Application -ErrorAction Stop).Source
-    $stageArgs = @('run','--offline','python','-m','tools.build_windows_installer','--stage-only',
+    $stageArgs = @('run','--isolated','--offline','python','-m','tools.build_windows_installer','--stage-only',
         '--root',$projectRoot,'--payload',$Payload,'--uv-archive',$UvArchive,'--license-root',$LicenseRoot)
     if ($RendererArchive) { $stageArgs += @('--renderer-archive',(Get-CheckedPath $RendererArchive)) }
-    Invoke-OwnedBuild $uv $stageArgs 120
+    if ($OfflineInputs) {
+        if (-not $BuildId -or -not $OfflineRenderer -or -not $OfflinePrerequisites) { throw 'Offline build requires inputs, renderer, prerequisites and build ID' }
+        $stageArgs = @('run','--isolated','--offline','python','-m','tools.offline_installer','stage',
+            '--target',$Payload,'--uv-archive',$UvArchive,'--license-root',$LicenseRoot,
+            '--inputs',(Get-CheckedPath $OfflineInputs),'--renderer',(Get-CheckedPath $OfflineRenderer),
+            '--prerequisites',(Get-CheckedPath $OfflinePrerequisites),'--build-id',$BuildId)
+        if ($InternalOnly) { $stageArgs += '--internal-only' }
+    }
+    Invoke-OwnedBuild $uv $stageArgs 600
     $manifest = [IO.File]::ReadAllText((Join-Path $Payload 'LiX.install.json')) | ConvertFrom-Json
     $stage = [IO.File]::ReadAllText((Join-Path $Payload 'STAGE.json')) | ConvertFrom-Json
     if ($manifest.version -notmatch '^\d+\.\d+\.\d+$' -or $manifest.version -ne $stage.version) { throw 'Invalid staged version' }
@@ -129,6 +142,7 @@ public static class LiXInstallerFileSecurity
         ('/resource:'+(Join-Path $Payload 'bootstrap.json')+',LiX.Bootstrap'),
         (Join-Path $projectRoot 'tools/windows/installed_launcher.cs'),(Join-Path $projectRoot 'tools/windows/process_job.cs'),
         (Join-Path $projectRoot 'tools/windows/bootstrap_network.cs'),
+        (Join-Path $projectRoot 'tools/windows/offline_manifest.cs'),
         (Join-Path $Payload 'launcher_version.cs')) 60
     [IO.File]::Move($launcher, (Join-Path $Payload 'LiX.exe'))
     [LiXInstallerFileSecurity]::Check((Join-Path $Payload 'LiX.exe'))
@@ -138,13 +152,15 @@ public static class LiXInstallerFileSecurity
     if ($LASTEXITCODE -ne 0 -or "$banner" -notmatch '\b7\.1\.1\b') { throw 'Expected Inno Setup 7.1.1' }
     $binaryRoot = Join-Path $buildRoot 'output'
     [IO.Directory]::CreateDirectory($binaryRoot) | Out-Null
-    $flavor = if ($stage.bundles_renderer) { 'renderer-preview' } else { 'preview' }
+    $flavor = if ($OfflineInputs) { 'offline-internal-preview' } elseif ($stage.bundles_renderer) { 'renderer-preview' } else { 'preview' }
     if ($BuildId) { $flavor = $BuildId + '-' + $flavor }
-    Invoke-OwnedBuild $iscc @('/Qp',('/DPayloadDir='+$Payload),('/DOutputDir='+$binaryRoot),
-        ('/DVersion='+$manifest.version),('/DFlavor='+$flavor),(Join-Path $projectRoot 'tools/windows/LiX.iss')) 600
+    $compileArgs = @('/Qp',('/DPayloadDir='+$Payload),('/DOutputDir='+$binaryRoot),('/DVersion='+$manifest.version),('/DFlavor='+$flavor))
+    if ($OfflineInputs) { $compileArgs += @('/DOffline=1',('/DManifestHash='+(Get-FileHash -LiteralPath (Join-Path $Payload 'LiX.install.json') -Algorithm SHA256).Hash.ToLowerInvariant()),('/DExtraSpace='+$manifest.total_bytes)) }
+    $compileArgs += (Join-Path $projectRoot 'tools/windows/LiX.iss')
+    Invoke-OwnedBuild $iscc $compileArgs 1800
     $name = 'LiX-Setup-' + $manifest.version + '-' + $flavor + '-x64.exe'
     $artifact = Join-Path $binaryRoot $name
-    $sizeLimit = if ($stage.bundles_renderer) { 512MB } else { 128MB }
+    $sizeLimit = if ($OfflineInputs) { 2GB } elseif ($stage.bundles_renderer) { 512MB } else { 128MB }
     if ((Get-Item -LiteralPath $artifact).Length -gt $sizeLimit) { throw 'Installer exceeds the size bound' }
     $checksum = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.Directory]::CreateDirectory($Output) | Out-Null
@@ -152,7 +168,7 @@ public static class LiXInstallerFileSecurity
     [LiXInstallerFileSecurity]::Check((Join-Path $Output $name))
     [IO.File]::WriteAllText((Join-Path $Output 'SHA256SUMS.txt'), ($checksum+'  '+$name+"`n"), [Text.Encoding]::ASCII)
     $receipt = [ordered]@{file=$name;bytes=(Get-Item -LiteralPath (Join-Path $Output $name)).Length;sha256=$checksum;
-        version=$manifest.version;build_id=$BuildId;channel='network-preview';signed=$false;published=$false;bundles_renderer=$stage.bundles_renderer;
+        version=$manifest.version;build_id=$BuildId;channel=$(if ($OfflineInputs) { 'offline-preview' } else { 'network-preview' });signed=$false;published=$false;bundles_renderer=$stage.bundles_renderer;
         public_source_files=$stage.public_source_files;payload_files=$stage.payload_files;
         source_manifest_sha256=$stage.source_manifest_sha256;binary_created_in_system_temp=$true;
         final_binary_same_volume_move=$true;low_integrity_artifacts_rejected=$true;security_permissions_modified=$false}

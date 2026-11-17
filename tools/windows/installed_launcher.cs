@@ -33,6 +33,17 @@ internal sealed class InstallManifest
     public string version { get; set; }
     public string channel { get; set; }
     public InstalledFile[] files { get; set; }
+    public string deployment_mode { get; set; }
+    public string platform { get; set; }
+    public string python { get; set; }
+    public string build_id { get; set; }
+    public string lock_sha256 { get; set; }
+    public string environment_mode { get; set; }
+    public bool requires_first_run_network { get; set; }
+    public bool bundles_python_runtime { get; set; }
+    public bool bundles_wheelhouse { get; set; }
+    public long total_bytes { get; set; }
+    public OfflineComponent[] components { get; set; }
 }
 
 internal sealed class RendererProgress
@@ -53,8 +64,11 @@ internal static class InstalledLiX
     private static readonly string Data = Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA")
         ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LiX");
     private static InstallerConfig config;
+    private static InstallManifest installed;
+    private static bool Offline { get { return installed != null && installed.schema == 2; } }
     private static string currentStage = "检查安装文件";
     private static string diagnostic;
+    private static volatile bool diagnosticUnavailable;
     private static volatile bool cancelled;
     private static Form window;
     private static Label status;
@@ -105,6 +119,9 @@ internal static class InstalledLiX
             throw new IOException("Installation manifest changed");
         InstallManifest manifest = new JavaScriptSerializer { MaxJsonLength = 2 * 1024 * 1024 }
             .Deserialize<InstallManifest>(File.ReadAllText(manifestPath, Encoding.UTF8));
+        if (manifest == null || manifest.version != config.version) throw new IOException("Invalid installation version");
+        installed = manifest;
+        if (Offline) { OfflineManifest.Validate(Root, manifest, Safe); return; }
         if (manifest.schema != 1 || manifest.version != config.version || manifest.channel != "network-preview"
                 || manifest.files == null || manifest.files.Length > 5000 || manifest.files.Length == 0)
             throw new IOException("Invalid installation manifest");
@@ -125,13 +142,29 @@ internal static class InstalledLiX
                     || new FileInfo(path).Length != row.bytes || FileHash(path) != row.sha256)
                 throw new IOException("An installed file is missing or changed");
         }
-        Safe(Data);
-        Directory.CreateDirectory(Data);
-        string logs = Safe(Path.Combine(Data, "SetupLogs"));
-        Directory.CreateDirectory(logs);
-        diagnostic = Path.Combine(logs, "prepare-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff") + "-" + Guid.NewGuid().ToString("N") + ".log");
-        using (File.Create(diagnostic)) { }
-        Note("build_version=" + config.version + "; manifest_sha256=" + config.manifest_sha256);
+    }
+
+    private static void InitializeDiagnostic()
+    {
+        diagnostic = null;
+        diagnosticUnavailable = true;
+        try
+        {
+            Directory.CreateDirectory(Safe(Data));
+            string logs = Safe(Path.Combine(Data, "SetupLogs"));
+            Directory.CreateDirectory(logs);
+            string path = Safe(Path.Combine(logs, "prepare-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff") + "-" + Guid.NewGuid().ToString("N") + ".log"));
+            using (new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) { }
+            diagnostic = path;
+            diagnosticUnavailable = false;
+            Note("build_version=" + config.version + "; manifest_sha256=" + config.manifest_sha256);
+            if (diagnosticUnavailable) throw new IOException("Preparation log unavailable");
+        }
+        catch
+        {
+            rendererFailure = "准备记录不可写，准备未开始。请核对本机 LiX\\SetupLogs 的访问权限后重试。";
+            throw;
+        }
     }
 
     private static SortedDictionary<string, string> EnvironmentForApp(bool network = false)
@@ -146,7 +179,8 @@ internal static class InstalledLiX
         }
         values["UV_CACHE_DIR"] = Safe(Path.Combine(Data, "Cache"));
         values["UV_PYTHON_INSTALL_DIR"] = Safe(Path.Combine(Data, "Runtime", "python"));
-        values["UV_PROJECT_ENVIRONMENT"] = Safe(Path.Combine(Data, "Environments", config.manifest_sha256.Substring(0, 16)));
+        values["UV_PROJECT_ENVIRONMENT"] = Safe(Path.Combine(Data, "Environments", config.manifest_sha256.Substring(0, 16)
+            + (Offline ? "-" + OfflineManifest.TextHash(Root).Substring(0, 16) : "")));
         values["UV_PYTHON_PREFERENCE"] = "only-managed";
         values["UV_PYTHON_DOWNLOADS"] = "automatic";
         values["UV_NO_ENV_FILE"] = "1";
@@ -157,7 +191,6 @@ internal static class InstalledLiX
         values["UV_HTTP_RETRIES"] = "2";
         if (network) BootstrapNetwork.Configure(values, App, Safe);
         string temporary = Safe(Path.Combine(Data, "Temp"));
-        Directory.CreateDirectory(temporary);
         values["TEMP"] = Safe(temporary);
         values["TMP"] = temporary;
         values["PYTHONUTF8"] = "1";
@@ -167,12 +200,25 @@ internal static class InstalledLiX
         values["OFFICE_WEBVIEW_GUI"] = "edgechromium";
         values.Remove("OFFICE_LIBREOFFICE_PATH");
         values.Remove("LIX_RENDERER_REPORT");
+        if (Offline)
+        {
+            values["UV_OFFLINE"] = "1";
+            values["UV_PYTHON_DOWNLOADS"] = "never";
+            values["UV_PYTHON_PREFERENCE"] = "only-system";
+            values["UV_NO_INDEX"] = "1";
+            values["LIX_DEPLOYMENT_MODE"] = "offline";
+        }
         return values;
     }
 
     private static void Note(string text)
     {
-        if (diagnostic != null) File.AppendAllText(diagnostic, DateTime.UtcNow.ToString("o") + " " + text + "\r\n", Encoding.UTF8);
+        if (diagnostic == null || diagnosticUnavailable) return;
+        try { File.AppendAllText(Safe(diagnostic), DateTime.UtcNow.ToString("o") + " " + text + "\r\n", Encoding.UTF8); }
+        catch (IOException) { diagnosticUnavailable = true; }
+        catch (UnauthorizedAccessException) { diagnosticUnavailable = true; }
+        catch (ArgumentException) { diagnosticUnavailable = true; }
+        catch (System.Security.SecurityException) { diagnosticUnavailable = true; }
     }
 
     private static void Stage(string text)
@@ -180,6 +226,59 @@ internal static class InstalledLiX
         currentStage = text;
         Note("stage=" + text);
         if (window != null && !window.IsDisposed) window.BeginInvoke((Action)(() => status.Text = text));
+    }
+
+    private static void PrepareStorage()
+    {
+        var environment = EnvironmentForApp();
+        var paths = new Dictionary<string, string> {
+            { "cache", environment["UV_CACHE_DIR"] },
+            { "python", environment["UV_PYTHON_INSTALL_DIR"] },
+            { "environment", environment["UV_PROJECT_ENVIRONMENT"] },
+            { "temporary", environment["TEMP"] }
+        };
+        string known = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        Note("storage_profile_matches_known_folder=" + (!String.IsNullOrEmpty(known) && String.Equals(
+            Path.GetDirectoryName(Safe(Data)), Path.GetFullPath(known), StringComparison.OrdinalIgnoreCase)));
+        foreach (var item in paths)
+        {
+            if (cancelled) throw new OperationCanceledException();
+            try
+            {
+                string directory = Safe(item.Value);
+                if (!directory.StartsWith(Safe(Data) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("Preparation storage escaped application data");
+                Directory.CreateDirectory(directory);
+                string probe = Safe(Path.Combine(directory, ".lix-write-" + Guid.NewGuid().ToString("N")));
+                using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.ReadWrite,
+                    FileShare.None, 1, FileOptions.DeleteOnClose))
+                {
+                    stream.WriteByte(0);
+                    stream.Flush(true);
+                }
+                Note("storage_" + item.Key + "=writable");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Note("storage_" + item.Key + "=access_denied");
+                rendererFailure = "准备目录不可写（" + item.Key + "）；原目录与缓存已保留，请在安装所用的本机用户会话重试。";
+                throw;
+            }
+            catch (IOException)
+            {
+                Note("storage_" + item.Key + "=io_failed");
+                rendererFailure = "准备目录无法使用（" + item.Key + "）；请检查磁盘、占用和本次准备记录。";
+                throw;
+            }
+        }
+    }
+
+    private static void InvalidateReady()
+    {
+        string ready = ReadyPath();
+        if (!File.Exists(ready)) return;
+        File.Move(ready, Safe(ready + ".previous-" + Guid.NewGuid().ToString("N")));
+        Note("previous_ready_invalidated=true");
     }
 
     private static string RendererMessage(string code)
@@ -200,6 +299,11 @@ internal static class InstalledLiX
             case "installer_service_unavailable": return "Windows Installer 服务不可访问（1601）；渲染器未准备完成，下载缓存已保留。";
             case "extract_timeout": return "渲染器解压超时；未标记准备完成，请查看准备记录。";
             case "runtime_integrity_or_extraction": return "渲染器文件或解压结果异常；请查看准备记录。";
+            case "runtime_receipt_invalid":
+            case "runtime_integrity_changed": return "已安装渲染器或记录发生变化，已保留原目录；请先核对本次准备记录。";
+            case "runtime_receipt_without_binary": return "已有渲染器记录但目录缺失，未覆盖旧记录；请先核对运行目录。";
+            case "runtime_staging_limit": return "已有4次未完成解压，已停止新增；请先核对保留的解压记录。";
+            case "runtime_publish_conflict": return "渲染器目录在准备期间变化，未替换现有目录；请核对后重试。";
             default: return "渲染器准备失败；请查看准备记录或使用含渲染器安装包。";
         }
     }
@@ -256,7 +360,7 @@ internal static class InstalledLiX
         DateTime started = DateTime.UtcNow;
         if (renderer || frontend)
         {
-            report = Safe(Path.Combine(Path.GetDirectoryName(diagnostic), "renderer-" + Guid.NewGuid().ToString("N") + ".json"));
+            report = Safe(Path.Combine(Data, "Temp", "renderer-" + Guid.NewGuid().ToString("N") + ".json"));
             environment[renderer ? "LIX_RENDERER_REPORT" : "LIX_SETUP_REPORT"] = report;
             activeRendererReport = report;
             Note("renderer_report=" + Path.GetFileName(report));
@@ -319,6 +423,8 @@ internal static class InstalledLiX
 
     private static string[] Python(string module)
     {
+        if (Offline) return new[] { "run", "--offline", "--no-project", "--no-sync", "--no-python-downloads", "--python",
+            Safe(Path.Combine(EnvironmentForApp()["UV_PROJECT_ENVIRONMENT"], "Scripts", "python.exe")), "python", "-m", module };
         return new[] { "run", "--frozen", "--no-sync", "--no-dev", "--python", config.python, "python", "-m", module };
     }
 
@@ -330,16 +436,24 @@ internal static class InstalledLiX
     private static bool Ready()
     {
         string ready = ReadyPath();
+        if (Offline) return OfflineManifest.Ready(ready, Root, EnvironmentForApp()["UV_PROJECT_ENVIRONMENT"], config.manifest_sha256, installed.lock_sha256, Safe);
         return File.Exists(ready) && new FileInfo(ready).Length == 64
             && File.ReadAllText(ready, Encoding.ASCII) == config.manifest_sha256
             && File.Exists(Safe(Path.Combine(App, ".runtime", "libreoffice", "program", "soffice.com")))
             && File.Exists(Safe(Path.Combine(App, "office_agent", "webui", "static", "vendor", "superdoc", "superdoc.min.js")))
+            && Directory.Exists(Safe(Path.Combine(Data, "Temp")))
             && File.Exists(Safe(Path.Combine(EnvironmentForApp()["UV_PROJECT_ENVIRONMENT"], "Scripts", "python.exe")));
     }
 
     private static void Prepare()
     {
         rendererFailure = null;
+        Stage("检查准备记录目录");
+        InitializeDiagnostic();
+        Stage("检查准备目录");
+        InvalidateReady();
+        PrepareStorage();
+        if (Offline) { PrepareOffline(); return; }
         Stage("1 / 4  准备 Python 与锁定依赖");
         Execute(new[] { "sync", "--locked", "--no-dev", "--no-default-groups",
             "--python", config.python, "--link-mode", "copy" }, 900);
@@ -349,6 +463,7 @@ internal static class InstalledLiX
         Execute(Python("tools.installed_runtime"), 900, true);
         Stage("4 / 4  检查桌面运行环境");
         Execute(Python("tools.installed_preflight"), 60);
+        if (cancelled) throw new OperationCanceledException();
         string ready = ReadyPath();
         Directory.CreateDirectory(Path.GetDirectoryName(ready));
         if (File.Exists(ready)) File.Move(ready, ready + ".previous-" + Guid.NewGuid().ToString("N"));
@@ -361,11 +476,45 @@ internal static class InstalledLiX
         Note("preparation_complete=true; model_requests=0");
     }
 
+    private static void PrepareOffline()
+    {
+        var environment = EnvironmentForApp();
+        string folder = environment["UV_PROJECT_ENVIRONMENT"];
+        string owner = Safe(Path.Combine(folder, ".lix-owner"));
+        string identity = config.manifest_sha256 + "\n" + Root;
+        if (Directory.GetFileSystemEntries(folder).Length > 0 && (!File.Exists(owner) || File.ReadAllText(owner) != identity))
+            throw new IOException("offline_environment_not_owned");
+        File.WriteAllText(owner, identity);
+        if (new DriveInfo(Path.GetPathRoot(folder)).AvailableFreeSpace < Math.Max(2L * 1024 * 1048576, installed.total_bytes))
+            throw new IOException("offline_disk_space");
+        Stage("1 / 3  从本地 Python 创建运行环境");
+        Execute(new[] { "venv", "--offline", "--no-project", "--no-python-downloads", "--allow-existing", "--python",
+            Safe(Path.Combine(Root, "runtime", "python", "python.exe")), folder }, 120);
+        Stage("2 / 3  从本地安装锁定依赖");
+        Execute(new[] { "pip", "sync", Safe(Path.Combine(Root, "runtime", "requirements.txt")), "--python", Safe(Path.Combine(folder, "Scripts", "python.exe")),
+            "--offline", "--no-index", "--no-python-downloads", "--find-links", Safe(Path.Combine(Root, "runtime", "wheels")),
+            "--require-hashes", "--only-binary", ":all:", "--link-mode", "copy", "--strict" }, 900);
+        Stage("3 / 3  检查离线桌面与文档组件");
+        Execute(Python("tools.installed_preflight"), 90);
+        Execute(Python("tools.offline_environment"), 180);
+        if (cancelled) throw new OperationCanceledException();
+        string path = ReadyPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        OfflineManifest.Publish(path, Root, folder, config.manifest_sha256, installed.lock_sha256, Safe);
+        Note("preparation_complete=true; deployment=offline; model_requests=0");
+    }
+
     private static void RunApp()
     {
         Stage("正在打开 LiX");
         if (window != null) window.BeginInvoke((Action)(() => { starting = true; window.Hide(); }));
-        Execute(new[] { "run", "--frozen", "--no-sync", "--no-dev", "--python", config.python,
+        if (Offline)
+        {
+            var args = new List<string>(Python("office_agent.app"));
+            args.AddRange(new[] { "--ui", "web" });
+            Execute(args.ToArray(), 0);
+        }
+        else Execute(new[] { "run", "--frozen", "--no-sync", "--no-dev", "--python", config.python,
             "python", "-m", "office_agent.app", "--ui", "web" }, 0);
     }
 
@@ -391,7 +540,7 @@ internal static class InstalledLiX
                 {
                     starting = false;
                     preparing = false;
-                    status.Text = cancelled ? "准备已停止，已下载内容保留。" : rendererFailure ?? currentStage + "未完成；请查看准备记录，修复后再试。";
+                    status.Text = cancelled ? (Offline ? "本地装配已停止，未就绪环境已保留。" : "准备已停止，已下载内容保留。") : rendererFailure ?? currentStage + (diagnosticUnavailable ? "未完成，准备记录也不可写；请核对访问权限后重试。" : "未完成；请查看准备记录，修复后再试。");
                     action.Text = "重新准备";
                     action.Enabled = true;
                     progress.Style = ProgressBarStyle.Blocks;
@@ -409,10 +558,24 @@ internal static class InstalledLiX
         window.Icon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
         Label heading = new Label { Text = "首次准备", Location = new Point(24, 24), Size = new Size(470, 32), Font = new Font(window.Font.FontFamily, 18) };
         Label detail = new Label { Text = "联网准备 Python、运行依赖和文档资源。\n无需安装开发工具，不会发送模型请求。\n请预留约 3 GB 空间；下载可能需要数分钟。", Location = new Point(26, 72), Size = new Size(480, 80) };
+        if (Offline) detail.Text = "从安装包本地装配运行环境，无需外网。\n云端 AI 仍需联网和配置，不会自动调用模型。\n请保留安装介质用于本地修复。";
         status = new Label { Text = "点击后开始准备。", Location = new Point(26, 152), Size = new Size(480, 50) };
         progress = new ProgressBar { Location = new Point(26, 208), Size = new Size(480, 5), Style = ProgressBarStyle.Blocks };
         Button logs = new Button { Text = "准备记录", Location = new Point(26, 230), Size = new Size(110, 36), FlatStyle = FlatStyle.Flat };
-        logs.Click += (sender, args) => Process.Start(new ProcessStartInfo { FileName = Path.GetDirectoryName(diagnostic), UseShellExecute = true });
+        logs.Click += (sender, args) =>
+        {
+            if (diagnostic == null || diagnosticUnavailable)
+            {
+                MessageBox.Show(window, diagnosticUnavailable ? "准备记录不可写，请核对本机 LiX\\SetupLogs 的访问权限。" : "开始准备后可查看本次记录。", "LiX", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            try { Process.Start(new ProcessStartInfo { FileName = Safe(Path.GetDirectoryName(diagnostic)), UseShellExecute = true }); }
+            catch (Exception error)
+            {
+                Note("open_log_failed=" + error.GetType().Name);
+                MessageBox.Show(window, "无法打开准备记录目录，请核对本机访问权限。", "LiX", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
         action = new Button { Text = "准备并启动", Location = new Point(360, 230), Size = new Size(146, 36), FlatStyle = FlatStyle.Flat };
         action.Click += (sender, args) => Begin();
         window.Controls.AddRange(new Control[] { heading, detail, status, progress, logs, action });
@@ -425,7 +588,7 @@ internal static class InstalledLiX
             if (preparing && !starting)
             {
                 args.Cancel = true;
-                if (MessageBox.Show(window, "停止本次准备？已下载内容会保留。", "LiX", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                if (MessageBox.Show(window, Offline ? "停止本次本地装配？未完成环境会保留，不会标记就绪。" : "停止本次准备？已下载内容会保留。", "LiX", MessageBoxButtons.YesNo) == DialogResult.Yes)
                     cancelled = true;
             }
         };
@@ -458,7 +621,7 @@ internal static class InstalledLiX
                 Validate();
                 if (args.Length == 1 && args[0] == "--check") return Ready() ? 0 : 42;
                 if (args.Length == 1 && args[0] == "--prepare-only") { Prepare(); return 0; }
-                if (Ready()) RunApp();
+                if (Ready()) { InitializeDiagnostic(); RunApp(); }
                 else ShowPreparation();
                 return 0;
             }
@@ -466,7 +629,7 @@ internal static class InstalledLiX
             {
                 Note("failed_stage=" + currentStage + "; type=" + error.GetType().Name);
                 if (args.Length == 0) MessageBox.Show("LiX 未能完成“" + currentStage + "”。\n"
-                    + "安装文件可能缺失，或运行环境尚未准备。请重新安装或查看本机 LiX\\SetupLogs。\n不会自动重试或调用模型。",
+                    + (rendererFailure ?? (diagnosticUnavailable ? "准备记录不可写，请核对本机访问权限。" : "安装文件可能缺失，或运行环境尚未准备。请核对安装文件或本机 LiX\\SetupLogs。")) + "\n不会自动重试或调用模型。",
                     "LiX — 无法启动", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }

@@ -84,11 +84,13 @@ def test_readonly_to_copy_actual_editor_publish_and_rollback(tmp_path, monkeypat
             assert row['render_diff']['render']['status'] in {'equivalent', 'different'}
             assert source.read_bytes() == original and Path(row['backup']).read_bytes() == original
             assert body_blocks(output.read_bytes()) == body_blocks(original)
+            page.evaluate('OfficeFloating.history()')
             page.get_by_role('button', name='打开副本编辑…', exact=True).wait_for(state='visible')
             page.screenshot(path=str(out / '03-copy-generated.png'))
             old_id = api._floating.document['id']
             page.get_by_role('button', name='打开副本编辑…', exact=True).click()
             wait(page, lambda: api._floating.document['id'] != old_id, lambda: api._floating.document)
+            if page.locator('#floating-return').is_visible():page.locator('#floating-return').click()
             assert api._floating.document['ready'] and not api._floating.runtime
             assert not api._floating.access.state()['active'] and not api._floating.access.state()['id']
             assert page.locator('#floating-read').is_hidden()

@@ -68,6 +68,7 @@ const themes = ["dark", "light"];
 let officeProbing = false;
 const themeNames = { dark: "深色", light: "浅色" };
 const themeStorageKey = "office-agent.theme";
+let themeRevision = 0, themePending = null, themeWriting = false, themePersistence = '';
 function applyTheme(theme) {
   if (!themes.includes(theme)) theme = "dark";
   document.documentElement.dataset.theme = theme;
@@ -81,7 +82,7 @@ function applyTheme(theme) {
     if (id === "settings-theme") button.textContent = "切换主题（当前：" + themeNames[theme] + "）";
   });
   const state = el("settings-theme-state");
-  if (state) state.textContent = "当前是" + themeNames[theme] + "主题，选择后立即应用并保存在本机。";
+  if (state) state.textContent = "当前为" + themeNames[theme] + "。" + themePersistence;
   const choice = el("settings-theme-choice");
   if (choice) choice.value = theme;
 }
@@ -97,8 +98,65 @@ function initTheme() {
 function cycleTheme() {
   const current = document.documentElement.dataset.theme;
   const next = themes[(themes.indexOf(current) + 1) % themes.length];
+  saveTheme(next);
+}
+function saveTheme(next) {
+  themePending = { theme: next, revision: ++themeRevision };
+  themePersistence = "已应用，正在保存。";
   applyTheme(next);
   try { localStorage.setItem(themeStorageKey, next); } catch (e) { /* 保留本次窗口内的选择 */ }
+  void flushTheme();
+}
+async function flushTheme() {
+  if (themeWriting || !themePending) return;
+  if (!api || typeof window.pywebview?.api?.floating_theme !== 'function') {
+    themePersistence = "仅本窗口生效，尚未连接本机偏好。";
+    applyTheme(document.documentElement.dataset.theme);
+    return;
+  }
+  const owner = api;
+  themeWriting = true;
+  try {
+    while (themePending && owner === api) {
+      const pending = themePending;
+      const result = await owner.floating_theme(pending.theme);
+      if (owner !== api) break;
+      if (!result?.ok || result.theme !== pending.theme) throw Error('Theme preference was not saved');
+      if (themePending.revision === pending.revision) {
+        themePending = null;
+        themePersistence = "已保存在本机。";
+        applyTheme(pending.theme);
+      }
+    }
+  } catch (_) {
+    if (owner === api) {
+      themePersistence = "仅本窗口生效，偏好未保存。请重新选择后重试。";
+      applyTheme(document.documentElement.dataset.theme);
+    }
+  } finally {
+    themeWriting = false;
+    if (owner !== api && themePending && api) void flushTheme();
+  }
+}
+async function restoreTheme() {
+  const owner = api, revision = themeRevision;
+  if (!owner || typeof window.pywebview?.api?.floating_theme !== 'function') return;
+  if (themePending) { void flushTheme(); return; }
+  try {
+    const result = await owner.floating_theme();
+    if (owner !== api || revision !== themeRevision) return;
+    if (!result?.ok) throw Error('Theme preference was not read');
+    if (themes.includes(result.theme)) {
+      themePersistence = "已保存在本机。";
+      applyTheme(result.theme);
+      try { localStorage.setItem(themeStorageKey, result.theme); } catch (_) {}
+    } else saveTheme(document.documentElement.dataset.theme);
+  } catch (_) {
+    if (owner === api && revision === themeRevision) {
+      themePersistence = "本机偏好未读取，当前选择仅本窗口生效。";
+      applyTheme(document.documentElement.dataset.theme);
+    }
+  }
 }
 // 静态资源加载即启用主题，不等待 bridge；主题不调用任何后端 API。
 initTheme();
@@ -107,8 +165,7 @@ el("settings-theme").addEventListener("click", cycleTheme);
 el("settings-theme-choice")?.addEventListener("change", event => {
   const theme = event.target.value;
   if (!themes.includes(theme)) return;
-  applyTheme(theme);
-  try { localStorage.setItem(themeStorageKey, theme); } catch (_) {}
+  saveTheme(theme);
 });
 
 function escapeHtml(s) {
@@ -339,6 +396,26 @@ function selectPanel(name, focus = false) {
 let currentRound = null;
 let roundSequence = 0;
 let authorizedFileName = "尚未选择";
+let localMainRound = null;
+function localMainMessage(question) {
+  currentRound = newFlowRound(question);
+  localMainRound = currentRound;
+  currentRound.state = '正在发送';
+  appendLog('user-message', question);
+  const node = document.createElement('p');node.className='log-line answer';node.setAttribute('role','status');
+  node.textContent='正在发送…';currentRound.localReply=node;
+  appendLog('answer',node.textContent,node);
+  const owner=currentRound;
+  setTimeout(()=>{if(localMainRound===owner)setMainReply('消息还在等待应用接收',owner);},1800);
+  return owner;
+}
+function setMainReply(text,round=currentRound) {
+  if(!round?.localReply?.isConnected)return false;
+  round.localReply.textContent=text;
+  const record=logRecords.concat(logQueue.slice(logQueueHead)).find(value=>value?.node===round.localReply);
+  if(record)record.text=text;
+  return true;
+}
 function newFlowRound(question = "") {
   return { number: ++roundSequence, question: String(question), file: authorizedFileName,
     state: question ? "指令已受理" : "窗口记录", expanded: false, node: null, trace: null };
@@ -918,10 +995,15 @@ function handleEvent(ev) {
         renderWarnings();
       }
       break;
-    case "status": setStatus(ev.level || "info", ev.text, ev.channel === 'chat' ? {channel:'chat',session_id:ev.session_id,turn_id:ev.turn_id} : null); appendLog(ev.level === "danger" ? "error" : ev.level === "warn" && !isTechnicalWarning(ev.text) ? "warn" : "status", ev.text); break;
+    case "status": {
+      const source=statusFeedback?.source;
+      const sameTurn=source?.channel==='chat'&&source.session_id===ev.session_id&&source.turn_id===ev.turn_id;
+      if(ev.channel==='chat'&&window.OfficeDaily?.completed?.(ev.session_id,ev.turn_id)&&statusFeedback&&!sameTurn)break;
+      setStatus(ev.level || "info", ev.text, ev.channel === 'chat' ? {channel:'chat',session_id:ev.session_id,turn_id:ev.turn_id} : null); appendLog(ev.level === "danger" ? "error" : ev.level === "warn" && !isTechnicalWarning(ev.text) ? "warn" : "status", ev.text); break;
+    }
     case "badge": setBadge(ev.level || "info", ev.label || ""); break;
     case "progress": setProgress(ev); appendLog("progress", "处理进度：" + JSON.stringify(ev)); break;
-    case "answer": appendLog("answer", ev.text); updateRoundState("模型已回复"); break;
+    case "answer": if(!setMainReply(ev.text))appendLog("answer", ev.text); updateRoundState("模型已回复"); break;
     case "plan":
       archiveFlowCard("plan-card");
       planVersion++;
@@ -1007,8 +1089,11 @@ function handleEvent(ev) {
       el("iter-fill").parentElement.hidden = true;
       invalidateClarification();
       window.OfficeImageGen?.retirePending("新任务已受理；旧生图操作失效，请重新规划。");
-      currentRound = newFlowRound(ev.text);
-      setStatus("info", "已收到，正在处理。写入前还会再问你一次。");
+      const echoed=localMainRound?.question===ev.text?localMainRound:null;
+      currentRound = echoed||newFlowRound(ev.text);
+      localMainRound=null;
+      if(echoed)setMainReply('我会先核对当前文档和处理范围，再按你的要求执行。');
+      setStatus("info", ev.channel==='chat'?"正在查看本轮问题。":"已收到，正在处理。写入前还会再问你一次。", ev.channel==='chat'?{channel:'chat',session_id:ev.session_id,turn_id:ev.turn_id}:null);
       setText(el("error-detail"), "当前任务尚未收到错误");
       setBadge("info", "已受理指令");
       el("checkpoint").textContent = "这次任务还没有进度记录；暂时不能接着跑。";
@@ -1024,7 +1109,7 @@ function handleEvent(ev) {
       taskWarning = ""; taskSafety = ""; // 旧任务提示仍保留在窗口记录中。
       renderWarnings();
       refreshButtons();
-      appendLog("user-message", ev.text);
+      if(!echoed)appendLog("user-message", ev.text);
       refreshHistory();
       break;
     case "busy":
@@ -1708,13 +1793,17 @@ async function ask() {
   }
   window.dispatchEvent(new Event("officediagram:invalidate"));
   const q = el("prompt").value;
+  const local=selector?.mode()==='agent'?localMainMessage(q):null;
+  if(local)await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   const r = window.OfficeDaily ? await window.OfficeDaily.send(q) : await api.ask(q);
   if (r?.reason === 'stale') return;
   if (notAuthenticated(r)) return;
   if (r && !r.ok) {
+    if(local){localMainRound=null;setMainReply(r.error||'请求未受理，原话已保留；请核对当前文件和模型。',local);}
     if (r.reason === "no_file") setStatus("warn", "请先点「选择文档」打开一个文件。");
     else if (r.reason === "busy") setStatus("warn", "上一个任务还在处理，等它结束再发。");
     else if (r.reason === "empty") setStatus("warn", "请先写下你要做什么。");
+    else if (r.reason === 'too_long') setStatus('warn', '输入有 '+r.characters+' 字符，最多 '+r.limit+' 字符；请缩短后再发，原文保留。');
     else if (r.reason === 'chat_context_changed') setStatus('warn', '发送范围已改变，请重新预览；输入保留，没有调用模型。');
     else if (r.reason === 'chat_submission_uncertain') setStatus('warn', '未确认请求是否已受理；输入保留，请先核对会话记录，避免重复发送。');
     else if (r.reason === 'model_context_budget') setStatus('warn', '当前输入超出上下文预算；输入已保留，没有请求模型。请缩短输入或核对上下文配置后重新预览。', 'chat-budget');
@@ -1994,6 +2083,7 @@ async function connectAuthenticated() {
     }
     if(mine!==connectionEpoch||!window.OfficeAuth.isAuthenticated())return;
     api=candidateApi;floatingEventOwner=owner;
+    void restoreTheme();
     if (floatingEventOwner && window.OfficeFloating) window.OfficeFloating.active = true;
     connected = Boolean(api);
     window.dispatchEvent(new Event('officemodels:host-ready'));

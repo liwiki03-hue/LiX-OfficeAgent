@@ -79,10 +79,11 @@
     const signature=String(busy)+':'+JSON.stringify(ai);
     if (!panel || !ai || aiSignature === signature) return;
     aiSignature = signature; panel.replaceChildren();
-    const reference = ai.reference;
+    const reference = ai.read_reference||ai.reference;
     make('p',reference ? '引用：'+reference.item_name+' · '+reference.location : '选择内容后点击“引用给AI”。',panel);
     if (ai.running) make('p','正在生成建议；追加要求将在下一安全步骤处理。',panel).setAttribute('role','status');
     if (ai.error) make('p',ai.error,panel).setAttribute('role','alert');
+    if(!window.OfficeConversation)for(const answer of ai.answers||[])make('p',answer.text,panel);
     if (!ai.running && reference && ai.requirements?.length) button('处理已接收要求',panel,()=>guarded(async()=>{
       status(await call('canvas_ai_resume',host.document.id,state.draft_revision,reference.id,ai.session_id,ai.instruction_revision));
     }),'canvas-ai-resume');
@@ -130,20 +131,20 @@
       automaticAttempts.add(key);automaticSaving=null;await guarded(save);
     }
   }
-  async function referenceAI() {
+  async function referenceAI(editing=false) {
     checkField();if(!selected)return;
     if(view.kind==='xlsx'&&selectedRange().count>1){
-      const range=selectedRange();status(await call('canvas_ai_reference_range',host.document.id,state.draft_revision,view.item_id,range.start,range.end,[]));
+      const range=selectedRange();status(await call(editing?'canvas_ai_reference_range':'canvas_ai_read_range',host.document.id,state.draft_revision,view.item_id,range.start,range.end,...(editing?[[]]:[])));
       $('floating-root').classList.add('office-ai-open');$('canvas-toggle-ai').setAttribute('aria-expanded','true');$('floating-input').focus();notice('已引用 '+range.label+'；公式、数值和保护格默认仅供分析。');return;
     }
     const numeric=view.kind==='xlsx'&&selected.type==='n';
     const select=async()=>{
-      status(await call('canvas_ai_reference',host.document.id,state.draft_revision,view.item_id,selected.id,numeric));
+      status(await call(editing?'canvas_ai_reference':'canvas_ai_read_reference',host.document.id,state.draft_revision,view.item_id,selected.id,...(editing?[numeric]:[])));
       $('floating-root').classList.add('office-ai-open');$('canvas-toggle-ai').setAttribute('aria-expanded','true');
       $('floating-input').focus();notice('已引用当前草稿；填写要求后主动发送，不会自动调用模型。');
     };
-    if(numeric)dialog('确认数值修改范围',node=>{make('p','仅允许修改 '+selected.id+' 的数值，按当前编辑方式处理；原文件保留。',node);button('取消',node,()=>node.close());button('允许本格数值建议',node,async()=>{node.close();await select();});});
-    else await select();
+    if(numeric&&editing)return new Promise(resolve=>{let confirmed=false;const node=dialog('确认数值修改范围',node=>{make('p','仅允许修改 '+selected.id+' 的数值，按当前编辑方式处理；原文件保留。',node);button('取消',node,()=>node.close());button('允许本格数值建议',node,async()=>{confirmed=true;await select();node.close();resolve(true);});});node.addEventListener('close',()=>{if(!confirmed)resolve(false);});});
+    await select();return true;
   }
   function numericRange(reference){
     const doc=host.document.id,revision=state.draft_revision;
@@ -158,7 +159,7 @@
   }
   async function submit(clientId,text) {
     checkField();
-    if(['edit','save_copy'].includes(host.access?.level||'save_copy')&&selected&&(!state?.ai?.reference||state.ai.reference.draft_revision!==state.draft_revision)&&(selected.type!=='n'||view.kind==='xlsx'&&selectedRange().count>1))await referenceAI();
+    if(['edit','save_copy'].includes(host.access?.level||'save_copy')&&selected&&(!state?.ai?.reference||state.ai.reference.draft_revision!==state.draft_revision||state.ai.reference.read_only))if(!await referenceAI(true))throw Error('未授权修改数值；原话保留，可直接提问解释。');
     const reference=state?.ai?.reference;
     if(!reference||reference.draft_revision!==state.draft_revision)throw Error('请先选择当前内容并点击“引用给AI”；输入已保留。');
     const result=await call('canvas_ai_submit',host.document.id,state.draft_revision,reference.id,state.ai.session_id,clientId,text);
@@ -351,7 +352,7 @@
       node.style.margin='0';node.style.inset='auto';node.style.position='fixed';node.style.width='220px';
       node.style.left=Math.max(8,Math.min(event.clientX,innerWidth-236))+'px';node.style.top=Math.max(8,Math.min(event.clientY,innerHeight-260))+'px';
       button('复制',node,()=>{node.close();return copyRange(true);});
-      button('引用给 AI',node,()=>{node.close();return referenceAI();});
+      button('引用给 AI',node,()=>{node.close();return referenceAI(true);});
       button('清除选择',node,()=>{rangeAnchor=rangeFocus=null;selected=null;surface.querySelectorAll('[aria-selected]').forEach(item=>item.setAttribute('aria-selected','false'));status({});node.close();});
       button('关闭',node,()=>node.close());
     });
@@ -609,7 +610,9 @@
     }
     make('p','',parent,'canvas-slide-status').setAttribute('role','status');
     const list = make('section', '', parent); list.className = 'canvas-runs'; make('h3','本页文字片段 · 点击编辑',list);
-    for (const run of view.runs) { const node = button((run.location?.startsWith('表格') ? run.location+' · ' : '')+(run.text || '（空文字）'),list,()=>openSlideEditor([run])); node.dataset.target = run.id; node.setAttribute('aria-label','编辑片段 '+run.id+' '+run.text);node.title=run.location || '普通文字'; }
+    for (const run of view.runs) { const node = button((run.location?.startsWith('表格') ? run.location+' · ' : '')+(run.text || '（空文字）'),list,()=>openSlideEditor([run])); node.dataset.target = run.id; node.setAttribute('aria-label','编辑片段 '+run.id+' '+run.text);node.title=run.location || '普通文字';
+      button('引用片段 '+run.id,list,async()=>{setSelected({...run,editable:true});await referenceAI(false);},null,'quote');
+    }
     if (!view.runs.length) make('p','本页没有可编辑的普通文字片段',list);
     paintSlidePreview();
   }
@@ -744,7 +747,7 @@
     input.oninput=()=>{pendingField=true;status({});};kind.onchange=()=>{pendingField=true;input.readOnly=selected?.editable===false&&!(selected?.formula_editable&&kind.value==='formula');status({});if(kind.value==='formula')notice('支持同表受限数值/文本函数；区域小数用NUMBERVALUE明确分隔符，空白不按0计算。');};
     input.onkeydown=event=>{if(event.isComposing||event.keyCode===229)return;if(event.key==='Escape'){event.preventDefault();pendingField=false;if(selected)setSelected(selected);if(view.kind==='pptx')document.querySelector('dialog[data-slide-editor]')?.close();}if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();guarded(()=>apply(view.kind==='xlsx'?kind.value:'text',input.value)).catch(error=>notice(error.message));}};
     button('采用编辑',bar,()=>guarded(()=>apply(view.kind==='xlsx'?kind.value:'text',input.value)),'canvas-apply','check');
-    button('引用给AI',bar,()=>guarded(referenceAI),'canvas-reference','quote');
+    button('引用给AI',bar,()=>guarded(()=>referenceAI(true)),'canvas-reference','quote');
     button('加粗',bar,()=>guarded(async()=>{checkField();await apply('format',{bold:$('canvas-bold').getAttribute('aria-pressed')!=='true'});}),'canvas-bold','bold');
     button('斜体',bar,()=>guarded(async()=>{checkField();await apply('format',{italic:$('canvas-italic').getAttribute('aria-pressed')!=='true'});}),'canvas-italic','italic');
     const size=make('select','',bar,'canvas-size');size.setAttribute('aria-label','字号');for(const value of [8,10,11,12,14,16,18,20,24,28,32,36,48,60,72]){const opt=make('option',String(value),size);opt.value=value;}size.onchange=()=>guarded(async()=>{checkField();await apply('format',{size:Number(size.value)});}).catch(error=>notice(error.message));
@@ -804,7 +807,12 @@
     if(state.publishing||state.previewing||busy){notice('请等待当前步骤结束');return false;}
     return new Promise(resolve=>dialog('处理未保存编辑',node=>{make('p','继续切换会放弃当前内存编辑；主动保存过的本机草稿保留，可重新打开准确原文件后恢复。',node);let answered=false;button('返回保存副本',node,()=>{answered=true;node.close();resolve(false);});button('放弃并继续',node,async()=>{await call('canvas_discard',host.document.id,state.draft_revision,true);pendingField=false;answered=true;node.close();resolve(true);});node.addEventListener('close',()=>{if(!answered)resolve(false);});}));
   }
-  window.OfficeNative={active,update,beforeSwitch,close,submit};
+  async function messageContext(text){
+    checkField();
+    if(!/^(?:进度|到哪|停止|停一下)/.test(text)&&selected)await referenceAI(false);
+    return {revision:state.draft_revision,reference:(state?.ai?.read_reference||state?.ai?.reference)?.id||null};
+  }
+  window.OfficeNative={active,update,beforeSwitch,close,submit,messageContext};
   window.addEventListener('officeauth:unauthenticated',close);
   window.addEventListener('beforeunload',event=>{if(active()&&(state?.dirty||pendingField)){event.preventDefault();event.returnValue='';}});
 })();

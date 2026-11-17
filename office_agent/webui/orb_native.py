@@ -55,7 +55,7 @@ def orb_points(count=140):
 class NativeOrb:
     def __init__(self, window, *, dropped, presentation=None, can_exit=None, choose=None,
                  settings=None, recent=None, position=None, hotkey='', wake=None, warning=None,
-                 observation=None, tray_label='LiX 文档助手'):
+                 observation=None, tray_label='LiX 文档助手', preferences=None):
         self.window = window
         self.dropped = dropped
         self.presentation = presentation or (lambda value: None)
@@ -76,7 +76,7 @@ class NativeOrb:
         self.exiting = False
         self.hidden = False
         from .window_preferences import WindowPreferences
-        self._preferences = WindowPreferences()
+        self._preferences = preferences if preferences is not None else WindowPreferences()
         self._bounds = self._preferences.read()
         self.topmost = self._bounds.get('topmost', False)
         self._last_panel_mode = 'compact'

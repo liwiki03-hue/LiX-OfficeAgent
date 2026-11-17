@@ -290,6 +290,18 @@
     const prior=revision;
     applying=value.token;
     try {
+      if(reference.kind==='append'){
+        const e=editor(),paragraph=e.state.doc.nodeAt(row.position),text=value.proposal.new.trim();
+        if(e.state.doc.resolve(row.position).depth!==0||paragraph?.type.name!=='paragraph'||!text||text.length>6000)throw Error('追加位置或内容无效，未修改正文');
+        const lines=text.split(/\r?\n+/).filter(line=>line.trim());
+        if(lines.length>20)throw Error('一次追加最多20段，请缩小范围');
+        const nodes=lines.map(line=>e.state.schema.nodes.paragraph.create(
+          {sdBlockId:crypto.randomUUID(),paragraphProperties:bodyStyle?{styleId:bodyStyle}:null},e.state.schema.text(line)));
+        e.dispatch(e.state.tr.insert(e.state.doc.content.size,nodes).scrollIntoView());
+        if(revision!==prior+1)throw Error('追加结果需要核对；保留草稿，未写磁盘');
+        const last=nodes[nodes.length-1];
+        return {revision,prior_revision:prior,reference:{node_id:last.attrs.sdBlockId,start:0,end:paragraphText(last).length}};
+      }
       const result=editor().doc.replace({target:{kind:'selection',start:{kind:'text',blockId:row.id,offset:reference.start},end:{kind:'text',blockId:row.id,offset:reference.end}},text:value.proposal.new});
       if (result?.success===false || revision!==prior+1) throw Error('采用结果需要核对；保留当前草稿，未写磁盘');
       return {revision,prior_revision:prior};

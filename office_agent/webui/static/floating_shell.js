@@ -100,7 +100,7 @@
     for (const id of ['simple-model-menu', 'simple-model-state']) {
       const node = $(id); if (node) (on ? modelHome : $('floating-models')).append(node);
     }
-    if (history) window.OfficeWorkspace?.open('history');
+    if (history) { window.OfficeWorkspace?.open('history'); $('simple-history-documents')?.click(); ensureOutputRecords(); if(snapshot)renderOutputs(snapshot); }
     if (returningToHistory && typeof refreshHistory === 'function' && !historyLoading && !historySelectingFile) refreshHistory();
     if (!on && $('model-mode').value !== 'agent') {
       $('model-mode').value = 'agent'; $('model-mode').dispatchEvent(new Event('change'));
@@ -123,6 +123,7 @@
     if(typeof receipt.id!=='string'||!/^[a-f0-9]{64}$/.test(receipt.body_sha256)||!Number.isInteger(receipt.characters))return;
     const key=[receipt.id,receipt.body_sha256,receipt.session_id,receipt.draft_revision,receipt.instruction_revision].join(':');
     if(seenSkills.has(key))return;seenSkills.add(key);if(seenSkills.size>64)seenSkills.delete(seenSkills.values().next().value);
+    if(state.conversation?.turns?.length)return;
     const entry=addEntry('已读取参考：'+(receipt.display_name||receipt.id));entry.dataset.skillRead=receipt.id;
     const detail=make('details','',entry);make('summary','参考读取详情',detail);
     make('p','仅代表宿主准备参考；不代表已发送、已执行或质量通过。',detail);
@@ -220,10 +221,42 @@
     }
   }
   function renderOutputs(state) {
-    const signature = JSON.stringify([state.outputs, state.revision, state.document?.version, state.paged?.editable]);
+    const pane = $('floating-outputs'); if(!pane)return;
+    const signature = JSON.stringify([state.outputs, state.revision, state.document?.version, state.paged?.editable,state.paged?.proposals,state.conversation]);
     if (signature === outputSignature) return;
     outputSignature = signature;
-    const pane = $('floating-outputs'); pane.replaceChildren();
+    pane.replaceChildren();
+    const records=$('floating-turn-records');
+    if(records){
+      records.replaceChildren();
+      for(const turn of state.conversation?.turns||[]){
+        const entry=make('article','',records);entry.className='floating-history-turn';entry.dataset.recordTurn=turn.id;
+        make('h4',turn.question,entry);make('p',turn.undo?.message||turn.text||turn.answer,entry);
+        if(turn.model)make('p','模型：'+turn.model.model_id+' · '+(turn.model.connection_name||turn.model.connection_id),entry);
+        const details=make('details','',entry);make('summary','过程与依据',details);
+        for(const step of turn.steps||[])make('p',step.text,details);
+        for(const change of turn.changes||[]){make('p','原文：'+change.before,details);make('p','修改：'+change.after,details);}
+        for(const reference of turn.references||[])make('p',[reference.scope,reference.location].filter(Boolean).join(' · '),details);
+        if(turn.undo?.detail)make('p',turn.undo.detail,details);
+        for(const receipt of turn.skills||[]){
+          const skill=make('details','',entry);skill.dataset.skillRead=receipt.id;
+          make('summary','参考：'+receipt.display_name,skill);
+          make('p','仅代表宿主准备参考；不代表已发送、已执行或质量通过。',skill);
+          make('p',receipt.id+' · '+receipt.characters+' 字符 · SHA256 '+receipt.body_sha256,skill);
+        }
+      }
+    }
+    const proposals=$('floating-proposal-records');
+    if(proposals){
+      proposals.replaceChildren();
+      for(const proposal of state.paged?.proposals||[]){
+        const entry=make('article','',proposals);entry.className='floating-history-turn';
+        make('h4',proposal.status==='adopted'?'已采用的修改建议':'修改建议记录',entry);
+        if(proposal.model)make('p','模型：'+proposal.model.model_id+' · '+(proposal.model.connection_name||proposal.model.connection_id),entry);
+        for(const edit of proposal.edits||[proposal]){make('p','原文：'+edit.old,entry);make('p','修改：'+edit.new,entry);}
+        for(const change of proposal.allowed_changes||[])make('p',change.before+' → '+change.after,entry);
+      }
+    }
     for (const row of state.outputs) {
       const card = make('article', '', pane); card.className = 'floating-result';
       const simplified=row.kind==='paged_editable_copy';
@@ -263,7 +296,7 @@
     $('floating-composer').hidden = false;
     $('floating-drop').hidden = !state.draft_drop_pending&&(!state.drop_pending || !['failed','blocked','cancelled'].includes(phase));
     $('floating-drop').textContent=state.draft_drop_pending?'先处理草稿，再打开拖入的文件…':'重试本地打开此文件';
-    $('floating-send').disabled = submitting || !doc || !doc.ready && phase !== 'parsing';
+    $('floating-send').disabled = submitting || !doc || (!doc.ready && phase !== 'parsing');
     $('floating-send').textContent = state.busy ? '追加要求' : phase === 'parsing' ? '保存要求，解析后处理' : '发送要求';
     $('floating-send').setAttribute('aria-label', $('floating-send').textContent);
     $('floating-send').title = $('floating-send').textContent;
@@ -297,44 +330,53 @@
     $('floating-open-trace').textContent = (state.open_trace || []).filter(row => row.open_request_id === state.open_request?.id).map(row => row.stage + ' · ' + row.elapsed_ms + ' ms · ' + row.code).join('\n');
     const identity = doc ? doc.id + ':' + doc.version : '';
     if (viewVersion !== identity) { viewVersion = identity; $('floating-document').replaceChildren(); }
-    renderPlans(state); renderOutputs(state);
+    renderPlans(state); if($('floating-root').hidden)renderOutputs(state);
+  }
+  function ensureOutputRecords(){
+    if($('floating-outputs'))return $('floating-outputs');
+    const parent=$('simple-document-records')||$('history-view');if(!parent)return null;
+    const section=make('section','',parent,'floating-output-records');section.setAttribute('aria-label','当前文档结果记录');
+    make('h3','本文件记录',section);make('div','',section,'floating-turn-records');make('div','',section,'floating-proposal-records');return make('div','',section,'floating-outputs');
   }
   async function refresh(automatic=false) {
     if (!window.OfficeFloating.active || polling || !window.OfficeAuth?.isAuthenticated()) return;
-    const interval=document.hidden||['orb','hidden'].includes(snapshot?.presentation)?5000:snapshot?.busy?350:1500;
+    const interval=document.hidden||['orb','hidden'].includes(snapshot?.presentation)?5000:snapshot?.busy||window.OfficeConversation?.pending()?350:1500;
     if (automatic && Date.now() - lastPoll < interval) return;
     lastPoll = Date.now();
     polling = true; const mine = epoch;
     try {
       const state = await api().floating_snapshot(cursor);
       if (mine !== epoch || !state?.ok) return;
+      window.OfficeConversation?.connection(true);
       if(snapshot?.epoch===state.epoch&&snapshot.access?.serial>state.access?.serial)state.access=snapshot.access;
-      if (snapshot && snapshot.epoch !== state.epoch) { $('floating-timeline').replaceChildren(); adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();accessDialog?.close();feedback(''); }
+      if (snapshot && snapshot.epoch !== state.epoch) { if(snapshot.conversation?.context_id!==state.conversation?.context_id){$('floating-timeline').replaceChildren();window.OfficeConversation?.reset();} adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();accessDialog?.close();feedback(''); }
       const switched = !snapshot || snapshot.document?.id !== state.document?.id || snapshot.document?.version !== state.document?.version;
       const availabilityChanged = snapshot?.document?.ready !== state.document?.ready;
       snapshot = state;
+      window.OfficeConversation?.restore(state.conversation);
       if(switched)seenSkills.clear();
       if (state.gap) {
         feedback('进展记录已压缩，当前要求、计划与产物已从宿主快照恢复。');
-        for (const message of state.messages) if (!seenMessages.has(message.id)) { addEntry(message.text, 'user'); seenMessages.add(message.id); }
+        for (const message of state.messages) if (!seenMessages.has(message.id)) { if(!window.OfficeConversation?.has(message.client_id))addEntry(message.text, 'user'); seenMessages.add(message.id); }
       }
       for (const envelope of state.events) {
         if (envelope.event_seq <= cursor) continue;
         const event = envelope.event;
         if (typeof handleEvent === 'function') handleEvent(event);
-        if (event.type === 'instruction_received' && !seenMessages.has(event.payload.id)) { if ($('floating-status').dataset.feedbackKind === 'stop_requested') feedback(''); addEntry(event.payload.text, 'user'); seenMessages.add(event.payload.id); }
+        if (event.type === 'instruction_received' && !seenMessages.has(event.payload.id)) { if ($('floating-status').dataset.feedbackKind === 'stop_requested') feedback(''); if(!window.OfficeConversation?.has(event.payload.client_id))addEntry(event.payload.text, 'user'); seenMessages.add(event.payload.id); }
         else if (event.type === 'instruction_applied') $('floating-revisions').textContent = '已将要求版本 ' + event.payload.revision + ' 纳入模型请求';
-        else if (event.type === 'requirement_changed') addEntry('要求 '+event.payload.target_revision+(event.payload.action==='cancel'?'已取消后续处理；已采用草稿和已生成副本保留。':'已修改；请核对当前引用后主动处理。'));
-        else if (event.type === 'stale_action_blocked') addEntry('要求或草稿已更新，旧响应或工具结果已作废；未沿用旧计划。');
+        else if (event.type === 'requirement_changed'&&!state.conversation?.turns?.length) addEntry('要求 '+event.payload.target_revision+(event.payload.action==='cancel'?'已取消后续处理；已采用草稿和已生成副本保留。':'已修改；请核对当前引用后主动处理。'));
+        else if (event.type === 'stale_action_blocked'&&!state.conversation?.turns?.length) addEntry('要求或草稿已更新，旧响应或工具结果已作废；未沿用旧计划。');
         else if (event.type === 'document_ready') showView(event.payload.view);
-        else if (event.type === 'answer') addEntry(event.text);
-        else if (event.type === 'draft_answer') addEntry(event.payload.text);
+        else if (event.type === 'answer'&&!state.conversation?.turns?.length) addEntry(event.text);
+        else if (['draft_answer','canvas_ai_answer'].includes(event.type)&&!state.conversation?.turns?.length) addEntry(event.payload.text);
+        else if (event.type === 'draft_copy_continued'&&!state.conversation?.turns?.length) feedback(event.payload.text);
         else if (event.type === 'skill_loaded') showSkillRead(event.payload,state);
         else if (['draft_model_error','draft_publish_failed','draft_switch_requested'].includes(event.type)) feedback(event.payload.text);
-        else if (event.type === 'draft_published') addEntry((event.payload.receipt.kind==='paged_editable_copy'?'简化文字副本已生成：':'草稿 '+event.payload.draft_revision+' 的副本已验证：')+String(event.payload.receipt.output).split(/[\\/]/).pop());
+        else if (event.type === 'draft_published'&&!state.conversation?.turns?.length) addEntry((event.payload.receipt.kind==='paged_editable_copy'?'简化文字副本已生成：':'草稿 '+event.payload.draft_revision+' 的副本已验证：')+String(event.payload.receipt.output).split(/[\\/]/).pop());
         else if (event.type === 'orb_position') { try { localStorage.setItem('office-agent.orb-position', JSON.stringify(event.payload)); } catch (_) {} }
         else if (['native_warning', 'admission_failed', 'stop_requested', 'read_denied', 'needs_clarification', 'new_round','instruction_waiting'].includes(event.type)) { feedback(event.payload.text); $('floating-status').dataset.feedbackKind = event.type; }
-        else if (event.type === 'log' && ['safety', 'error', 'warn'].includes(event.tag)) addEntry(event.text);
+        else if (event.type === 'log' && ['safety', 'error', 'warn'].includes(event.tag)&&!state.conversation?.turns?.length) addEntry(event.text);
       }
       cursor = state.cursor; render(state);
       window.OfficePaged?.update(state).catch(error => feedback(error.message));
@@ -345,22 +387,34 @@
         $('floating-input').value = state.queued_for_next_version.join('\n');
         feedback('写副本期间收到的补充已保留到输入框；重新读取后核对并主动发送。');
       }
-    } finally { polling = false; }
+    } catch(error) { window.OfficeConversation?.connection(false); throw error; } finally { polling = false; }
   }
-  async function submit() {
-    const input = $('floating-input'), text = input.value.trim();
-    if (submitting || !text || !snapshot?.document || !snapshot.document.ready && snapshot.open_request?.phase !== 'parsing') return;
+  async function submit(recovery=null) {
+    const restored=recovery&&typeof recovery.id==='string'&&typeof recovery.text==='string'?recovery:null;
+    const input = $('floating-input'), text = restored?restored.text:input.value.trim();
+    if (submitting || !text || !snapshot?.document) return;
+    if(restored&&(restored.document!==snapshot.document.id||restored.version!==snapshot.document.version)){feedback('文档已改变，旧消息保留；没有发送当前草稿或重复执行。');return;}
     if (snapshot.document.ready && !window.OfficePaged?.active() && !window.OfficeNative?.active() && !window.OfficeModelSelector?.readyForRequest()) { feedback('请先在输入区选择有效的文档 Agent 模型；要求已保留。'); return; }
-    if (!pending || pending.text !== text || pending.session !== snapshot.session_id || pending.document !== snapshot.document.id) {
+    if (!restored&&(!pending || pending.text !== text || pending.session !== snapshot.session_id || pending.document !== snapshot.document.id)) {
       const bytes = crypto.getRandomValues(new Uint8Array(16));
       pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null};
     }
-    const sending = pending, ownEpoch=epoch; submitting = true; render(snapshot);
+    const sending = restored||pending, ownEpoch=epoch; submitting = true; render(snapshot);
+    window.OfficeConversation?.echo(sending);
     let result;
     try {
-      result = window.OfficeNative?.active() ? await window.OfficeNative.submit(sending.id,sending.text) : window.OfficePaged?.active() ? await window.OfficePaged.submit(sending.id,sending.text) : await call('floating_submit', sending.session, sending.id, sending.text, sending.open, sending.document, sending.version);
-    } catch (error) { if(ownEpoch===epoch&&snapshot?.document?.id===sending.document)feedback(error.message); }
-    if (result?.ok && ownEpoch===epoch && snapshot?.document?.id===sending.document) { if (input.value.trim() === text) input.value = ''; if(pending===sending)pending = null; }
+      await window.OfficeConversation?.painted();
+      const context=window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null};
+      const receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,context.revision,context.reference):null;
+      if(receipt&&!receipt.ok)throw Error(receipt.error||'消息未受理；原话保留。');
+      if(receipt?.turn)window.OfficeConversation?.merge(receipt.turn);
+      if(receipt&&!receipt.handled)await window.OfficeConversation?.painted();
+      const editText=receipt?.edit_text||sending.text;
+      result=receipt?.handled?receipt:window.OfficeNative?.active() ? await window.OfficeNative.submit(sending.id,editText) : window.OfficePaged?.active() ? await window.OfficePaged.submit(sending.id,editText) : await call('floating_submit', sending.session, sending.id, editText, sending.open, sending.document, sending.version);
+      if(result&&!result.ok)throw Error(result.error||'消息未受理；原话保留。');
+      await refresh();
+    } catch (error) { if(ownEpoch===epoch&&snapshot?.document?.id===sending.document){feedback(error.message);if(window.OfficePaged?.active())window.OfficePaged.reportError(error.message);window.OfficeConversation?.failed(sending.id,error.message,!result);} }
+    if (result?.ok && ownEpoch===epoch && snapshot?.document?.id===sending.document) { if (input.value.trim() === text) input.value = ''; if(pending?.id===sending.id)pending = null; }
     submitting = false; if (snapshot) render(snapshot);
   }
   async function restoreDrafts() {
@@ -481,7 +535,7 @@
     const scroll = make('div', '', conversation, 'floating-scroll');
     const timeline = make('div', '', scroll, 'floating-timeline'); timeline.setAttribute('aria-label', '要求与处理进展');
     const latest = button('有新进展 · 回到最新', conversation, () => { scroll.scrollTop = scroll.scrollHeight; latest.hidden = true; }, 'floating-latest'); latest.hidden = true;
-    make('div', '', scroll, 'floating-plans'); make('div', '', scroll, 'floating-outputs');
+    make('div', '', scroll, 'floating-plans');
     make('p', '就绪', root, 'floating-progress').setAttribute('role', 'status');
     const taskDetails = make('details', '', root, 'floating-task-details'); make('summary', '保护与任务版本', taskDetails);
     make('p', '', taskDetails, 'floating-revisions');
@@ -564,8 +618,25 @@
     secondary(false);await refresh();return true;
   }
   window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput};
+  window.OfficeConversation?.configure({open:async id=>{
+    let row=snapshot?.outputs.find(value=>value.id===id&&!value.undone);
+    if(!row){const result=await api().conversation_output(id,snapshot.document.id,snapshot.document.version);if(!result?.ok){feedback(result?.error||'结果记录已改变，请核对当前文件与历史。');return;}row=result.output;}
+    await openOutput(row);
+  },undo:async id=>{
+    try{
+      if(!window.OfficePaged?.active()||typeof window.OfficePaged.undoRound!=='function')throw Error('当前编辑器没有可靠的回合恢复点');
+      await window.OfficePaged.undoRound(id);await refresh();
+    }catch(error){await refresh();window.OfficeConversation?.undoError(id,window.OfficeConversation?.undoMessage?.(id)||'撤销尚未完成，当前内容保留。请从历史记录核对结果。');}
+  },retry:async(id,local)=>{
+    if(local){const message=window.OfficeConversation?.message(id);if(!message){feedback('原消息回执正在核对，没有发送当前草稿。');await refresh();return;}await submit(message);return;}
+    const result=await api().conversation_retry(id,snapshot.document.id,snapshot.document.version);
+    if(!result?.ok){feedback(result?.error||'恢复未完成，已有内容保留。');return;}
+    if(result.output_id)await call('floating_select_output',result.output_id,true,result.access_id);
+    await refresh();
+  }});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh().catch(()=>{});});
   window.addEventListener('pywebviewready', connect);
+  window.addEventListener('officeworkspace:view',event=>{if(event.detail?.screen==='history'){ensureOutputRecords();if(snapshot)renderOutputs(snapshot);}});
   window.addEventListener('officeauth:authenticated', connect);
   window.addEventListener('officeauth:unauthenticated', () => { epoch++; snapshot = null; cursor = 0; pending = null; adopted.clear(); seenMessages.clear(); seenSkills.clear(); if (timer) clearInterval(timer); timer = null; });
   if (window.pywebview?.api) connect();

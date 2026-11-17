@@ -9,6 +9,7 @@ import pytest
 
 from office_agent.webui.bridge import WebviewApp
 from office_agent.webui.floating_session import FloatingApi
+from office_agent.webui.window_preferences import WindowPreferences
 from tests.test_model_connections import connection, payload, save
 from tests.test_office_workflow_browser import make_document, wait_for
 from tests.test_paged_browser import engine_frame, serve_static
@@ -133,6 +134,12 @@ def test_shared_style_two_themes_migration_and_actual_editor(tmp_path, monkeypat
                 assert api._floating.paged.revision==0 and not api._floating.outputs
                 assert source.read_bytes()==original
                 if variant=='after':
+                    assert api.floating_theme()['theme']=='light'
+                    page.evaluate("localStorage.setItem('office-agent.theme','highcontrast')")
+                    page.reload()
+                    page.wait_for_function("document.documentElement.dataset.theme==='light'")
+                    assert page.evaluate("localStorage.getItem('office-agent.theme')")=='light'
+                    api._ui_preferences = WindowPreferences(settings_root/'fresh-theme-migration')
                     page.evaluate("localStorage.setItem('office-agent.theme','highcontrast')")
                     page.reload()
                     page.wait_for_function("document.documentElement.dataset.theme==='dark'")

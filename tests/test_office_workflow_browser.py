@@ -132,9 +132,17 @@ def test_lix_workflow_install_real_editor_suggestion_and_verified_copy(tmp_path,
             page.locator('#floating-input').fill('技术报告润色：精简当前引用段落，保留数字、单位、引文和未验证条件，不改标题、表格与其他文字。')
             page.locator('#floating-send').click()
             wait_for(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()),'automatic adoption',25)
+            page.evaluate('OfficeFloating.history()')
             page.wait_for_selector('[data-skill-read="user:lix-report-polish"]')
             assert page.locator('[data-skill-read="user:lix-report-polish"]').count()==1
             assert '仅代表宿主准备参考' in page.locator('[data-skill-read="user:lix-report-polish"]').text_content()
+            page.evaluate('OfficeFloating.refresh()')
+            page.wait_for_selector('[data-skill-read="user:lix-report-polish"]')
+            assert page.locator('[data-skill-read="user:lix-report-polish"]').count()==1
+            assert next(iter(api._floating.conversation.turns.values()))['skills'][0]['id']=='user:lix-report-polish'
+            page.locator('#floating-return').click()
+            assert page.locator('#floating-timeline [data-skill-read]').count()==0
+            assert page.locator('#floating-timeline .conversation-turn').count()==1
             page.wait_for_function('!document.getElementById("paged-feedback").textContent.includes("将在下一安全步骤处理")')
             assert model.calls==2 and candidate()['body'] in model_messages[0][0]['content']
             assert source.read_bytes()==original and not list(source.parent.glob('*.agent-*.docx'))

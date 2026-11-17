@@ -677,6 +677,12 @@ class OfficeCanvas:
 
 
 class OfficeCanvasApi:
+    def canvas_ai_read_reference(self, document_id, revision, item_id, target):
+        return self._floating_call(self._floating.canvas.ai.select, document_id, revision, item_id, target, False, True)
+
+    def canvas_ai_read_range(self, document_id, revision, item_id, start, end):
+        return self._floating_call(self._floating.canvas.ai.select_range, document_id, revision, item_id, start, end, [], True)
+
     def canvas_prepare_panes(self, document_id, revision, item_id, rows, cols):
         return self._floating_call(self._floating.canvas.prepare_panes, document_id, revision, item_id, rows, cols)
 

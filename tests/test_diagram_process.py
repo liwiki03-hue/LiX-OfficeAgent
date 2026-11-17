@@ -170,7 +170,23 @@ def test_environment_excludes_secrets_and_python_path(monkeypatch):
     env = dp._worker_environment()
     assert env == {'SystemRoot': 'C:\\Windows', 'temp': 'fixture-temp',
                    'PYTHONNET_RUNTIME': 'netfx', 'OFFICE_WEBVIEW_GUI': 'edgechromium',
-                   'PYTHONUTF8': '1'}
+                   'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows owned worker containment')
+def test_windows_worker_keeps_import_source_without_bytecode_writes(tmp_path):
+    module = tmp_path / 'offline_bytecode_probe.py'
+    source = 'value = 125\n'
+    module.write_text(source, 'utf-8')
+    command = (sys.executable, '-c',
+               'import sys; sys.path.insert(0, ' + repr(str(tmp_path)) + '); '
+               'import offline_bytecode_probe; '
+               'assert offline_bytecode_probe.value == 125; '
+               'assert sys.dont_write_bytecode')
+    result = dp._run_owned(command, timeout_ms=20000)
+    assert result.exit_code == 0 and result.empty_confirmed
+    assert module.read_text('utf-8') == source
+    assert not (tmp_path / '__pycache__').exists()
 
 
 def windows_fakes(monkeypatch, failure=None):

@@ -7,6 +7,7 @@ import socket
 import ssl
 import time
 import sys
+import uuid
 from urllib.error import HTTPError, URLError
 
 if not __package__:
@@ -100,6 +101,38 @@ def extract(archive, destination):
             raise ValueError('Renderer extraction process cleanup could not be confirmed')
 
 
+def read_receipt(path, binary, spec):
+    path = checked(path)
+    if not path.is_file() or path.stat().st_size > 65536:
+        raise PreparationError('runtime_receipt_invalid')
+    with path.open('rb') as stream:
+        data = stream.read(65537)
+    if len(data) > 65536:
+        raise PreparationError('runtime_receipt_invalid')
+    try:
+        saved = json.loads(data)
+    except (ValueError, UnicodeError):
+        raise PreparationError('runtime_receipt_invalid') from None
+    if (not isinstance(saved, dict) or saved.get('archive_sha256') != spec['sha256']
+            or not checked(binary).is_file() or saved.get('executable_sha256') != digest(binary)):
+        raise PreparationError('runtime_integrity_changed')
+    return saved
+
+
+def publish_receipt(path, value):
+    path = checked(path, missing=True)
+    temporary = checked(path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp'), missing=True)
+    with temporary.open('x', encoding='utf-8') as stream:
+        json.dump(value, stream, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    if os.name == 'nt':
+        os.rename(temporary, path)
+    else:
+        os.link(temporary, path)
+        temporary.unlink()
+
+
 def prepare(root):
     root = checked(root.absolute())
     metadata = checked(root / 'release/WINDOWS_INSTALLER.json')
@@ -117,13 +150,17 @@ def prepare(root):
     receipt = checked(runtime / 'installed-renderer.json', missing=True)
     binary = destination / 'program/soffice.com'
     if destination.exists():
-        if not receipt.is_file() or receipt.stat().st_size > 64 * 1024:
-            raise ValueError('Renderer directory already exists without a valid receipt; retained')
-        saved = json.loads(receipt.read_text('utf-8'))
-        if (saved.get('archive_sha256') != spec['sha256'] or not checked(binary).is_file()
-                or saved.get('executable_sha256') != digest(binary)):
-            raise ValueError('Installed renderer changed; repair requires user action')
+        if not receipt.exists():
+            embedded = checked(destination / '.lix-renderer.json', missing=True)
+            if not embedded.exists():
+                raise ValueError('Renderer directory already exists without a valid receipt; retained')
+            saved = read_receipt(embedded, binary, spec)
+            publish_receipt(receipt, saved)
+            return {'ok': True, 'status': 'receipt_recovered', 'rendering_verified': False}
+        read_receipt(receipt, binary, spec)
         return {'ok': True, 'status': 'already_verified', 'rendering_verified': False}
+    if receipt.exists():
+        raise PreparationError('runtime_receipt_without_binary')
     bundled = checked(root.parent / 'runtime' / ('LibreOffice_' + spec['version'] + '_Win_x86-64.msi'), missing=True)
     if bundled.exists():
         report('verify')
@@ -132,17 +169,32 @@ def prepare(root):
         archive = bundled
     else:
         archive = download(runtime / 'downloads', spec)
+    staging = checked(runtime / 'renderer-preparation', missing=True)
+    staging.mkdir(exist_ok=True)
+    with os.scandir(staging) as entries:
+        if sum(1 for _, entry in zip(range(4), entries)) >= 4:
+            raise PreparationError('runtime_staging_limit')
+    attempt = checked(staging / uuid.uuid4().hex, missing=True)
+    attempt.mkdir()
+    staged = checked(attempt / 'payload', missing=True)
     report('extract')
-    extract(archive, destination)
-    if not checked(binary).is_file():
+    extract(archive, staged)
+    staged_binary = checked(staged / 'program/soffice.com')
+    if not staged_binary.is_file():
         raise ValueError('Expected renderer executable is missing')
     result = {'ok': True, 'archive_url': spec['url'], 'archive_sha256': spec['sha256'],
-              'executable_sha256': digest(binary), 'rendering_verified': False,
+              'executable_sha256': digest(staged_binary), 'rendering_verified': False,
               'deployment': 'user-local administrative extraction; no Office registration'}
-    with receipt.open('x', encoding='utf-8') as stream:
-        json.dump(result, stream, indent=2)
-        stream.flush()
-        os.fsync(stream.fileno())
+    publish_receipt(staged / '.lix-renderer.json', result)
+    if (not staged.resolve(strict=True).is_relative_to(runtime.resolve(strict=True))
+            or not destination.resolve().is_relative_to(runtime.resolve(strict=True)) or destination.exists()):
+        raise PreparationError('runtime_publish_conflict')
+    os.rename(staged, destination)
+    publish_receipt(receipt, result)
+    try:
+        attempt.rmdir()
+    except OSError:
+        pass
     return result
 
 

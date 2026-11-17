@@ -547,7 +547,9 @@ class ModelConnections:
     def _chat_context(self, question, continuation=None):
         import hashlib
         from ..token_chunks import token_count
-        if type(question) is not str or not question.strip() or len(question) > 8000:
+        if type(question) is not str or not question.strip():
+            raise SettingsError('empty')
+        if len(question) > 8000:
             raise SettingsError('empty')
         route = self.capture('chat')
         enabled = self._history_enabled()
@@ -603,6 +605,8 @@ class ModelConnections:
         with self.lock:
             if not self.authenticated():
                 return {'ok':False, 'reason':'not_authenticated'}
+            if isinstance(question, str) and len(question) > 8000:
+                return {'ok': False, 'reason': 'empty', 'error_code': 'too_long', 'characters': len(question), 'limit': 8000}
             try:
                 if options is not None and (type(options) is not dict or not set(options) <= {'continuation'}):
                     raise SettingsError('chat_request_invalid')
@@ -634,8 +638,10 @@ class ModelConnections:
                 return {'ok': False, 'reason': 'not_authenticated'}
             if self.app.busy:
                 return {'ok': False, 'reason': 'busy'}
-            if type(question) is not str or not question.strip() or len(question) > 8000:
+            if type(question) is not str or not question.strip():
                 return {'ok': False, 'reason': 'empty'}
+            if len(question) > 8000:
+                return {'ok': False, 'reason': 'too_long', 'characters': len(question), 'limit': 8000}
             options = options or {}
             if type(options) is not dict or not set(options) <= {'stream', 'transfer_to', 'context_revision', 'continuation'} or type(options.get('stream', True)) is not bool:
                 return {'ok': False, 'reason': 'chat_request_invalid'}
@@ -685,9 +691,9 @@ class ModelConnections:
                 self.app._stop_task.clear()
                 self.app._model_task_active = True
             self.app.busy = True
-            self.app._push({'type': 'task', 'text': question})
+            self.app._push({'type': 'task', 'text': question, 'channel': 'chat', 'session_id': row['id'] if row else None, 'turn_id': token})
             self.app._push({'type': 'busy', 'busy': True})
-            self.app._push({'type': 'status', 'level': 'info', 'text': f'已受理普通问答；本轮发送{(len(messages)-1)//2}组历史，较早{omitted}组不发送。停止仅停止本地显示，远端可能继续处理或计费。'})
+            self.app._push({'type': 'status', 'level': 'info', 'text': f'已受理普通问答；本轮发送{(len(messages)-1)//2}组历史，较早{omitted}组不发送。停止仅停止本地显示，远端可能继续处理或计费。', 'channel': 'chat', 'session_id': row['id'] if row else None, 'turn_id': token})
             self.app._push({'type': 'log', 'tag': 'meta', 'text': '本轮实际接口与模型：' + json.dumps(route.public(), ensure_ascii=False)})
 
         def visible():

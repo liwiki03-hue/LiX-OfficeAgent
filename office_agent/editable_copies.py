@@ -56,7 +56,8 @@ def body_blocks(data):
 
 
 class EditableCopyPublisher(CandidatePublisher):
-    def plan_copy(self, *, document_id, draft_revision):
+    def plan_copy(self, *, document_id, draft_revision, operation_id=None):
+        self.phase('preparing', '正在整理正文与普通表格，准备可编辑副本。')
         self.check_source()
         original = self.source.read_bytes()
         if sha(original) != self.source_sha256:
@@ -78,11 +79,12 @@ class EditableCopyPublisher(CandidatePublisher):
             book.add_paragraph('')
             blocks = [{'kind': 'paragraph', 'text': ''}]
         stream = io.BytesIO()
+        self.phase('serializing', '正在生成工作副本，尚未发布文件。')
         book.save(stream)
         candidate = stream.getvalue()
         if not eligibility(candidate)['editable'] or body_blocks(candidate) != blocks:
             raise GuardError('简化副本的正文或结构重开校验未通过，未生成文件')
-        identifier = uuid.uuid4().hex
+        identifier = operation_id or uuid.uuid4().hex
         output = self.editor.space.file(str(self.source.with_name(f'{self.source.stem}.agent-{identifier[:8]}.docx')), existing=False)
         self.plans.clear()
         self.plans[identifier] = {

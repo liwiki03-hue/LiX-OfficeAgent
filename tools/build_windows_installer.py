@@ -156,7 +156,7 @@ def _compile_launcher(root, payload, compiler, metadata, executable):
             '/win32icon:' + str(root / 'office_agent/webui/static/brand/lix.ico'),
             '/resource:' + str(payload / 'bootstrap.json') + ',LiX.Bootstrap',
             str(root / 'tools/windows/installed_launcher.cs'), str(root / 'tools/windows/process_job.cs'),
-            str(root / 'tools/windows/bootstrap_network.cs'), str(metadata)]
+            str(root / 'tools/windows/bootstrap_network.cs'), str(root / 'tools/windows/offline_manifest.cs'), str(metadata)]
     result = subprocess.run(args, capture_output=True, timeout=60)
     if result.returncode:
         raise RuntimeError('Launcher compilation failed: ' + result.stdout.decode('mbcs', 'replace')[:5000])

@@ -82,7 +82,7 @@ function boot(saved, osDark, storageBlocked=false) {
                                 addEventListener(key,callback) { events[id+':'+key]=callback; }};
   const document = {documentElement:{dataset:{}}};
   let osQueries = 0;
-  const ctx = {document, el, localStorage: {
+  const ctx = {document, el, api:null, localStorage: {
     getItem() { if (storageBlocked) throw new Error('no storage'); return saved; },
     setItem(key,value) { if (storageBlocked) throw new Error('no storage'); values[key]=value; }
   }, window:{matchMedia: () => { osQueries++; return {matches:osDark}; }}};

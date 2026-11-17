@@ -368,6 +368,11 @@ class CandidatePublisher:
         self.source_identity = (info.st_dev, info.st_ino)
         self.plans = {}
 
+    def phase(self, name, text):
+        callback = getattr(self, 'progress', None)
+        if callback:
+            callback(name, text)
+
     def check_source(self):
         info = self.source.lstat()
         if self.editor.space.file(str(self.source)) != self.source or digest(self.source) != self.source_sha256 or (info.st_dev, info.st_ino) != self.source_identity:
@@ -423,26 +428,31 @@ class CandidatePublisher:
         log.update(kind=plan.get('kind','paged_candidate'), status='failed', backup=str(backup), output=str(output), normalization=plan.get('normalization','empty ZIP directory markers omitted; original bibliography/custom XML, document properties, themes, font table, settings and stylesWithEffects preserved because these are not editable in this workflow; unrequested generated document properties removed'))
         published = False
         try:
+            self.phase('backup', '正在备份原件，原文件保持不变。')
             shutil.copy2(self.source, backup)
             if digest(backup) != self.source_sha256:
                 raise GuardError('备份校验失败')
+            self.phase('working_file', '正在写入待校验的工作文件，尚未发布副本。')
             with candidate.open('xb') as stream:
                 stream.write(plan['candidate'])
                 stream.flush()
                 os.fsync(stream.fileno())
             if digest(candidate) != plan['candidate_sha256']:
                 raise GuardError('候选快照身份不符')
+            self.phase('reopening', '工作文件已生成，正在重新打开并核对内容。')
             reopened = projection(candidate.read_bytes())
             if reopened != projection(plan['candidate']):
                 raise GuardError('重开结果与已批准草稿不一致')
             from .fidelity import compare_documents
-            render = compare_documents(self.editor.space.root, backup, candidate, static_docx=True)
+            self.phase('rendering', '正在校验工作文件的内容和版式，完成后才会发布副本。')
+            render = compare_documents(self.editor.space.root, backup, candidate, static_docx=True, reuse_verified=True)
             log['render_diff'] = render
             if render.get('inputs_unchanged') is not True or render.get('render',{}).get('status') not in {'equivalent','different'}:
                 raise GuardError('渲染闸门未通过，副本未发布')
             self.check_source()
             if digest(candidate) != plan['candidate_sha256'] or digest(backup) != self.source_sha256:
                 raise GuardError('验证期间快照或备份发生变化')
+            self.phase('publishing', '内容与版式校验已完成，正在发布已验证副本。')
             os.link(candidate, output)
             published = True
             log.update(status='verified', output_sha256=digest(output), verification='approved immutable snapshot exact bytes, DOCX reopen, deterministic package checks and renderer')

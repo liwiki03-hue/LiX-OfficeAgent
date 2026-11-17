@@ -2,7 +2,9 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import shutil
 import sys
+import uuid
 import time
 import zipfile
 
@@ -257,7 +259,18 @@ def test_actual_compiled_launcher_checks_integrity_without_network_or_launch(tmp
     root, archive, _ = fixture_source(tmp_path)
     payload = tmp_path / 'LiX 中文 & (install)'
     installer.stage(root, payload, archive, tmp_path)
-    compiled = _run_owned((sys.executable, '-I', '-c', 'import sys,faulthandler;from pathlib import Path;trace=open(sys.argv[3],"w");sys.stdout=sys.stderr=trace;faulthandler.dump_traceback_later(8,repeat=True,file=trace);sys.path.insert(0,sys.argv[1]);from tools.build_windows_installer import compile_launcher;compile_launcher(Path(sys.argv[1]),Path(sys.argv[2]));faulthandler.cancel_dump_traceback_later()', str(ROOT), str(payload), str(tmp_path / 'compiler-stack.log')), timeout_ms=30000)
+    compiler_root = tmp_path / 'compiler-source'
+    for name in ('tools/windows/installed_launcher.cs', 'tools/windows/process_job.cs',
+                 'tools/windows/bootstrap_network.cs', 'tools/windows/offline_manifest.cs',
+                 'office_agent/webui/static/brand/lix.ico'):
+        target = compiler_root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, target)
+    launcher = compiler_root / 'tools/windows/installed_launcher.cs'
+    source = launcher.read_text('utf-8')
+    assert source.count('"LiXInstalledRuntime"') == 1
+    launcher.write_text(source.replace('"LiXInstalledRuntime"', '"LiXNetworkFixture-' + uuid.uuid4().hex + '"'), 'utf-8')
+    compiled = _run_owned((sys.executable, '-I', '-c', 'import sys,faulthandler;from pathlib import Path;trace=open(sys.argv[3],"w");sys.stdout=sys.stderr=trace;faulthandler.dump_traceback_later(8,repeat=True,file=trace);sys.path.insert(0,sys.argv[1]);from tools.build_windows_installer import compile_launcher;compile_launcher(Path(sys.argv[4]),Path(sys.argv[2]));faulthandler.cancel_dump_traceback_later()', str(ROOT), str(payload), str(tmp_path / 'compiler-stack.log'), str(compiler_root)), timeout_ms=30000)
     assert compiled.empty_confirmed
     assert compiled.exit_code == 0, 'Launcher compilation did not complete within its isolated 30-second boundary'
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'isolated-user'))

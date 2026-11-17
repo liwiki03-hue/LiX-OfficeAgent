@@ -1,5 +1,14 @@
 # LiX
 
+## 2026-11-17 开发源码更新
+
+本次公开源码包含对话优先、只读问题与编辑分流、自动工作副本接续，以及限定 Word 的单回合回答和正文撤销。既有源文件保护、版本检查、备份、重开、渲染、审计与回滚机制保留。正文回合撤销不覆盖 Excel/PPTX，也不在后续人工编辑后自动合并。
+
+同代码本机完整回归为 **4336 passed、2 skipped、165 subtests passed**；模拟模型的浏览器闭环与真实服务、原生窗口和安装版验收分别记账。此前公开主分支019ecd7的完整Windows CI已通过，本次新提交仍需独立云端结果。
+
+离线候选构建号为 `o-preview-20261117-01`。它携带Python、锁定依赖、编辑资源、渲染器与离线先决组件；云端AI仍需网络及用户配置。包含本次源码的新安装包上传至维护者可见的GitHub发行草稿，**暂不提供公开下载**：固定编辑器的完整对应源码与重建材料尚未收口。旧公开联网预览保留，不等于本次离线版本。未签名、干净机断网、升级回滚、真实Office及真实模型等缺项不记通过。
+
+
 **[下载 Q 修复预览 · Windows x64](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/download/v0.7.11-q-repair-20261114-preview/LiX-Setup-0.7.11-q-final-20261114-renderer-preview-x64.exe)** · [发行说明、对应源码与校验](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview) · [旧预览版](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-preview)
 
 本次 q-final-20261114 包含固定原版渲染器，其余环境首次准备仍需联网。安装器未签名，最终安装和完整首次准备尚未验收；前一诊断候选出现 uv 缓存访问拒绝。本机源码完整回归已通过，GitHub CI 以运行页面为准；旧预览的安装证据不代表本候选。
@@ -69,7 +78,7 @@ Windows 联网修复预览安装包已在[Releases](https://github.com/liwiki03-
 
 [安装](docs/INSTALL.md) · [故障处理](docs/TROUBLESHOOTING.md) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md) · [变更](CHANGELOG.md) · [合成样例](examples/README.md)
 
-最终完整门禁为 `uv run pytest -q`。Q修复源码在本机标准隔离环境已完成完整回归，R5历史成绩不替代本轮结果；实际范围和限制见[验证记录](docs/VALIDATION.md)与[本次发行说明](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)。GitHub CI 单独核对，安装器仍为预览候选。10 MiB代码更新ZIP是另一条交付路径；应用内自动更新的仓库和公钥仍未配置。
+最终完整门禁为 `uv run pytest -q`。已公开q-final-20261114的成绩只属于原冻结源码；当前本地编码候选q-code-20261115-01尚待验收，实际范围和限制见[验证记录](docs/VALIDATION.md)与[本次发行说明](https://github.com/liwiki03-hue/LiX-OfficeAgent/releases/tag/v0.7.11-q-repair-20261114-preview)。GitHub CI 单独核对，安装器仍为预览候选。10 MiB代码更新ZIP是另一条交付路径；应用内自动更新的仓库和公钥仍未配置。
 
 网络、官方PyPI候选锁与缓存隔离方式见[网络与诊断](docs/NETWORK.md)。默认保留原锁和现有环境，不自动切换来源或安装依赖。
 

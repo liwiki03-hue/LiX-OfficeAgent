@@ -239,7 +239,8 @@ def _convert(source: Path, destination: Path, executable: Path, timeout_ms: int,
 
 
 def compare_documents(root: Path, source: Path, output: Path, *, executable: Path | None = None,
-                      timeout_ms: int = 30000, static_docx: bool = False, range_anchors: list | None = None) -> dict:
+                      timeout_ms: int = 30000, static_docx: bool = False, range_anchors: list | None = None,
+                      reuse_verified: bool = False) -> dict:
     if type(timeout_ms) is not int or not 100 <= timeout_ms <= 30000:
         raise FidelityError("invalid_timeout")
     space = Workspace(root)
@@ -249,6 +250,7 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
     report = {"schema_version": 1, "source_sha256": hashes[0], "output_sha256": hashes[1],
               "inputs_unchanged": None, "structure": {"status": "unverified", "equivalent": None},
               "render": {"status": "unverified", "equivalent": None}, "processes": []}
+    cache_payloads = []
     try:
         with tempfile.TemporaryDirectory(prefix="ofd-", dir=_temporary_root()) as raw:
             scratch = Path(raw)
@@ -282,8 +284,27 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
                 report['anchor_contexts'] = range_anchors
             for path in copies:
                 package_projection(path, for_render=True)
-            pdfs = [_convert(path, scratch / f"pdf-{index}", runtime, timeout_ms, report["processes"])
-                    for index, path in enumerate(copies)]
+            pdfs = []
+            cache_keys = []
+            if reuse_verified:
+                report['verified_render_reuse'] = []
+            for index, path in enumerate(copies):
+                identifier = None
+                cached = None
+                if reuse_verified and static_docx and report['render_environment']['complete']:
+                    from . import verified_render_cache
+                    identifier = verified_render_cache.key(space.root, hashes[index], report['static_projection_sha256'][index],
+                        report['runtime_sha256'], report['render_environment'], report['conversion_identity'])
+                    cached = verified_render_cache.get(identifier)
+                cache_keys.append(identifier)
+                if cached is not None:
+                    pdf = scratch / f'verified-{index}.pdf'
+                    pdf.write_bytes(cached)
+                else:
+                    pdf = _convert(path, scratch / f"pdf-{index}", runtime, timeout_ms, report["processes"])
+                pdfs.append(pdf)
+                if reuse_verified:
+                    report['verified_render_reuse'].append({'input_sha256': hashes[index], 'reused': cached is not None})
             result_file = scratch / "render.json"
             command = (sys.executable, str(Path(__file__).with_name("fidelity_worker.py")),
                        str(pdfs[0]), str(pdfs[1]), str(result_file))
@@ -301,6 +322,8 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
             report["render"] = json.loads(result)
             if static_docx and report['render_environment']['complete'] and environment_identity(runtime) != report['render_environment']:
                 raise FidelityError('render_environment_changed')
+            if reuse_verified and report['render'].get('status') in {'equivalent', 'different'}:
+                cache_payloads = [(identifier, pdf.read_bytes()) for identifier, pdf in zip(cache_keys, pdfs) if identifier]
             if static_docx and range_anchors and all(space.file(str(path)) == path and digest(path) == expected
                                                      for path, expected in zip(sources, hashes)):
                 from .render_handoff import offer
@@ -317,4 +340,11 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
             clear()
             report["render"] = {"status": "error", "equivalent": None, "code": "inputs_changed"}
             report["structure"] = {"status": "error", "equivalent": None, "code": "inputs_changed"}
+            if reuse_verified:
+                from .verified_render_cache import clear
+                clear()
+    if reuse_verified and report['inputs_unchanged'] and report['render'].get('status') in {'equivalent', 'different'}:
+        from .verified_render_cache import offer
+        for identifier, data in cache_payloads:
+            offer(identifier, data)
     return report

@@ -31,7 +31,7 @@ def _worker_environment() -> dict[str, str]:
     allowed = {k.casefold() for k in keys}
     env = {k: v for k, v in os.environ.items() if k.casefold() in allowed}
     env.update(PYTHONNET_RUNTIME='netfx', OFFICE_WEBVIEW_GUI='edgechromium',
-               PYTHONUTF8='1')
+               PYTHONUTF8='1', PYTHONDONTWRITEBYTECODE='1')
     return env
 
 

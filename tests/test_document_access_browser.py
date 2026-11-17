@@ -12,7 +12,6 @@ from tests.test_editable_copies import make_readonly
 from tests.test_editable_copy_browser import wait
 from tests.test_paged_browser import engine_frame, paged_browser, serve_static
 from tests.test_professional_browser import EDGE, STATIC
-from tests.ui_confirmation import record_browser_failure, track_browser
 
 
 def permission(page, level):
@@ -144,17 +143,13 @@ def test_readonly_copy_opens_for_editing_with_one_confirmation(tmp_path, monkeyp
             page.add_init_script("""if(window===window.top){window.OfficeAuth={isAuthenticated:()=>true,ensure:async()=>true,wrapApi:x=>x};window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>window.testHost(name,args)})};window.__prompts=[];window.confirm=text=>{window.__prompts.push(text);return true};document.addEventListener('DOMContentLoaded',()=>{document.getElementById('workspace').hidden=false;document.getElementById('workspace').inert=false;document.getElementById('workspace').setAttribute('aria-hidden','false');});}""")
             page.route('**/auth.js', lambda route: route.fulfill(status=200, body=''))
             page.on('pageerror', lambda error: errors.append(str(error)))
-            track_browser(page,tmp_path.name,lambda:{'document':api._floating.document,'paged':api._floating.paged.state(),'busy':app.busy})
             page.goto(url)
             page.locator('#floating-choose').click()
             page.get_by_role('button', name='同意读取并打开', exact=True).click()
             create = page.get_by_role('button', name='创建可编辑副本', exact=True)
             create.wait_for(state='visible')
             old_id = api._floating.document['id']
-            try:create.click()
-            except Exception:
-                record_browser_failure(page,'readonly copy action receives pointer',15)
-                raise
+            create.click()
             page.get_by_role('dialog', name='创建可编辑副本').get_by_role('button', name='确认创建简化副本', exact=True).click()
             wait(page, lambda: api._floating.document['id'] != old_id and api._floating.paged.editable and bool(api._floating.paged.manifest),
                  lambda: {'document': api._floating.document, 'state': api._floating.paged.state(), 'errors': errors}, 100)
@@ -162,8 +157,10 @@ def test_readonly_copy_opens_for_editing_with_one_confirmation(tmp_path, monkeyp
             assert source.read_bytes() == original and len(api._floating.outputs) == 1
             assert calls.count('floating_read') == 1 and calls.count('floating_select_output') == 1
             assert page.evaluate('window.__prompts') == [] and errors == []
+            page.evaluate('OfficeFloating.history()')
             page.get_by_role('heading', name='当前编辑副本', exact=True).wait_for()
             assert page.get_by_role('button', name='打开副本编辑…', exact=True).count() == 0
+            page.locator('#floating-return').click()
             out = STATIC.parents[2] / 'deliverables/default-document-edit-20261114'; out.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(out / '05-copy-opened-520.png'))
             (out / 'COPY_BROWSER.json').write_text(json.dumps({'single_creation_confirmation': True, 'automatically_opened': True,
