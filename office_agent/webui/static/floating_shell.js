@@ -322,8 +322,16 @@
     }
     const openingText = {receiving:'已接收文件，正在打开',admission_pending:'正在检查文件与访问范围；可以先写要求',parsing:'正在本机解析；可先保存要求，尚未调用模型',failed:state.open_request?.error || '本地打开失败，可重试；输入保留',cancelled:'已取消打开；输入保留'};
     $('floating-progress').textContent = openingText[phase] || (state.needs_clarification ? stages.needs_clarification : state.busy ? (state.stage === 'executing' || state.paged?.publishing || state.canvas?.publishing ? '正在写副本与验证；补充要求将排队' : '正在生成方案；可以继续追加要求') : state.plans.length ? '方案待审阅，尚未写入' : pendingResult ? '上一版副本已验证；新要求待明确选择版本后处理' : stages[state.stage] || '就绪');
+    const publication = state.paged?.publication_result;
+    const manualVersion = publication?.preview_latest_draft && !publication.conversation_id
+      && !state.paged.uncertain && !state.paged.publication_rolled_back;
+    $('floating-progress').hidden = Boolean(manualVersion && state.stage === 'verified'
+      && !openingText[phase] && !state.busy && !state.plans.length && !pendingResult && !state.needs_clarification);
     $('floating-progress').classList.add('state-badge');
-    if(state.paged?.requirements?.length&&state.paged.requirements.every(row=>row.cancelled))$('floating-progress').textContent=state.paged.publishing?'副本事务已开始，将按原快照完成；取消仅作用于后续处理':state.busy?'要求已取消，等待已发请求结束；不再派发后续步骤':'本轮要求已全部取消；草稿和副本保留';
+    if(state.paged?.requirements?.length&&state.paged.requirements.every(row=>row.cancelled)){
+      $('floating-progress').hidden=false;
+      $('floating-progress').textContent=state.paged.publishing?'副本事务已开始，将按原快照完成；取消仅作用于后续处理':state.busy?'要求已取消，等待已发请求结束；不再派发后续步骤':'本轮要求已全部取消；草稿和副本保留';
+    }
     $('floating-progress').dataset.state = state.stage === 'uncertain' ? 'unknown' : state.stage === 'failed' ? 'error' : state.busy || opening ? 'running' : state.plans.length ? 'waiting' : state.stage === 'verified' ? 'done' : 'ready';
     $('floating-revisions').textContent = state.revision ? '要求已收到 ' + state.revision + ' · 已纳入模型请求 ' + state.applied_revision : '';
     $('floating-actual-model').textContent = state.actual_model ? '本轮实际使用：' + state.actual_model.model_id + ' · ' + state.actual_model.connection_name : '';
@@ -353,7 +361,7 @@
       const switched = !snapshot || snapshot.document?.id !== state.document?.id || snapshot.document?.version !== state.document?.version;
       const availabilityChanged = snapshot?.document?.ready !== state.document?.ready;
       snapshot = state;
-      window.OfficeConversation?.restore(state.conversation);
+      window.OfficeConversation?.restore(state.conversation,state.paged);
       if(switched)seenSkills.clear();
       if (state.gap) {
         feedback('进展记录已压缩，当前要求、计划与产物已从宿主快照恢复。');
@@ -372,8 +380,9 @@
         else if (['draft_answer','canvas_ai_answer'].includes(event.type)&&!state.conversation?.turns?.length) addEntry(event.payload.text);
         else if (event.type === 'draft_copy_continued'&&!state.conversation?.turns?.length) feedback(event.payload.text);
         else if (event.type === 'skill_loaded') showSkillRead(event.payload,state);
-        else if (['draft_model_error','draft_publish_failed','draft_switch_requested'].includes(event.type)) feedback(event.payload.text);
-        else if (event.type === 'draft_published'&&!state.conversation?.turns?.length) addEntry((event.payload.receipt.kind==='paged_editable_copy'?'简化文字副本已生成：':'草稿 '+event.payload.draft_revision+' 的副本已验证：')+String(event.payload.receipt.output).split(/[\\/]/).pop());
+        else if (['draft_model_error','draft_switch_requested'].includes(event.type)) feedback(event.payload.text);
+        else if (event.type === 'draft_publish_failed'&&!event.payload.publication?.preview_latest_draft) feedback(event.payload.text);
+        else if (event.type === 'draft_published'&&!event.payload.publication?.preview_latest_draft&&!state.conversation?.turns?.length) addEntry((event.payload.receipt.kind==='paged_editable_copy'?'简化文字副本已生成：':'草稿 '+event.payload.draft_revision+' 的副本已验证：')+String(event.payload.receipt.output).split(/[\\/]/).pop());
         else if (event.type === 'orb_position') { try { localStorage.setItem('office-agent.orb-position', JSON.stringify(event.payload)); } catch (_) {} }
         else if (['native_warning', 'admission_failed', 'stop_requested', 'read_denied', 'needs_clarification', 'new_round','instruction_waiting'].includes(event.type)) { feedback(event.payload.text); $('floating-status').dataset.feedbackKind = event.type; }
         else if (event.type === 'log' && ['safety', 'error', 'warn'].includes(event.tag)&&!state.conversation?.turns?.length) addEntry(event.text);
@@ -622,6 +631,9 @@
     let row=snapshot?.outputs.find(value=>value.id===id&&!value.undone);
     if(!row){const result=await api().conversation_output(id,snapshot.document.id,snapshot.document.version);if(!result?.ok){feedback(result?.error||'结果记录已改变，请核对当前文件与历史。');return;}row=result.output;}
     await openOutput(row);
+  },previewDraft:async (publication,trigger)=>{
+    try{await window.OfficePaged.previewLatestDraft(publication,trigger);}
+    catch(error){if(!error.stale)feedback(error.message);}
   },undo:async id=>{
     try{
       if(!window.OfficePaged?.active()||typeof window.OfficePaged.undoRound!=='function')throw Error('当前编辑器没有可靠的回合恢复点');

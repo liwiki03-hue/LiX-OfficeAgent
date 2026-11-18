@@ -13,6 +13,7 @@ import uuid
 from ..instruction_runtime import InstructionRuntime
 from ..documents import classify_document, read_word_text, inspect_xlsx
 from ..writes import digest
+from ..edit_metrics import for_edit
 from .bridge import Api, _reject_links, _read_bounded_json
 from .document_open import OPEN_FORMATS, read_local_view
 from .paged_editor import PagedEditor
@@ -50,6 +51,7 @@ class FloatingSession:
         self.view = None
         self.queued_for_next_version = []
         self.copy_continuation = None
+        self._editor_metrics_wait = None
         self.open_request = None
         self.open_trace = []
         self.local_read_grant = None
@@ -84,6 +86,10 @@ class FloatingSession:
 
     def reset(self, *, preserve_open=None):
         with self.lock:
+            if self._editor_metrics_wait is not None:
+                trace, token, _, _ = self._editor_metrics_wait
+                trace.stop(token, outcome='cancelled')
+                self._editor_metrics_wait = None
             self.conversation.reset()
             self.access.reset(default=True)
             self.paged.close()
@@ -738,8 +744,8 @@ class FloatingSession:
         self.conversation.stop()
         self.copy_continuation = None
         had_access = bool(self.access.state()['id'])
+        publication_stop = self.paged.stop()
         self.access.reset()
-        self.paged.stop()
         with self.canvas.lock:
             self.canvas.ai.invalidate()
             self.canvas.plans.clear()
@@ -760,7 +766,12 @@ class FloatingSession:
         self.app.pending_id = None
         self.stage = 'stopped'
         result = self.app.cancel_task()
-        self.notice('stop_requested', {'text': '已停止后续派发；已发出的远端请求不保证取消或停止计费。副本事务若已开始将安全完成。'})
+        if publication_stop:
+            text = ('已停止后续派发，正在停止当前副本校验。' if publication_stop == 'cancelling'
+                    else '已停止后续派发，当前副本已进入写入，正在核验结果。')
+            self.notice('stop_requested', {'text': text, 'publication_pending': True})
+            return {'ok': True, 'stopped': True, 'publication_stop': publication_stop}
+        self.notice('stop_requested', {'text': '已停止后续派发。已发送的远端请求可能继续处理或计费。已开始的副本事务将安全收尾。'})
         if result.get('reason') == 'no_active_model_task' and (was_opening or had_access):
             return {'ok': True, 'local_open_cancelled': was_opening, 'stopped': True}
         return result
@@ -814,6 +825,9 @@ class FloatingSession:
             raise ValueError('打开副本的读取选项无效')
         if not self.admission_lock.acquire(blocking=False):
             raise ValueError('已有文件正在选择或准入，请完成当前选择')
+        metric_handoff = None
+        handoff_trace = None
+        handoff_span = None
         try:
             row = self.outputs.get(output_id)
             if not row or row.get('undone') or digest(Path(row['output'])) != row.get('output_sha256'):
@@ -841,6 +855,10 @@ class FloatingSession:
             saved = deepcopy(self.outputs)
             conversation = self.conversation.state()
             queued = [m['text'] for m in self.runtime.messages if m['revision'] > self.runtime.applied] if self.runtime else []
+            handoff_trace = for_edit(self, row.get('conversation_id')) if read_open else None
+            if handoff_trace is not None:
+                handoff_span = handoff_trace.start('reopen')
+                metric_handoff = self.conversation.take_edit_metrics()
             result = self._admit(row['output'])
             if result.get('ok'):
                 self.outputs = saved
@@ -850,6 +868,12 @@ class FloatingSession:
                 if read_open:
                     self.read(self.read_token, True)
                     self.conversation.rebind(conversation)
+                    if metric_handoff is not None:
+                        self.conversation.restore_edit_metrics(metric_handoff)
+                        metric_handoff = None
+                    if handoff_trace is not None:
+                        handoff_trace.stop(handoff_span)
+                        handoff_span = None
                     if level and self.access.serial == serial + 1:
                         self.access.set(self.document['id'], self.document['version'], self.epoch, level, True)
                         if continuation:
@@ -859,10 +883,17 @@ class FloatingSession:
                             for item in continuation:
                                 self.runtime.submit(item.get('client_id') or item['id'], item['text'])
                             self.copy_continuation = self.document['id']
+                            if handoff_trace is not None and handoff_trace.current():
+                                self._editor_metrics_wait = (handoff_trace, handoff_trace.start('editor'),
+                                                             self.document['id'], self.document['version'])
                             self.queued_for_next_version = []
                             self.conversation.update(self.conversation.active_task, 'loading_editor', '副本已验证并准入，正在载入编辑器。')
             return result
         finally:
+            if metric_handoff is not None:
+                self.conversation.restore_edit_metrics(metric_handoff)
+            if handoff_trace is not None:
+                handoff_trace.stop(handoff_span, outcome='error')
             self.admission_lock.release()
 
     def select_history_output(self, identifier):
@@ -1139,6 +1170,10 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def paged_editor_ready(self, document_id, revision):
         def action():
             self._floating.paged.guard(document_id, revision)
+            waiting = getattr(self._floating, '_editor_metrics_wait', None)
+            if waiting is not None and waiting[2:] == (document_id, self._floating.document['version']):
+                waiting[0].stop(waiting[1])
+                self._floating._editor_metrics_wait = None
             runtime = self._floating.runtime
             if self._floating.paged.editable and runtime and not runtime.closed and runtime.applied < runtime.revision and not self._floating.paged.deferred:
                 from ..requirement_history import active_requirements
@@ -1158,7 +1193,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             floating = self._floating
             floating.authenticated()
             if (client_id not in floating.conversation.turns or not isinstance(phase, str)
-                    or not re.fullmatch(r'(?:local_echo|accepted_visible|stage_visible:[a-z_]{1,32})', phase)
+                    or not re.fullmatch(r'(?:local_echo|accepted_visible|first_effective_visible|final_answer_visible|stage_visible:[a-z_]{1,32})', phase)
                     or type(elapsed_ms) not in (int, float) or not 0 <= elapsed_ms <= 86400000):
                 raise ValueError('界面计时记录无效')
             value = {'id': client_id, 'phase': phase, 'elapsed_ms': round(elapsed_ms, 2)}
@@ -1206,7 +1241,9 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value)
             if turn['intent'] == 'stop' and not duplicate:
                 result = floating.stop()
-                floating.conversation.update(client_id, 'stopped', '已停止后续派发；已开始的副本事务会安全收尾，已有要求与结果保留。', status='complete')
+                stop_text = {'cancelling': '正在停止副本校验，草稿保留。', 'committing': '已停止后续派发，当前副本正在完成核验。'}.get(
+                    result.get('publication_stop'), '已停止后续派发，已有要求与结果保留。')
+                floating.conversation.update(client_id, 'stopped', stop_text, status='complete')
             return {'ok': True, 'handled': turn['intent'] != 'edit', 'duplicate': duplicate,
                     'turn': deepcopy(floating.conversation.turns[client_id]), 'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
         return self._floating_call(action)
@@ -1221,6 +1258,10 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             row = floating.conversation.turns.get(client_id)
             if not row or row['document_id'] != document_id or row['status'] not in {'failed', 'interrupted', 'uncertain'}:
                 raise ValueError('此回合当前不能重试；没有重复派发')
+            if row.get('failure_code') == 'number_conflict':
+                raise ValueError('请先调整与数字顺序冲突的要求，再继续处理')
+            if (row.get('publication') or {}).get('reason') == 'draft_advanced':
+                raise ValueError('请预览或保存当前草稿，旧发布请求已失效')
             if row['intent'] == 'read':
                 if client_id in floating.conversation.readers:
                     raise ValueError('原请求仍未释放，暂未重复请求模型')
@@ -1372,6 +1413,9 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
 
     def paged_reference(self, document_id, revision, target):
         return self._floating_call(self._floating.paged.reference,document_id,revision,target)
+
+    def paged_preview_latest_draft(self, publication_id, document_id, source_version, revision):
+        return self._floating_call(self._floating.paged.preview_latest_draft,publication_id,document_id,source_version,revision)
 
     def paged_reference_locator(self, document_id, revision, locator_id, start, end):
         return self._floating_call(self._floating.paged.reference_locator,document_id,revision,locator_id,start,end)

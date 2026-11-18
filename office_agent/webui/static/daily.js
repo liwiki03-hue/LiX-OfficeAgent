@@ -15,6 +15,7 @@
   let imageRead = 0, imagePreferencePending = false;
   let liveStream = null;
   const retiredStreams = new Set();
+  const chatPaint = new Map();
   function retireStream(id) {
     if (!id) return;
     retiredStreams.add(id);
@@ -31,6 +32,22 @@
     parent.append(node);
     return node;
   };
+  function measureChat(id, element, final) {
+    const point = chatPaint.get(id) || submitting?.paint;
+    if (!point || mode !== 'chat' || point.session !== selected || point.final_answer_ms !== undefined
+        || !final && (point.first_effective_ms !== undefined || !/[\p{L}\p{N}]/u.test(element.textContent))) return;
+    window.OfficeConversation?.afterVisiblePaint(element, at => {
+      if (point.session !== selected || mode !== 'chat' || (!final && liveStream !== id)
+          || chatPaint.get(id) !== point && submitting?.paint !== point) return;
+      if (!chatPaint.has(id) && point.id && point.id !== id) return;
+      point.id = id;
+      if (point.first_effective_ms === undefined) {
+        point.first_effective_ms = at;
+        point.first_effective_source = final ? 'final' : 'stream_preview';
+      }
+      if (final) point.final_answer_ms ??= at;
+    });
+  }
   const button = (id, text, parent, action) => {
     const node = make('button', id, text, parent);
     node.type = 'button'; node.className = 'btn secondary'; node.onclick = action;
@@ -423,6 +440,7 @@
         if (turn.usage) make('p','','服务商报告用量：' + JSON.stringify(turn.usage) + '；不等于计费记录。',info);
         make('strong', '', '回答', article); const answer = make('div', '', '', article); answer.className = 'daily-answer';
         if (window.OfficeMarkdown) window.OfficeMarkdown.render(answer,turn.answer); else answer.textContent = turn.answer;
+        if (turn.answer?.trim() && chatPaint.has(turn.id)) measureChat(turn.id,answer,true);
         button('', '复制回答', article, async () => {
           try { await navigator.clipboard.writeText(turn.answer); setNotice('回答已复制。'); }
           catch (_) { setNotice('系统剪贴板不可用，请选择回答文字复制。'); answer.tabIndex = 0; answer.focus(); }
@@ -492,13 +510,14 @@
     sessionDrafts.clear(); imageRecords.replaceChildren(); imageHistory.hidden = true; failedPrompt = ''; streamed = ''; input.value = ''; transcript.replaceChildren(); live.hidden = true; retry.hidden = true;
     search.value = ''; titleInput.value = ''; renameDirty = false; renameFor = null; titleHint.textContent = ''; capacity.textContent = ''; saveStatus.textContent = '';
     submitting = null; continuation = null; retireStream(liveStream); liveStream=null; replySaving=exporting=imagePreferencePending=false; exportSelection.clear(); exportResult.replaceChildren(); clearPreview();
+    chatPaint.clear();
   });
   window.addEventListener('officedaily:event', event => {
     const ev = event.detail;
     if (!authenticated() || ev.session_id && ev.session_id !== selected) return;
     if (ev.type === 'chat_changed') refresh();
     if (ev.type === 'answer_draft_start' && mode === 'chat' && !retiredStreams.has(ev.stream_id)) { liveStream=ev.stream_id; streamed = ''; live.textContent = ''; live.hidden = false; setNotice('正在接收流式回答；尚未完成。', {turn_id:ev.stream_id,session_id:selected}); }
-    if (ev.type === 'answer_draft_delta' && mode === 'chat' && liveStream===ev.stream_id) { streamed += ev.text; live.append(document.createTextNode(ev.text)); }
+    if (ev.type === 'answer_draft_delta' && mode === 'chat' && liveStream===ev.stream_id) { streamed += ev.text; live.append(document.createTextNode(ev.text)); measureChat(ev.stream_id,live,false); }
     if (ev.type === 'answer_draft_cancel') { retireStream(ev.stream_id); if (liveStream===ev.stream_id) { liveStream=null; live.hidden = true; streamed = ''; } }
     if (ev.type === 'chat_error' && mode === 'chat') {
       if (ev.turn_id && retiredStreams.has(ev.turn_id)) return;
@@ -510,8 +529,20 @@
     }
     if (ev.type === 'busy' && !ev.busy) refresh();
   });
+  function measureChatViewport() {
+    if (mode !== 'chat') return;
+    if (liveStream) measureChat(liveStream,live,false);
+    for (const article of transcript.children) {
+      const id = article.dataset.turnId, answer = article.querySelector('.daily-answer');
+      if (id && chatPaint.has(id) && answer?.textContent.trim() && chatPaint.get(id).final_answer_ms === undefined
+          && window.OfficeDaily.completed(selected,id)) measureChat(id,answer,true);
+    }
+  }
+  document.addEventListener('scroll',measureChatViewport,true);
+  document.addEventListener('visibilitychange',measureChatViewport);
   window.OfficeDaily = {
     viewSnapshot,
+    paintTimings: () => Array.from(chatPaint.values(), point => ({...point})),
     completed:(session,id)=>state?.sessions.find(row=>row.id===session)?.turns.find(turn=>turn.id===id)?.status==='complete',
     feedbackSnapshot: () => noticeFeedback,
     send: async question => {
@@ -523,7 +554,7 @@
         options.continuation = {...continuation};
       }
       if (usedMode === 'chat' && contextPreview?.question === question && contextPreview.session === usedSession) options.context_revision = contextPreview.revision;
-      const submission = {}; submitting = submission;
+      const submission = {paint:usedMode==='chat'?{request_ms:performance.now(),session:usedSession}:null}; submitting = submission;
       const previousNotice = noticeFeedback;
       sending = {mode: usedMode, session: usedSession, question};
       if(usedMode==='chat'){
@@ -542,6 +573,13 @@
           if (!current()) return {ok:false,reason:'stale'};
         }
         if (result?.ok && usedMode === 'chat') {
+          if (result.turn_id) {
+            const observed = submission.paint.id === result.turn_id ? submission.paint
+              : {request_ms:submission.paint.request_ms,session:usedSession};
+            chatPaint.set(result.turn_id,{...observed,id:result.turn_id,accepted_ms:performance.now()});
+            if (chatPaint.size > 32) chatPaint.delete(chatPaint.keys().next().value);
+            if (liveStream === result.turn_id) measureChat(liveStream,live,false);
+          }
           continuation = null;
           budgetFeedback.hidden = true; budgetMessage.textContent = ''; budgetFeedbackToken = null;
           retry.hidden = true;

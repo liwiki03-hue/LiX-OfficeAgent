@@ -1,4 +1,6 @@
 import io
+import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,6 +58,7 @@ def test_chat_sessions_mode_drafts_and_history_restore_ui(tmp_path, monkeypatch,
         page, api, original, calls, receipts = next(fixture)
         save(api._connections, payload([connection()]))
         app = setup_daily(page, api, original, calls, receipts, monkeypatch)
+        page.add_script_tag(path=str(STATIC / 'document_conversation.js'))
         seen = []
         def invoke(messages):
             seen.append(messages)
@@ -67,6 +70,17 @@ def test_chat_sessions_mode_drafts_and_history_restore_ui(tmp_path, monkeypatch,
         page.locator('#prompt').fill('请编写一段生图提示词，不生成图片')
         page.locator('#btn-ask').click()
         page.wait_for_function('document.getElementById("chat-transcript").textContent.includes("回答：请编写")')
+        page.wait_for_function("""() => {
+          if(OfficeDaily.paintTimings().some(point=>Number.isFinite(point.final_answer_ms)))return true;
+          document.querySelector('#chat-transcript .daily-answer')?.scrollIntoView({block:'nearest'});
+          return false;
+        }""")
+        point = page.evaluate('OfficeDaily.paintTimings()[0]')
+        assert point['request_ms'] <= point['accepted_ms'] <= point['first_effective_ms'] == point['final_answer_ms']
+        if os.getenv('LIX_CONVERSATION_EVIDENCE'):
+            folder = Path(os.environ['LIX_CONVERSATION_EVIDENCE'])
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / f'chat-{width}-paint-timing.json').write_text(json.dumps(point, indent=2), encoding='utf8')
         assert len(seen) == 1 and app.path is None and app._image_session is None
         page.wait_for_function('document.getElementById("prompt").value === ""')
         page.locator('#prompt').fill('第一会话草稿 📄')

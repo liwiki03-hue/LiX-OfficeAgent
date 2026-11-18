@@ -8,6 +8,7 @@ import posixpath
 import re
 import shutil
 import stat
+from threading import Event
 import time
 from urllib.parse import urlsplit
 import uuid
@@ -17,6 +18,7 @@ from docx import Document
 from lxml import etree as ET
 
 from .writes import GuardError, digest
+from .edit_metrics import publication_metrics
 
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
@@ -361,6 +363,41 @@ def changes(before, after):
     return output
 
 
+class PublicationCancelled(GuardError):
+    pass
+
+
+class PublicationRejected(GuardError):
+    def __init__(self, reason, text):
+        super().__init__(text)
+        self.reason = reason
+
+
+class PairPublication:
+    def __init__(self, lock, validate):
+        self.lock = lock
+        self.validate = validate
+        self.stopped = Event()
+        self.committing = False
+
+    def cancel(self):
+        with self.lock:
+            if self.committing:
+                return False
+            self.stopped.set()
+            return True
+
+    def check(self):
+        if self.stopped.is_set():
+            raise PublicationCancelled('已停止校验，副本未发布。')
+
+    def begin_commit(self):
+        with self.lock:
+            self.check()
+            self.validate()
+            self.committing = True
+
+
 class CandidatePublisher:
     def __init__(self, editor, source, source_sha256):
         self.editor, self.source, self.source_sha256 = editor, source, source_sha256
@@ -369,6 +406,9 @@ class CandidatePublisher:
         self.plans = {}
 
     def phase(self, name, text):
+        metrics = getattr(self, 'metrics_trace', None)
+        if metrics is not None:
+            metrics.phase(name)
         callback = getattr(self, 'progress', None)
         if callback:
             callback(name, text)
@@ -411,10 +451,13 @@ class CandidatePublisher:
         self.check_source()
         return plan
 
-    def execute(self, identifier, *, document_id, draft_revision, confirmed=False, _claimed=None):
+    @publication_metrics
+    def execute(self, identifier, *, document_id, draft_revision, confirmed=False, _claimed=None, _pair=None):
         plan = _claimed if _claimed is not None else self.claim(identifier, document_id=document_id, draft_revision=draft_revision, confirmed=confirmed)
         if confirmed is not True or plan['id'] != identifier or plan['document_id'] != document_id or plan['draft_revision'] != draft_revision:
             raise GuardError('冻结的发布归属不符')
+        if _pair is not None and plan.get('kind', 'paged_candidate') != 'paged_candidate':
+            raise GuardError('双输入校验仅适用于 Word 草稿副本')
         self.check_source()
         audit = self.editor.audit
         audit.mkdir(exist_ok=True)
@@ -424,10 +467,13 @@ class CandidatePublisher:
         job.mkdir()
         backup, candidate = job/'backup.docx', job/'working.docx'
         output = self.editor.space.file(str(self.source.with_name(f'{self.source.stem}.agent-{identifier[:8]}.docx')), existing=False)
-        log = {key:value for key,value in plan.items() if key not in {'candidate','deadline'}}
+        log = {key:value for key,value in plan.items() if key not in {'candidate','deadline','draft_preview_base'}}
         log.update(kind=plan.get('kind','paged_candidate'), status='failed', backup=str(backup), output=str(output), normalization=plan.get('normalization','empty ZIP directory markers omitted; original bibliography/custom XML, document properties, themes, font table, settings and stylesWithEffects preserved because these are not editable in this workflow; unrequested generated document properties removed'))
         published = False
         try:
+            if _pair is not None:
+                log['render_mode'] = 'docx_pair_opt_in'
+                _pair.check()
             self.phase('backup', '正在备份原件，原文件保持不变。')
             shutil.copy2(self.source, backup)
             if digest(backup) != self.source_sha256:
@@ -443,16 +489,31 @@ class CandidatePublisher:
             reopened = projection(candidate.read_bytes())
             if reopened != projection(plan['candidate']):
                 raise GuardError('重开结果与已批准草稿不一致')
-            from .fidelity import compare_documents
+            from .fidelity import DOCX_PAIR_VARIANT, compare_documents
             self.phase('rendering', '正在校验工作文件的内容和版式，完成后才会发布副本。')
-            render = compare_documents(self.editor.space.root, backup, candidate, static_docx=True, reuse_verified=True)
+            options = {'batch_conversion': True, 'cancelled': _pair.stopped.is_set} if _pair is not None else {}
+            render = compare_documents(self.editor.space.root, backup, candidate, static_docx=True, reuse_verified=True, **options)
             log['render_diff'] = render
-            if render.get('inputs_unchanged') is not True or render.get('render',{}).get('status') not in {'equivalent','different'}:
-                raise GuardError('渲染闸门未通过，副本未发布')
+            rendering = render.get('render', {})
+            if _pair is not None and rendering.get('code') == 'worker_cancelled' and _pair.stopped.is_set():
+                _pair.check()
+            if render.get('inputs_unchanged') is not True or rendering.get('status') not in {'equivalent','different'}:
+                raise PublicationRejected('render_failed', '渲染闸门未通过，副本未发布')
+            if _pair is not None and (render.get('batch_conversion', {}).get('used') is not True
+                    or render.get('conversion_variant') != DOCX_PAIR_VARIANT
+                    or render.get('source_sha256') != self.source_sha256
+                    or render.get('output_sha256') != plan['candidate_sha256']
+                    or render.get('render_environment', {}).get('complete') is not True):
+                raise PublicationRejected('render_receipt_mismatch', '双输入校验归属不符，副本未发布')
+            metrics = getattr(self, 'metrics_trace', None)
+            if metrics is not None:
+                metrics.phase('validation')
             self.check_source()
             if digest(candidate) != plan['candidate_sha256'] or digest(backup) != self.source_sha256:
                 raise GuardError('验证期间快照或备份发生变化')
             self.phase('publishing', '内容与版式校验已完成，正在发布已验证副本。')
+            if _pair is not None:
+                _pair.begin_commit()
             os.link(candidate, output)
             published = True
             log.update(status='verified', output_sha256=digest(output), verification='approved immutable snapshot exact bytes, DOCX reopen, deterministic package checks and renderer')
@@ -460,9 +521,13 @@ class CandidatePublisher:
                 raise GuardError('发布结果身份不符')
             (job/'audit.json').write_text(json.dumps(log,ensure_ascii=False,indent=2),encoding='utf8')
             return log
-        except Exception:
+        except Exception as error:
             if published:
                 log['status'] = 'uncertain'
+            elif isinstance(error, PublicationCancelled):
+                log['failure_code'] = 'publication_cancelled'
+            elif isinstance(error, PublicationRejected):
+                log['failure_code'] = error.reason
             (job/'audit.json').write_text(json.dumps(log,ensure_ascii=False,indent=2),encoding='utf8')
             raise
         finally:

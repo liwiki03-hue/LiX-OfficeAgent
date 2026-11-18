@@ -186,8 +186,17 @@ def test_fluid_type_sidebar_selection_and_instance_survive_resize(paged_browser)
     assert page.locator('#floating-input').input_value()=='这条要求尚未发送，保留草稿。'
 
 
-def test_confirmed_engine_copy_real_render_reopen_and_later_draft_is_dirty(paged_browser):
+@pytest.mark.parametrize('pair', [False, True], ids=['default', 'pair'])
+def test_confirmed_engine_copy_real_render_reopen_and_later_draft_is_dirty(paged_browser, monkeypatch, pair):
+    from office_agent import fidelity
+
     page,api,source,errors=paged_browser
+    monkeypatch.setenv('OFFICE_AGENT_DOCX_PAIR_PUBLISH', '1' if pair else '0')
+    render, allow_render = fidelity.compare_documents, threading.Event()
+    def compare(*args, **kwargs):
+        assert allow_render.wait(35)
+        return render(*args, **kwargs)
+    monkeypatch.setattr(fidelity, 'compare_documents', compare)
     original=source.read_bytes();frame=engine_frame(page)
     frame.locator('.superdoc-page').get_by_text('实验于2025年完成，温度120 ℃。',exact=True).first.click()
     page.keyboard.press('Home');page.keyboard.press('Shift+End');page.keyboard.insert_text('实验于2026年完成，温度120 ℃。')
@@ -201,12 +210,48 @@ def test_confirmed_engine_copy_real_render_reopen_and_later_draft_is_dirty(paged
         if time.monotonic()>deadline:raise AssertionError(page.locator('#paged-feedback').text_content())
         page.wait_for_timeout(50)
     frozen_revision=api._floating.paged.revision
-    frame.locator('.superdoc-page').get_by_text('非目标段落不变。',exact=True).first.click()
-    page.keyboard.press('End');page.keyboard.insert_text('后续未发布草稿。')
+    preview = page.get_by_role('button', name='预览最新草稿', exact=True)
+    if pair:
+        api._floating.stage = 'verified'
+    try:
+        frame.locator('.superdoc-page').get_by_text('非目标段落不变。',exact=True).first.click()
+        page.keyboard.press('End');page.keyboard.insert_text('后续未发布草稿。')
+        page.wait_for_function("text => document.getElementById('paged-save-state').textContent === text",
+                               arg=f'正在校验第 {frozen_revision} 版 · 第 {frozen_revision + 1} 版草稿')
+        assert not preview.count()
+    finally:
+        allow_render.set()
     deadline=time.monotonic()+180
     while api._floating.paged.publishing:
         if time.monotonic()>deadline:raise AssertionError('bounded real render timed out')
         page.wait_for_timeout(100)
+    state=api._floating.paged.state()
+    revision=state['draft_revision']
+    saved = '未发布' if pair else '已发布'
+    page.wait_for_function("text => document.getElementById('paged-save-state').textContent === text",
+                           arg=f'第 {frozen_revision} 版{saved} · 第 {revision} 版草稿')
+    assert state['publication_in_progress'] is None
+    assert state['publication_result']['conversation_id'] is None
+    assert state['publication_result']['reason'] == ('draft_advanced' if pair else 'verified')
+    assert state['publication_result']['commit_started'] is (not pair)
+    assert not page.locator('#floating-progress').is_visible()
+    assert not api._floating.conversation.turns
+    output_ids=list(api._floating.outputs)
+    page.set_viewport_size({'width': 520, 'height': 820})
+    preview.click()
+    dialog = page.get_by_role('dialog', name=f'第 {revision} 版草稿 · 文字预览')
+    dialog.get_by_text('非目标段落不变。后续未发布草稿。', exact=True).wait_for()
+    dialog.get_by_role('button', name='关闭', exact=True).click()
+    page.wait_for_function("document.activeElement.id === 'paged-preview-latest'")
+    assert state['publication_result']['text'] not in page.locator('#floating-conversation').inner_text()
+    assert state['publication_result']['text'] not in page.locator('#paged-feedback').text_content()
+    assert list(api._floating.outputs) == output_ids and not api._floating.conversation.turns
+    page.screenshot(path=str(source.parent / f'manual-draft-{saved}.png'))
+    if pair:
+        assert not api._floating.outputs and not list(source.parent.glob('*.agent-*.docx'))
+        assert state['published_revision'] == 0 and state['draft_revision'] > frozen_revision and state['dirty']
+        assert source.read_bytes() == original and errors == []
+        return
     assert api._floating.outputs, list(api._floating.notifications.queue)
     result=next(iter(api._floating.outputs.values()));output=Path(result['output'])
     reopened=Document(output)
@@ -216,7 +261,6 @@ def test_confirmed_engine_copy_real_render_reopen_and_later_draft_is_dirty(paged
     assert reopened.tables[0].cell(1,1).text=='120 ms'
     assert reopened.sections[0].header.paragraphs[0].text=='自建验收页眉' and reopened.sections[0].footer.paragraphs[0].text=='自建验收页脚'
     assert source.read_bytes()==original
-    state=api._floating.paged.state()
     assert state['published_revision']==frozen_revision and state['draft_revision']>frozen_revision and state['dirty']
     page.screenshot(path=str(source.parent/'engine-copy-verified.png'))
     (source.parent/'ENGINE_COPY_REPORT.json').write_text(json.dumps({'output':str(output),'source_unchanged':source.read_bytes()==original,'state':{k:v for k,v in state.items() if k not in {'proposals'}},'render':result['render_diff']},ensure_ascii=False,indent=2),encoding='utf8')

@@ -1,5 +1,6 @@
 import threading
 import time
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ from office_agent.webui.document_conversation import intent
 from office_agent.webui.floating_session import FloatingApi, FloatingSession
 from tests.test_editable_copies import readonly
 from tests.test_office_canvas import canvas
+from tests.test_paged_editor import draft, snapshot
 
 
 class Answers:
@@ -299,3 +301,141 @@ def test_skill_reference_history_persists_without_changing_reply_or_replaying_ex
     assert restored.conversation.state()['turns'][0]['skills']==[receipt]
     assert not restored.access.state()['id'] and restored.runtime is None and not connections.calls
     assert source.read_bytes()==original and not list(source.parent.glob('*.agent-*.docx'))
+
+
+class FixedAnswer(Answers):
+    def __init__(self, response):
+        super().__init__()
+        self.response = response
+
+    def build_model(self, route):
+        owner = self
+        class Model:
+            def bind_tools(self, tools):
+                assert tools == []
+                return self
+
+            def invoke(self, messages):
+                owner.calls.append(str(messages))
+                return owner.response
+        return Model()
+
+
+def test_authorized_selection_answers_once_with_units_location_and_no_copy(draft):
+    service, floating, source = draft
+    text = '实验温度25 ℃，30个样本的平均延迟120 ms[1]。'
+    service.changed(service.document_id, 1)
+    encoded, manifest = snapshot(service, text)
+    service.sync(service.document_id, 1, encoded, manifest)
+    reference = service.reference(service.document_id, 1, {'node_id':'node-1', 'start':0, 'end':len(text)})['reference']
+    answer = '平均延迟为120 ms（毫秒），依据当前引用[1]。'
+    connections = FixedAnswer({'content':answer, 'usage_metadata':{'input_tokens':84, 'output_tokens':18, 'total_tokens':102}})
+    attach(floating, connections)
+    original = source.read_bytes()
+    before = service.data
+    send(floating, 'selection-once', '平均延迟是多少，单位是什么？', 1, reference['id'])
+    finish(floating)
+    row = floating.conversation.turns['selection-once']
+    metrics = floating.conversation.turn_metrics['selection-once'].snapshot()
+    assert row['answer'] == answer and row['status'] == 'complete'
+    assert row['references'] == [{'scope':'仅当前引用', 'draft_revision':1}]
+    assert '非目标内容保持' not in connections.calls[0]
+    assert text in connections.calls[0] and len(connections.calls) == 1
+    assert metrics['counts']['decisions'] == metrics['counts']['model_attempts'] == 1
+    assert metrics['counts']['tool_requests'] == metrics['counts']['tool_executions'] == 0
+    assert metrics['usage']['server']['input_tokens'] == 84
+    assert metrics['marks_seconds']['first_effective_answer'] <= metrics['marks_seconds']['completed']
+    assert {'context', 'model', 'validation'} <= {item['stage'] for item in metrics['spans']}
+    assert not any(item['active'] for item in metrics['spans'])
+    public = json.dumps(metrics, ensure_ascii=False)
+    assert text not in public and '120 ms' not in public and source.name not in public
+    assert 'turn_metrics' not in floating.conversation.state()
+    assert not service.proposals and not floating.outputs and service.data == before
+    assert source.read_bytes() == original and not list(source.parent.glob('*.agent-*.docx'))
+
+
+@pytest.mark.parametrize('name,args', [
+    ('read_excel_region', {'sheet':'不相关工作表', 'start':'A1', 'end':'B2'}),
+    ('write_word', {'text':'不应写入的内容'}),
+])
+def test_readonly_answer_rejects_unoffered_tools_without_second_model_request(readonly, name, args):
+    service, floating, source = readonly
+    connections = FixedAnswer({'content':'尚未执行', 'tool_calls':[{'name':name, 'args':args, 'id':'unoffered-call'}]})
+    attach(floating, connections)
+    original = source.read_bytes()
+    send(floating, 'unoffered-tool', '平均延迟是多少，单位是什么？')
+    finish(floating)
+    row = floating.conversation.turns['unoffered-tool']
+    metrics = floating.conversation.turn_metrics['unoffered-tool'].snapshot()
+    assert row['status'] == 'failed' and not row['answer']
+    assert len(connections.calls) == 1 and metrics['counts']['model_attempts'] == 1
+    assert metrics['counts']['tool_executions'] == 0
+    assert metrics['marks_seconds']['first_effective_answer'] is None
+    assert not service.proposals and not floating.outputs and floating.runtime is None
+    assert source.read_bytes() == original and not list(source.parent.glob('*.agent-*.docx'))
+
+
+def test_host_status_and_stop_need_no_model_or_document_tool(readonly, monkeypatch):
+    _, floating, source = readonly
+    connections = Answers()
+    attach(floating, connections)
+    monkeypatch.setattr(connections, 'capture', lambda *_: pytest.fail('Host control must not capture a model'))
+    original = source.read_bytes()
+    status = send(floating, 'host-status', '到哪了？')
+    stopped = send(floating, 'host-stop', '停止')
+    assert status['turn']['status'] == stopped['turn']['status'] == 'complete'
+    for identifier in ('host-status', 'host-stop'):
+        metrics = floating.conversation.turn_metrics[identifier].snapshot()
+        assert metrics['counts']['model_attempts'] == metrics['counts']['tool_executions'] == 0
+        assert metrics['marks_seconds']['completed'] is not None
+    assert not connections.calls and not floating.outputs and source.read_bytes() == original
+
+
+def test_explicit_answer_retry_keeps_separate_complete_anonymous_attempts(readonly, monkeypatch):
+    from office_agent.turn_metrics import TurnMetrics
+    _, floating, source = readonly
+    ticks = iter(range(100000))
+    monkeypatch.setattr('office_agent.webui.document_conversation.TurnMetrics',
+                        lambda: TurnMetrics(clock=lambda: next(ticks) / 100))
+    class Recovering(Answers):
+        def build_model(self, route):
+            owner = self
+            class Model:
+                def bind_tools(self, tools):
+                    assert tools == []
+                    return self
+                def invoke(self, messages):
+                    owner.calls.append(str(messages))
+                    if len(owner.calls) == 1:
+                        raise TimeoutError('simulated first request failure')
+                    return {'content':'平均延迟为120 ms，依据当前材料[1]。'}
+            return Model()
+    connections = Recovering()
+    attach(floating, connections)
+    original = source.read_bytes()
+    send(floating, 'retry-metrics', '平均延迟是多少，单位是什么？')
+    finish(floating)
+    first = floating.conversation.metrics_state('retry-metrics')
+    assert floating.conversation.turns['retry-metrics']['status'] == 'failed'
+    assert first['attempt_count'] == first['counts']['model_attempts'] == 1
+    assert first['current']['marks_seconds']['first_effective_answer'] is None
+    assert FloatingApi.conversation_retry(floating.api, 'retry-metrics', floating.document['id'], floating.document['version'])['ok']
+    finish(floating)
+    result = floating.conversation.metrics_state('retry-metrics')
+    current, previous = result['current'], result['previous'][0]
+    assert floating.conversation.turns['retry-metrics']['status'] == 'complete'
+    assert result['attempt_count'] == result['counts']['model_attempts'] == len(connections.calls) == 2
+    assert current['counts']['model_attempts'] == previous['counts']['model_attempts'] == 1
+    assert previous['turn_id'] == first['current']['turn_id'] != current['turn_id']
+    assert previous['marks_seconds']['completed'] is not None
+    assert current['marks_seconds']['first_effective_answer'] <= current['marks_seconds']['completed']
+    assert result['omitted_previous_attempts'] == 0
+    assert all(not item['active'] and item['start_seconds'] + item['duration_seconds'] <= current['elapsed_seconds'] + 1e-9
+               for item in current['spans'])
+    assert all(item['duration_seconds'] > 0 for item in current['spans'] if item['stage'] in {'model', 'validation'})
+    assert result['attempt_elapsed_seconds_sum'] == previous['elapsed_seconds'] + current['elapsed_seconds']
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert source.name not in serialized and '120 ms' not in serialized and '平均延迟' not in serialized
+    assert not floating.conversation.answer_queues and not floating.outputs and source.read_bytes() == original
+    floating.conversation.reset()
+    assert not floating.conversation.turn_metrics and not floating.conversation.metric_history and not floating.conversation.metric_totals

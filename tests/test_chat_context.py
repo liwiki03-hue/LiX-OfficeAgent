@@ -175,3 +175,59 @@ def test_ollama_done_reason_is_preserved(tmp_path, monkeypatch, stream):
     assert len(requests) == 1 and requests[0][:2] == ('http://127.0.0.1:11434/api/chat','Bearer fixture-private-one')
     assert requests[0][2]['stream'] is True and clients[0].is_closed
     assert any(event['type'] == 'answer_draft_start' for event in events) is stream
+
+
+@pytest.mark.parametrize('stream', [True, False])
+def test_leading_model_thought_is_absent_from_chat_events_history_and_followup(tmp_path, monkeypatch, stream):
+    app, api, _ = setup(tmp_path, True)
+    calls = []
+    hidden = '不应保存的模型内部推理'
+    answer = '平均延迟为120 ms[1]。\n```xml\n<think>字面示例</think>\n```'
+    pieces = ['<th', 'ink>' + hidden, '</th', 'ink><think>另一段内部推理</think>', answer]
+    def chunks(messages):
+        calls.append(messages)
+        for text in pieces:
+            yield SimpleNamespace(content=text, response_metadata={})
+        yield SimpleNamespace(content='', response_metadata={'finish_reason':'stop'})
+    def invoke(messages):
+        calls.append(messages)
+        return SimpleNamespace(content=''.join(pieces), response_metadata={'finish_reason':'stop'})
+    monkeypatch.setattr(api._connections, 'build_model', lambda route: SimpleNamespace(stream=chunks, invoke=invoke))
+    assert api.ask('平均延迟是多少？', {'stream':stream})['ok']
+    events = finish(app)
+    snapshot = api.conversation_snapshot()['result']
+    turn = snapshot['sessions'][0]['turns'][0]
+    assert turn['status'] == 'complete' and turn['answer'] == answer
+    assert hidden not in json.dumps(events, ensure_ascii=False)
+    assert hidden not in Path(snapshot['location']).read_text('utf-8')
+    visible = ''.join(item.get('text', '') for item in events if item['type'] == 'answer_draft_delta')
+    assert hidden not in visible and '另一段内部推理' not in visible
+    assert api.ask('引用上一条回答', {'stream':False})['ok']
+    followup_events = finish(app)
+    assert len(calls) == 2 and hidden not in json.dumps(calls[-1], ensure_ascii=False)
+    assert answer in [item['content'] for item in calls[-1] if item['role'] == 'assistant']
+    assert hidden not in json.dumps(followup_events, ensure_ascii=False)
+
+
+@pytest.mark.parametrize('stream', [True, False])
+def test_unclosed_model_thought_fails_without_visible_or_persisted_reasoning(tmp_path, monkeypatch, stream):
+    app, api, _ = setup(tmp_path, True)
+    calls = []
+    hidden = '未闭合的模型内部推理'
+    def chunks(messages):
+        calls.append(messages)
+        yield SimpleNamespace(content='<thi', response_metadata={})
+        yield SimpleNamespace(content='nk>' + hidden, response_metadata={'finish_reason':'stop'})
+    def invoke(messages):
+        calls.append(messages)
+        return SimpleNamespace(content='<think>' + hidden, response_metadata={'finish_reason':'stop'})
+    monkeypatch.setattr(api._connections, 'build_model', lambda route: SimpleNamespace(stream=chunks, invoke=invoke))
+    assert api.ask('只回答已知结论', {'stream':stream})['ok']
+    events = finish(app)
+    snapshot = api.conversation_snapshot()['result']
+    turn = snapshot['sessions'][0]['turns'][0]
+    assert turn['status'] == 'failed' and not turn['answer']
+    assert len(calls) == 1 and not app.busy
+    assert hidden not in json.dumps(events, ensure_ascii=False)
+    assert hidden not in Path(snapshot['location']).read_text('utf-8')
+    assert not any(item['type'] == 'answer_draft_delta' for item in events)

@@ -11,6 +11,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+import time
 from xml.etree import ElementTree as ET
 import zipfile
 
@@ -25,6 +26,7 @@ MAX_PAGES = 40
 MAX_PAGE_CHARS = 20000
 MAX_PAGE_PIXELS = 8_000_000
 RENDER_DPI = 144
+DOCX_PAIR_VARIANT = 'docx-pair-candidate-v1'
 
 
 class FidelityError(ValueError):
@@ -216,42 +218,115 @@ def _profile(directory: Path) -> None:
         '</oor:items>', encoding="utf-8")
 
 
-def _run(command: tuple[str, ...], timeout_ms: int, runs: list) -> None:
+def _run(command: tuple[str, ...], timeout_ms: int, runs: list, *, timing_details: bool = False, cancelled=None) -> None:
+    timings = {} if timing_details else None
+    options = {}
+    if timing_details:
+        options['_timings'] = timings
+    if cancelled is not None:
+        options['cancelled'] = cancelled
     try:
-        result = _run_owned(command, timeout_ms=timeout_ms)
+        result = _run_owned(command, timeout_ms=timeout_ms, **options)
     except Exception:
         raise FidelityError("worker_launch_or_cleanup_failed") from None
-    runs.append(asdict(result))
+    entry = asdict(result)
+    if timings:
+        entry['stage_seconds'] = timings
+    runs.append(entry)
     if result.code != "process_completed" or result.exit_code != 0 or result.empty_confirmed is not True:
-        raise FidelityError("worker_timeout" if result.code == "render_timeout" else "worker_failed")
+        code = {'render_timeout': 'worker_timeout', 'render_cancelled': 'worker_cancelled'}.get(result.code, 'worker_failed')
+        if result.exit_code == 3 and command[2:3] == ('--convert-pair',):
+            code = 'worker_timeout'
+        raise FidelityError(code if result.empty_confirmed is True else 'worker_launch_or_cleanup_failed')
 
 
-def _convert(source: Path, destination: Path, executable: Path, timeout_ms: int, runs: list) -> Path:
+def _convert(source: Path, destination: Path, executable: Path, timeout_ms: int, runs: list, *, timing_details: bool = False) -> Path:
     destination.mkdir()
     profile = destination / "profile"
     _profile(profile)
     command = (sys.executable, str(Path(__file__).with_name("fidelity_worker.py")),
                "--convert", str(source), str(destination), str(executable))
-    _run(command, timeout_ms, runs)
+    timing_path = destination / 'conversion-timing.json'
+    if timing_details:
+        command += (str(timing_path),)
+    _run(command, timeout_ms, runs, timing_details=True) if timing_details else _run(command, timeout_ms, runs)
+    if timing_details:
+        _conversion_timing(timing_path, runs)
     result = destination / (source.stem + ".pdf")
     bounded_bytes(result)
     return result
 
 
+def _conversion_timing(timing_path, runs):
+    try:
+        if timing_path.is_file():
+            raw = bounded_bytes(timing_path)
+            if len(raw) <= 4096:
+                timing = json.loads(raw)
+                allowed = {'pdf_first_seen_seconds', 'second_pdf_first_seen_seconds', 'worker_prepare_seconds', 'libreoffice_launch_seconds',
+                           'libreoffice_wait_seconds', 'libreoffice_cleanup_seconds', 'worker_conversion_seconds'}
+                if type(timing) is dict and set(timing) <= allowed and all(value is None or type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 60 for value in timing.values()):
+                    runs[-1]['conversion_stage_seconds'] = timing
+    except (OSError, ValueError, KeyError, IndexError):
+        pass
+
+
+def _convert_pair(sources, destination, executable, timeout_ms, runs, *, timing_details=False, cancelled=None):
+    if len(sources) != 2 or any(path.suffix.lower() != '.docx' for path in sources) or sources[0].name.casefold() == sources[1].name.casefold():
+        raise FidelityError('batch_inputs_invalid')
+    destination.mkdir()
+    _profile(destination / 'profile')
+    command = (sys.executable, str(Path(__file__).with_name('fidelity_worker.py')), '--convert-pair',
+               str(sources[0]), str(sources[1]), str(destination), str(executable))
+    timing_path = destination / 'conversion-timing.json'
+    if timing_details:
+        command += (str(timing_path),)
+    _run(command, timeout_ms, runs, timing_details=timing_details, cancelled=cancelled)
+    if timing_details:
+        _conversion_timing(timing_path, runs)
+    outputs = [destination / (source.stem + '.pdf') for source in sources]
+    for output in outputs:
+        bounded_bytes(output)
+    return outputs
+
+
 def compare_documents(root: Path, source: Path, output: Path, *, executable: Path | None = None,
                       timeout_ms: int = 30000, static_docx: bool = False, range_anchors: list | None = None,
-                      reuse_verified: bool = False) -> dict:
+                      reuse_verified: bool = False, timing_details: bool = False, batch_conversion: bool = False,
+                      cancelled=None) -> dict:
     if type(timeout_ms) is not int or not 100 <= timeout_ms <= 30000:
         raise FidelityError("invalid_timeout")
+    if type(timing_details) is not bool or type(batch_conversion) is not bool:
+        raise FidelityError('invalid_render_option')
+    if cancelled is not None and (not batch_conversion or not callable(cancelled)):
+        raise FidelityError('invalid_render_option')
+    timing_started = time.monotonic() if timing_details else None
     space = Workspace(root)
     sources = [space.file(str(path)) for path in (source, output)]
+    if batch_conversion and (not static_docx or range_anchors is not None or any(path.suffix.lower() != '.docx' for path in sources)):
+        raise FidelityError('batch_inputs_invalid')
     payloads = [bounded_bytes(path) for path in sources]
     hashes = [hashlib.sha256(data).hexdigest() for data in payloads]
     report = {"schema_version": 1, "source_sha256": hashes[0], "output_sha256": hashes[1],
               "inputs_unchanged": None, "structure": {"status": "unverified", "equivalent": None},
               "render": {"status": "unverified", "equivalent": None}, "processes": []}
+    effective_reuse = reuse_verified and not batch_conversion
+    if batch_conversion:
+        report['conversion_cache'] = {'requested': reuse_verified, 'effective': False,
+                                     'reason': 'candidate_partner_identity_unproven'}
+    measured_at = timing_started
+    def stamp(stage):
+        nonlocal measured_at
+        if timing_details:
+            now = time.monotonic()
+            report.setdefault('stage_seconds', {})[stage] = now - measured_at
+            measured_at = now
     cache_payloads = []
+    def check_cancelled():
+        if cancelled is not None and cancelled():
+            raise FidelityError('worker_cancelled')
     try:
+        check_cancelled()
         with tempfile.TemporaryDirectory(prefix="ofd-", dir=_temporary_root()) as raw:
             scratch = Path(raw)
             copies = []
@@ -260,6 +335,7 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
                 copy.write_bytes(data)
                 copies.append(copy)
             report["structure"] = compare_structure(*copies)
+            stamp('prepare_and_structure')
             if static_docx:
                 from .range_edits import static_render_parts
                 report['static_projection_sha256'] = []
@@ -274,37 +350,55 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
                         for name, data in projected.items():
                             archive.writestr(name, data)
                 report['render_projection'] = 'static field display and hyperlink text; original package and relationships preserved in output; dynamic field refresh not verified'
+            stamp('projection')
             runtime = runtime_path(executable)
             report["runtime_sha256"] = digest(runtime)
             if static_docx:
                 from .render_identity import environment_identity
                 from .render_handoff import implementation_identity
                 report['conversion_identity'] = implementation_identity()
+                if batch_conversion:
+                    report['conversion_identity'] = hashlib.sha256((report['conversion_identity'] + ':' + DOCX_PAIR_VARIANT).encode()).hexdigest()
+                    report['conversion_variant'] = DOCX_PAIR_VARIANT
                 report['render_environment'] = environment_identity(runtime)
                 report['anchor_contexts'] = range_anchors
+                if cancelled is not None and not report['render_environment']['complete']:
+                    raise FidelityError('render_environment_unverified')
+            stamp('identity_before')
             for path in copies:
                 package_projection(path, for_render=True)
+            stamp('package_checks')
             pdfs = []
             cache_keys = []
-            if reuse_verified:
+            if effective_reuse:
                 report['verified_render_reuse'] = []
+            batch_pdfs = None
+            if batch_conversion:
+                check_cancelled()
+                report['batch_conversion'] = {'requested': True, 'used': True,
+                    'libreoffice_timeout_seconds': 25, 'automatic_fallback': False}
+                batch_pdfs = _convert_pair(copies, scratch / 'pdf-pair', runtime, timeout_ms, report['processes'],
+                                           timing_details=timing_details, cancelled=cancelled)
             for index, path in enumerate(copies):
                 identifier = None
                 cached = None
-                if reuse_verified and static_docx and report['render_environment']['complete']:
+                if effective_reuse and static_docx and report['render_environment']['complete']:
                     from . import verified_render_cache
                     identifier = verified_render_cache.key(space.root, hashes[index], report['static_projection_sha256'][index],
                         report['runtime_sha256'], report['render_environment'], report['conversion_identity'])
                     cached = verified_render_cache.get(identifier)
                 cache_keys.append(identifier)
-                if cached is not None:
+                if batch_pdfs is not None:
+                    pdf = batch_pdfs[index]
+                elif cached is not None:
                     pdf = scratch / f'verified-{index}.pdf'
                     pdf.write_bytes(cached)
                 else:
-                    pdf = _convert(path, scratch / f"pdf-{index}", runtime, timeout_ms, report["processes"])
+                    pdf = _convert(path, scratch / f"pdf-{index}", runtime, timeout_ms, report["processes"], timing_details=True) if timing_details else _convert(path, scratch / f"pdf-{index}", runtime, timeout_ms, report["processes"])
                 pdfs.append(pdf)
-                if reuse_verified:
+                if effective_reuse:
                     report['verified_render_reuse'].append({'input_sha256': hashes[index], 'reused': cached is not None})
+            stamp('conversions')
             result_file = scratch / "render.json"
             command = (sys.executable, str(Path(__file__).with_name("fidelity_worker.py")),
                        str(pdfs[0]), str(pdfs[1]), str(result_file))
@@ -315,14 +409,23 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
                 anchors_path = scratch / 'anchors.json'
                 anchors_path.write_bytes(encoded)
                 command += (str(anchors_path),)
-            _run(command, timeout_ms, report["processes"])
+            check_cancelled()
+            if batch_conversion:
+                _run(command, timeout_ms, report['processes'], timing_details=timing_details, cancelled=cancelled)
+            elif timing_details:
+                _run(command, timeout_ms, report['processes'], timing_details=True)
+            else:
+                _run(command, timeout_ms, report['processes'])
             result = bounded_bytes(result_file)
             if len(result) > 200000:
                 raise FidelityError("report_size_limit")
             report["render"] = json.loads(result)
+            stamp('pdf_comparison')
             if static_docx and report['render_environment']['complete'] and environment_identity(runtime) != report['render_environment']:
                 raise FidelityError('render_environment_changed')
-            if reuse_verified and report['render'].get('status') in {'equivalent', 'different'}:
+            stamp('identity_after')
+            check_cancelled()
+            if effective_reuse and report['render'].get('status') in {'equivalent', 'different'}:
                 cache_payloads = [(identifier, pdf.read_bytes()) for identifier, pdf in zip(cache_keys, pdfs) if identifier]
             if static_docx and range_anchors and all(space.file(str(path)) == path and digest(path) == expected
                                                      for path, expected in zip(sources, hashes)):
@@ -340,11 +443,14 @@ def compare_documents(root: Path, source: Path, output: Path, *, executable: Pat
             clear()
             report["render"] = {"status": "error", "equivalent": None, "code": "inputs_changed"}
             report["structure"] = {"status": "error", "equivalent": None, "code": "inputs_changed"}
-            if reuse_verified:
+            if effective_reuse:
                 from .verified_render_cache import clear
                 clear()
-    if reuse_verified and report['inputs_unchanged'] and report['render'].get('status') in {'equivalent', 'different'}:
+    if effective_reuse and report['inputs_unchanged'] and report['render'].get('status') in {'equivalent', 'different'}:
         from .verified_render_cache import offer
         for identifier, data in cache_payloads:
             offer(identifier, data)
+    stamp('final_checks_and_cleanup')
+    if timing_details:
+        report['timing_elapsed_seconds'] = time.monotonic() - timing_started
     return report

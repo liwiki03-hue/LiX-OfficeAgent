@@ -26,13 +26,17 @@
 #paged-work .floating-message { font-size: var(--fs-body); line-height: var(--lh-body); }
 #floating-timeline .conversation-turn { padding: 12px 0; border: 0; min-height: 0; height: auto; overflow: visible; }
 #floating-timeline .conversation-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: none; height: auto; overflow: visible; font: inherit; }
-#floating-timeline .conversation-actions { display: flex; align-items: center; margin-top: 6px; min-height: 0; }
+#floating-timeline .conversation-preview { margin-bottom: 8px; padding-inline-start: 9px; border-inline-start: 2px solid var(--border); }
+#floating-timeline .conversation-preview small { display: block; margin-bottom: 3px; color: var(--muted); }
+#floating-timeline .conversation-actions { display: flex; flex-wrap: wrap; align-items: center; margin-top: 6px; min-height: 0; }
 #floating-timeline .conversation-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; height: auto; padding: 3px 6px; border: 0; background: transparent; color: var(--muted); font: inherit; line-height: 1.5; text-align: left; white-space: normal; }
 #floating-timeline .conversation-actions button:hover { background: var(--card); color: var(--ink); }
 #floating-timeline .conversation-actions button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 #floating-timeline .conversation-elapsed { display: block; color: var(--muted); margin-top: 6px; font-size: var(--fs-caption); }
 #paged-statusbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 1px 12px; border-top: 1px solid var(--paged-line); min-height: 32px; font-size: var(--fs-caption); }
 #paged-metadata { display: flex; flex: 1; align-items: center; min-width: 0; gap: 12px; }
+#paged-version { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#paged-preview-latest { flex-shrink: 0; white-space: nowrap; }
 #paged-statistics { flex: 0 0 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #paged-save-state { border-left: 1px solid var(--border); padding-left: 12px; }
 #paged-statusbar button, #paged-statusbar select { min-height: 26px; height: 26px; padding: 2px 8px; font-size: var(--fs-caption); border-radius: 4px; }
@@ -89,7 +93,8 @@
 @media (max-width: 650px) {
   #paged-statusbar { display: grid; grid-template-columns: minmax(0,1fr) 28px 28px 64px 28px; gap: 2px 4px; padding: 3px 8px; }
   #paged-metadata { display: contents; }
-  #paged-save-state { grid-row: 1; grid-column: 1 / -1; border: 0; padding: 0; }
+  #paged-version { grid-row: 1; grid-column: 1 / -1; }
+  #paged-save-state { border: 0; padding: 0; }
   #paged-statistics { grid-row: 2; grid-column: 1; min-width: 0; }
   #paged-statusbar > button, #paged-statusbar > select { grid-row: 2; }
 }

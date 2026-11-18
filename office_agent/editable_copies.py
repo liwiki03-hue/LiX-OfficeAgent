@@ -6,6 +6,7 @@ import uuid
 from docx import Document
 
 from .paged_documents import CandidatePublisher, GuardError, W, eligibility, parts, sha, xml
+from .edit_metrics import publication_metrics
 
 
 def body_blocks(data):
@@ -56,6 +57,7 @@ def body_blocks(data):
 
 
 class EditableCopyPublisher(CandidatePublisher):
+    @publication_metrics
     def plan_copy(self, *, document_id, draft_revision, operation_id=None):
         self.phase('preparing', '正在整理正文与普通表格，准备可编辑副本。')
         self.check_source()

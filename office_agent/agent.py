@@ -11,6 +11,7 @@ from copy import deepcopy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -122,8 +123,8 @@ _SYSTEM = ("Follow the user's goal and constraints. Only invoke the listed appro
            "Truncated content is not a complete document summary: continue reading indicated regions. "
            "For tools taking an Excel address, use a complete reference such as A1, A1:B2 or Sheet1!A1: "
            "never a bare index, a column letter alone, or a vague reference. "
-           "Batch reads cover one directory read-only. File plans need confirmation "
-           "at execution, never assume approval. Answer the specific fact requested, concisely; "
+           "Batch two independent read-only Excel reads. File plans need confirmation "
+           "at execution, never assume approval. Use latest constraints; answer from evidence; "
            "do not quote an entire long cell when only one part is requested. "
            "When a write, diagram or image task is under-specified and guessing wrong would be "
            "costly, do NOT ask in prose: call the 'clarify' tool instead, so the question renders "
@@ -489,7 +490,9 @@ class OfficeAgent:
                  capability_tools: list[ToolSpec] | None = None,
                  clarification_family: str | None = None,
                  skill_context: Any | None = None,
-                 runtime_boundary: Callable[[str, AgentState], None] | None = None):
+                 runtime_boundary: Callable[[str, AgentState], None] | None = None,
+                 metrics: Any | None = None,
+                 read_batches: bool = True):
         if context_tokens <= 0 or reply_tokens <= 0 or reply_tokens >= context_tokens:
             raise ValueError("Invalid context/reply budget")
         if decision_limit is not None and (type(decision_limit) is not int or not 1 <= decision_limit <= MAX_DECISION_LIMIT):
@@ -554,6 +557,18 @@ class OfficeAgent:
         self.results: dict[str, bytes] = {}
         self.context_tokens, self.reply_tokens = context_tokens, reply_tokens
         self.token_estimator = token_estimator or (lambda s: (len(s.encode("utf-8")) + 2) // 3)
+        from .turn_metrics import TurnMetrics
+        names = {tool.name for tool in [*tools, *(write_tools or []), *(capability_tools or [])]
+                 if re.fullmatch(r'[A-Za-z][A-Za-z0-9_.:-]{0,95}', tool.name)}
+        self._metric_tool_names = names
+        self.metrics = metrics if metrics is not None else TurnMetrics(tool_names=names)
+        if metrics is not None:
+            self.metrics.register_tools(names)
+        self._owns_metrics = metrics is None
+        self.read_batches = read_batches
+        self._staged_state = None
+        self._read_batch = None
+        self._sheet_observations = {}
 
     def new_state(self, goal: str, *, constraints: list[str] | None = None,
                   file_versions: dict[str, str] | None = None,
@@ -567,6 +582,8 @@ class OfficeAgent:
         return self.state_dir / "agent-state.json" if self.persist else None
 
     def save(self, state: AgentState) -> None:
+        if state is self._staged_state:
+            return
         if self.persist:
             self.state_dir.mkdir(parents=True, exist_ok=True)
             temporary = self.checkpoint.with_suffix(".tmp")
@@ -723,7 +740,8 @@ class OfficeAgent:
         return spec, args, None
 
     def _execute(self, call: ToolCall, state: AgentState, *,
-                 snippets: list[str] | None = None) -> None:
+                 snippets: list[str] | None = None) -> Any:
+        reused = False
         spec, args, plan = self._validate_plan(call, state)
         if spec.access == "write":
             # A valid pre-model budget is not enough: returned arguments can enlarge
@@ -738,7 +756,9 @@ class OfficeAgent:
         if plan is not None and plan.access == "read":
             state.pending_plan = plan
             self.save(state)  # durable read request before asking for approval
-            if self.confirm is None or not self.confirm(plan):
+            with self.metrics.span('authorization'):
+                approved = self.confirm is not None and self.confirm(plan)
+            if not approved:
                 state.status = "confirmation_required"
                 self.save(state)
                 return
@@ -750,6 +770,7 @@ class OfficeAgent:
             self.save(state)
             return
         self.runtime_boundary('before_tool', state)
+        cache_key = self._batch_read_guard(call, state) if self._read_batch is not None else None
         if self.capability_tools is not None and spec.name == _TOOL_PACK_GATE.name:
             state.tool_pack = args["pack"]
             # Changing packs is read-only even if a previous pack was explicitly
@@ -769,8 +790,20 @@ class OfficeAgent:
         else:
             # For write tools dispatcher ONLY prepares a proposed edit. It must not
             # execute a write; the UI owns preview + execute(plan_id, confirmed=True).
-            result = self.dispatcher(spec.name, args)
+            if cache_key is not None and cache_key in self._read_batch['results']:
+                result = deepcopy(self._read_batch['results'][cache_key])
+                self.metrics.count('tool_reuse')
+                reused = True
+            else:
+                self.metrics.count('tool_executions')
+                with self.metrics.span('tool', tool=spec.name if spec.name in self._metric_tool_names else None):
+                    result = self.dispatcher(spec.name, args)
+                if cache_key is not None:
+                    self._batch_read_guard(call, state)
+                    self._read_batch['results'][cache_key] = deepcopy(result)
         self.runtime_boundary('after_tool', state)
+        if cache_key is not None:
+            self._batch_read_guard(call, state)
         if spec.access == "write":
             if not isinstance(result, dict) or not isinstance(result.get("plan_id"), str) or not result["plan_id"]:
                 raise ValueError("Write tool must return a public preview containing plan_id")
@@ -806,7 +839,7 @@ class OfficeAgent:
         excerpt = context if context is not None else data.decode("utf-8")
         summary = (f"Proposed edit plan {result['plan_id']} requires UI preview and confirmation; "
                    f"edit the source only through the UI" if spec.access == "write" else
-                   f"{spec.name} (fresh result, stored at {stored_at}): "
+                   f"{spec.name} ({'verified batch reuse' if reused else 'fresh result'}, stored at {stored_at}): "
                    f"{excerpt[:_EVIDENCE_EXCERPT]}")
         evidence = repeated or Evidence(tool=spec.name, result_path=locator, sha256=digest,
                                         bytes=len(data), summary=summary)
@@ -820,13 +853,184 @@ class OfficeAgent:
         content = summary if context is None else summary + "\nBounded tool fragment (JSON):\n" + context
         state.history.append({"role": "tool", "tool_call_id": call.id or f"call-{state.decisions}",
                               "content": content})
+        if self._read_batch is None and spec.name in {'read_excel_structure', 'read_excel_region'} and isinstance(result, dict):
+            path = str(Path(args['path']).resolve(strict=False))
+            versions = {value for key, value in state.required.file_versions.items()
+                        if str(Path(key).resolve(strict=False)) == path}
+            titles = result.get('sheet_titles', [result.get('sheet')])
+            if len(versions) == 1 and isinstance(titles, list):
+                self._sheet_observations.setdefault((path, next(iter(versions))), set()).update(
+                    title for title in titles if type(title) is str)
         state.failure_streak = {}
+        self.save(state)
+        return result
+
+    def _batch_scope(self, state):
+        payload = {'goal': state.required.goal, 'constraints': state.required.constraints,
+                   'versions': state.required.file_versions}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def _batch_read_guard(self, call, state):
+        from .writes import Workspace, digest
+        if self._batch_scope(state) != self._read_batch['scope']:
+            raise StaleInstruction('Read batch requirements changed')
+        if self.dispatcher is not self._read_batch['dispatcher']:
+            raise StaleInstruction('Read batch dispatcher changed')
+        if self.stop_requested():
+            raise StaleInstruction('Read batch stopped before commit')
+        spec, args, plan = self._validate_plan(call, state)
+        if spec.name != 'read_excel_region' or spec.access != 'read' or plan is None:
+            raise ValueError('Tool is not an independent approved region read')
+        path = Workspace(Path(args['path']).parent).file(args['path'])
+        versions = {value for key, value in state.required.file_versions.items()
+                    if Path(key).resolve(strict=False) == path}
+        if len(versions) != 1 or not re.fullmatch(r'[0-9a-f]{64}', next(iter(versions), '')):
+            raise ValueError('Read batch requires one trusted source version')
+        if digest(path) not in versions:
+            raise InstructionPause('Read batch source changed; reopen the current document before continuing')
+        observed = self._sheet_observations.get((str(path), next(iter(versions))), set())
+        if args['sheet'] not in state.required.goal and args['sheet'] not in observed:
+            raise ValueError('Worksheet name is not supplied or observed; use read_excel_structure before a region batch')
+        schema = json.dumps(spec.model_schema(), sort_keys=True, ensure_ascii=False)
+        signature = hashlib.sha256((schema + json.dumps(args, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
+        identity = (signature, next(iter(versions)), tuple(str(item.resolve(strict=False)) for item in spec.allowed_paths))
+        if call.id in self._read_batch['identities'] and self._read_batch['identities'][call.id] != identity:
+            raise StaleInstruction('Read batch approval scope changed')
+        self._read_batch['identities'][call.id] = identity
+        return identity
+
+    def _read_progress(self, state, calls, previous, evidence_before):
+        payload = {'scope': self._batch_scope(state),
+                   'calls': [{'name': call.name, 'args': call.args,
+                              'schema': self.tools[call.name].model_schema()} for call in calls],
+                   'results': sorted(item.sha256 for item in state.required.evidence
+                                     if item.tool in {call.name for call in calls})}
+        key = '__read_repeat__' + hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        progress = {item.sha256 for item in state.required.evidence} != evidence_before
+        repeats = 0 if progress else previous.get(key, 0) + 1
+        state.failure_streak = {key: repeats}
+        if repeats >= _FAILURE_STOP:
+            state.status = 'limit'
+            state.required.errors.append('Repeated region reads added no new evidence; provide the missing range or revise the question')
+
+    def _batch_failure(self, state, raw_calls):
+        requests = [{'name': item.get('name'), 'args': item.get('args')} if isinstance(item, dict) else item
+                    for item in raw_calls] if isinstance(raw_calls, list) else raw_calls
+        signature = json.dumps({'calls': requests, 'scope': self._batch_scope(state)},
+                               sort_keys=True, ensure_ascii=False, default=str)
+        key = '__batch_failure__' + hashlib.sha256(signature.encode()).hexdigest()
+        failures = state.failure_streak.get(key, 0) + 1
+        state.failure_streak = {key: failures}
+        if failures >= _FAILURE_STOP:
+            state.status = 'limit'
+            state.required.errors.append('Repeated invalid batch cannot proceed; correct the missing parameters or approved scope')
+
+    def _execute_calls(self, raw_calls, content, state, snippets):
+        calls = []
+        try:
+            if not isinstance(raw_calls, list) or not 1 < len(raw_calls) <= 16:
+                raise ValueError('Tool batch must contain at most sixteen calls')
+            used = {call.get('id') for item in state.history for call in item.get('tool_calls', []) if isinstance(call, dict)}
+            for index, raw in enumerate(raw_calls):
+                call = ToolCall.model_validate(raw)
+                identifier = call.id or f'call-{state.decisions}-{index+1}'
+                if identifier in used:
+                    raise ValueError('Tool call identifiers must be unique')
+                used.add(identifier)
+                calls.append(call.model_copy(update={'id': identifier}))
+            for call in calls:
+                with self.metrics.span('validation'):
+                    self._validate_plan(call, state)
+        except Exception as error:
+            self.metrics.count('tool_failures')
+            state.required.errors.append('Tool batch rejected before execution: ' + _describe_tool_error(error))
+            if isinstance(raw_calls, list) and len(calls) == len(raw_calls) and len({call.id for call in calls}) == len(calls):
+                state.history.append({'role': 'assistant', 'content': '',
+                                      'tool_calls': [{'name': call.name, 'args': call.args, 'id': call.id} for call in calls]})
+                state.history.extend({'role': 'tool', 'tool_call_id': call.id,
+                                      'content': 'Batch rejected before execution; no tool was executed.'} for call in calls)
+            else:
+                state.history.append({'role': 'user', 'content': 'Invalid tool batch rejected before execution; issue valid unique calls.'})
+            self._batch_failure(state, raw_calls)
+            self.save(state)
+            return
+        independent = len(calls) <= 2 and all(call.name == 'read_excel_region' and self.tools[call.name].access == 'read' for call in calls)
+        previous = dict(state.failure_streak)
+        evidence_before = {item.sha256 for item in state.required.evidence}
+        staged = state.model_copy(deep=True)
+        staged.history.append({'role': 'assistant', 'content': str(content)[:500],
+                               'tool_calls': [{'name': call.name, 'args': call.args, 'id': call.id} for call in calls]})
+        self._staged_state = staged
+        self._read_batch = {'scope': self._batch_scope(staged), 'identities': {}, 'results': {},
+                            'dispatcher': self.dispatcher} if independent else None
+        committed = False
+        try:
+            if self.estimate(staged, snippets) >= .9 * self.context_tokens:
+                raise BudgetError('Tool batch exceeds the existing pre-dispatch context budget')
+            if independent:
+                for call in calls:
+                    with self.metrics.span('validation'):
+                        self._batch_read_guard(call, staged)
+            for index, call in enumerate(calls):
+                if (index and not independent) or staged.status in {'limit', 'confirmation_required', 'budget'} or self.stop_requested():
+                    reason = 'requires_sequential_decision' if index and not independent else 'cancelled'
+                    staged.history.append({'role': 'tool', 'tool_call_id': call.id,
+                                           'content': json.dumps({'status': 'not_executed', 'reason': reason})})
+                    if self.stop_requested():
+                        staged.status = 'limit'
+                    continue
+                try:
+                    history_size = len(staged.history)
+                    self._execute(call, staged, snippets=snippets)
+                    if staged.pending_plan is not None:
+                        staged.pending_plan = None
+                    if len(staged.history) == history_size:
+                        staged.history.append({'role': 'tool', 'tool_call_id': call.id,
+                                               'content': 'Tool not executed; approval declined or task stopped.'})
+                except (StaleInstruction, InstructionPause):
+                    raise
+                except BudgetError as error:
+                    staged.status = 'budget'
+                    staged.required.errors.append(str(error))
+                    staged.history.append({'role': 'tool', 'tool_call_id': call.id, 'content': 'Tool not executed: context budget exceeded.'})
+                except Exception as error:
+                    self.metrics.count('tool_failures')
+                    staged.required.errors.append('Tool failed: ' + _describe_tool_error(error))
+                    staged.history.append({'role': 'tool', 'tool_call_id': call.id, 'content': 'Tool rejected or failed; consult errors in required_state.'})
+            if independent:
+                self.runtime_boundary('batch_commit', staged)
+                for call in calls:
+                    self._batch_read_guard(call, staged)
+                if staged.status == 'running':
+                    self._read_progress(staged, calls, previous, evidence_before)
+                    if staged.status == 'running' and len(staged.required.errors) == len(state.required.errors):
+                        self.metrics.count('roundtrips_avoided', len(calls) - 1)
+            state.required = staged.required
+            state.history = staged.history
+            state.status = staged.status
+            state.pending_plan = None
+            state.failure_streak = staged.failure_streak
+            state.tool_pack = staged.tool_pack
+            state.write_tools_requested = staged.write_tools_requested
+            committed = True
+        finally:
+            self._staged_state = None
+            self._read_batch = None
+            if not committed and calls[0].name in {self.write_gate, _TOOL_PACK_GATE.name}:
+                self._restore_tool_visibility(state)
         self.save(state)
 
     def resume(self, *, snippets: list[str] | None = None) -> AgentState:
         return self.run(self.load(), snippets=snippets)
 
     def run(self, state: AgentState, *, snippets: list[str] | None = None) -> AgentState:
+        try:
+            return self._run(state, snippets=snippets)
+        finally:
+            if self._owns_metrics:
+                self.metrics.mark('completed')
+
+    def _run(self, state: AgentState, *, snippets: list[str] | None = None) -> AgentState:
         snippets = list(snippets or [])
         if state.status == "done":
             return state
@@ -870,7 +1074,9 @@ class OfficeAgent:
                 return state
             try:
                 self.runtime_boundary('before_model', state)
-                messages = self._budget(state, snippets)
+                with self.metrics.span('context'):
+                    messages = self._budget(state, snippets)
+                self.metrics.record_estimate(input_tokens=max(0,self.estimate(state,snippets)-self.reply_tokens))
             except InstructionPause as exc:
                 state.status = 'confirmation_required'
                 state.required.errors.append(str(exc))
@@ -885,16 +1091,32 @@ class OfficeAgent:
             # a mock may implement the same interface without importing main.
             bound = self.model.bind_tools(self._tool_schemas())
             state.decisions += 1  # reserve decision before request, including failed calls
+            self.metrics.count('decisions')
             self.save(state)
+            first_fragment = None
+            def answer_event(event):
+                nonlocal first_fragment
+                if event.get('type') == 'answer_draft_delta' and event.get('text') and first_fragment is None:
+                    first_fragment = self.metrics.now()
+                elif event.get('type') == 'answer_draft_cancel':
+                    first_fragment = None
+                return self.on_answer_event(event)
             try:
                 from .answer_stream import streamed_response
                 self.runtime_boundary('model_start', state)
-                response = streamed_response(bound, messages, self.on_answer_event, self.stop_requested)
+                self.metrics.count('model_attempts')
+                with self.metrics.span('model'):
+                    response = streamed_response(bound, messages, answer_event if self.on_answer_event is not None else None,
+                                                 self.stop_requested)
+                self.metrics.record_usage(response)
             except StaleInstruction:
+                self.metrics.record_usage(None)
                 if self.stop_requested():
                     return state
                 continue
             except Exception as exc:
+                self.metrics.count('model_failures')
+                self.metrics.record_usage(None)
                 state.required.errors.append(f"Model call failed: {type(exc).__name__}: {str(exc)[:240]}")
                 state.status = "limit" if self.stop_requested() or (self.decision_limit is not None and state.decisions >= self.decision_limit) else "running"
                 self.save(state)
@@ -921,11 +1143,40 @@ class OfficeAgent:
                 # The host binds a fresh one-shot card; no Plan or approval is created.
                 raise ModelClarification(card)
             if calls:
+                if not isinstance(calls, list):
+                    self.metrics.count('tool_failures')
+                    state.required.errors.append('Tool calls must be a list; nothing was executed')
+                    self._batch_failure(state, calls)
+                    self.save(state)
+                    continue
+                self.metrics.count('tool_requests',len(calls))
+                if len(calls)>1 and self.read_batches:
+                    try:
+                        self._execute_calls(calls,content,state,snippets)
+                    except StaleInstruction:
+                        state.pending_plan=None
+                        if self.stop_requested():
+                            state.status='limit';self.save(state);return state
+                        continue
+                    except InstructionPause as exc:
+                        state.status='confirmation_required';state.required.errors.append(str(exc));self.save(state);return state
+                    except BudgetError as exc:
+                        state.status='budget';state.required.errors.append(str(exc));self.save(state);return state
+                    except Exception as exc:
+                        self.metrics.count('tool_failures')
+                        state.required.errors.append('Tool batch rejected before commit: '+_describe_tool_error(exc))
+                        self._batch_failure(state, calls)
+                        self.save(state)
+                    if state.status in {'confirmation_required','limit','budget'}:
+                        return state
+                    continue
                 # One tool per decision keeps later calls subject to fresh validation
                 # and leaves unexecuted calls for a fresh model decision.
                 raw = calls[0]
                 call = None
                 history_size = len(state.history)
+                previous = dict(state.failure_streak)
+                evidence_before = {item.sha256 for item in state.required.evidence}
                 try:
                     call = ToolCall.model_validate(raw)
                     if not call.id:
@@ -933,17 +1184,28 @@ class OfficeAgent:
                     state.history.append({"role": "assistant", "content": str(content)[:500],
                                           "tool_calls": [{"name": call.name, "args": call.args, "id": call.id}]})
                     self._execute(call, state, snippets=snippets)
+                    if call.name == 'read_excel_region' and state.status == 'running':
+                        self._read_progress(state, [call], previous, evidence_before)
                     if state.status in ("confirmation_required", "limit"):
                         return state
                 except StaleInstruction:
                     del state.history[history_size:]
                     state.pending_plan = None
                     continue
+                except InstructionPause as exc:
+                    self.metrics.count('tool_failures')
+                    del state.history[history_size:]
+                    state.pending_plan = None
+                    state.status = 'confirmation_required'
+                    state.required.errors.append(str(exc))
+                    self.save(state)
+                    return state
                 except BudgetError as exc:
                     state.required.errors.append(str(exc))
                     self.save(state)
                     return state
                 except Exception as exc:
+                    self.metrics.count('tool_failures')
                     hint = ""
                     if isinstance(call, ToolCall):
                         failures = _consecutive_failures(state, call.name) + 1
@@ -965,6 +1227,8 @@ class OfficeAgent:
             else:
                 state.answer = str(content)
                 state.status = "done"
+                if self._owns_metrics:
+                    self.metrics.mark('first_effective_answer', at=first_fragment)
                 self.save(state)
                 return state
             self.save(state)

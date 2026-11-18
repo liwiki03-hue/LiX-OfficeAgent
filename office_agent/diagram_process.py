@@ -121,7 +121,7 @@ class _WindowsJob:
 def _run_owned(command: tuple[str, ...], *, timeout_ms: int = 8000,
                cancelled: Callable[[], bool] | None = None,
                _job_factory=_WindowsJob, _clock=time.monotonic,
-               _sleep=time.sleep) -> OwnedRun:
+               _sleep=time.sleep, _timings: dict | None = None) -> OwnedRun:
     """Internal host primitive, with injectable clock/job only for unit tests.
 
     Timeout includes launch time but cannot preempt a blocked Windows API call.
@@ -137,12 +137,21 @@ def _run_owned(command: tuple[str, ...], *, timeout_ms: int = 8000,
             or (cancelled is not None and not callable(cancelled))):
         raise DiagramError('unsupported_source')
     started = _clock()
+    if type(_timings) is not dict:
+        _timings = None
     if cancelled is not None and cancelled():
         return OwnedRun('render_cancelled', None, 0, 0, True)
     job = process = None
+    stage_started = started
     try:
         job = _job_factory()
+        if _timings is not None:
+            _timings['job_setup_seconds'] = max(0.0, _clock() - stage_started)
+        stage_started = _clock()
         process = job.spawn(command)
+        if _timings is not None:
+            _timings['spawn_seconds'] = max(0.0, _clock() - stage_started)
+        stage_started = _clock()
         deadline = started + timeout_ms / 1000
         while True:
             if cancelled is not None and cancelled():
@@ -157,11 +166,19 @@ def _run_owned(command: tuple[str, ...], *, timeout_ms: int = 8000,
                 break
             _sleep(min(0.02, max(0, deadline - _clock())))
     finally:
+        if _timings is not None:
+            _timings['wait_seconds'] = max(0.0, _clock() - stage_started)
+        stage_started = _clock()
         try:
             if job is not None:
                 if job.close() is not True:
                     raise DiagramError('renderer_cleanup_failed')
         finally:
+            if _timings is not None:
+                _timings['job_cleanup_seconds'] = max(0.0, _clock() - stage_started)
+            stage_started = _clock()
             if process is not None:
                 process.close()
+            if _timings is not None:
+                _timings['handle_close_seconds'] = max(0.0, _clock() - stage_started)
     return OwnedRun(code, exit_code, process.pid, round(_clock() - started, 3), True)

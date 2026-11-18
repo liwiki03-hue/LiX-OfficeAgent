@@ -2,7 +2,7 @@ import re
 from types import SimpleNamespace
 
 from ..paged_documents import GuardError
-from ..professional_edits import _protect
+from ..professional_edits import NUMBER, _protect
 from ..rag import SECRET
 
 
@@ -10,6 +10,10 @@ YEAR_COMMAND = re.compile(r'(?:请)?(?:只|仅)?(?:把|将)?(?:选中句|选中�
 YEAR = re.compile(r'(?<![\d.])(?:19|20)\d{2}(?=年)')
 YEAR_CONDITIONAL = re.compile(r'如果|假如|假设|若|是否|能否|可否|例如|比如|示例|举例')
 YEAR_VETO = re.compile(r'(?:不要|不得|禁止|不能|不许|暂不|无需|不必).{0,8}(?:年份|(?:19|20)\d{2}年)|(?:保留|保持)(?:原有|原|当前)?年份(?:不变)?')
+
+
+class DraftNumberConflict(GuardError):
+    pass
 
 
 def validate_suggestion(before, after, reason, requirements):
@@ -34,13 +38,16 @@ def validate_suggestion(before, after, reason, requirements):
         original = years[0].group()
         targets = {new for old, new in commands if old is None or old == original}
         if len(targets) > 1:
-            raise GuardError('年份要求存在冲突，请修改或取消旧要求后重新处理')
+            raise DraftNumberConflict('年份要求存在冲突，请保留一个目标年份后重新处理。')
         if targets:
             replacement = next(iter(targets))
             if replacement != original:
                 expected = before[:years[0].start()] + replacement + before[years[0].end():]
                 changes = [{'kind': 'year', 'before': original, 'after': replacement}]
     policy.preserve_numbers = True
+    expected_numbers, proposed_numbers = NUMBER.findall(expected), NUMBER.findall(after)
+    if expected_numbers != proposed_numbers and sorted(expected_numbers) == sorted(proposed_numbers):
+        raise DraftNumberConflict('这次改写调换了受保护数字的顺序。可以保持原来的数字顺序，只调整文字吗？')
     _protect(expected, after, policy)
     if before == after:
         raise GuardError('建议没有实际变化')

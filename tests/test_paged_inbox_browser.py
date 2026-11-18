@@ -9,6 +9,7 @@ import time
 from docx import Document
 import pytest
 
+from office_agent.writes import digest
 from tests.test_paged_browser import engine_frame, paged_browser as base_paged_browser
 from tests.test_floating_browser import open_floating_menu
 
@@ -129,6 +130,119 @@ def test_receive_without_model_then_review_apply_and_verified_copy(paged_browser
         page.screenshot(path=str(evidence/'03-verified-copy.png'))
         shutil.copy2(source,evidence/'source.docx');shutil.copy2(receipt['output'],evidence/'verified-copy.docx')
         (evidence/'RESULT.json').write_text(json.dumps({'status':receipt['status'],'source_unchanged':True,'model_invocations':len(calls),'scope':'controlled model; real DOCX engine and render gate; browser, not native or cloud','render':receipt['render_diff']},ensure_ascii=False,indent=2),encoding='utf8')
+
+
+@pytest.mark.parametrize('pair', [False, True])
+def test_preview_tracks_latest_draft_when_rendering(paged_browser, monkeypatch, pair):
+    page, api, source, errors = paged_browser
+    if pair:
+        monkeypatch.setenv('OFFICE_AGENT_DOCX_PAIR_PUBLISH', '1')
+    else:
+        monkeypatch.delenv('OFFICE_AGENT_DOCX_PAIR_PUBLISH', raising=False)
+    floating = api._floating
+    calls = []
+    started, release = threading.Event(), threading.Event()
+    def render(root, backup, candidate, **options):
+        started.set()
+        assert release.wait(30)
+        return {'inputs_unchanged': True, 'render': {'status': 'different'},
+                'source_sha256': digest(backup), 'output_sha256': digest(candidate),
+                'batch_conversion': {'used': options.get('batch_conversion', False)},
+                'render_environment': {'complete': True}, 'conversion_variant': 'docx-pair-candidate-v1'}
+    monkeypatch.setattr('office_agent.fidelity.compare_documents', render)
+    monkeypatch.setattr(api._connections, 'build_model',
+                        lambda route: Suggestion(next(iter(floating.paged.references.values())), calls))
+    original = digest(source)
+    select_model(page)
+    select_reference(page)
+    page.locator('#floating-input').fill('精简所选实验描述，保留年份、温度和单位。')
+    page.locator('#floating-send').click()
+    reply = page.locator('.conversation-turn')
+    changed = '实验完成于2025年，温度120 ℃。'
+    reply.locator('.conversation-preview').get_by_text(changed, exact=True).wait_for()
+    reply.get_by_text('预览', exact=True).wait_for()
+    reply.locator('.conversation-preview').scroll_into_view_if_needed()
+    page.wait_for_function("OfficeConversation.paintTimings().some(point=>point.first_effective_source==='proposal_preview')")
+    identifier = reply.get_attribute('data-turn-id')
+    assert not floating.outputs
+    wait(page, lambda: floating.paged.revision == 1 and floating.paged.snapshot_revision == 1)
+    page.get_by_role('button', name='保存副本', exact=True).click()
+    page.get_by_role('button', name='确认生成副本', exact=True).click()
+    try:
+        wait(page, started.is_set)
+        frame = engine_frame(page)
+        latest = '刚补进第 2 版草稿的句子。'
+        frame.locator('.superdoc-page').get_by_text('非目标段落不变。', exact=True).first.click()
+        page.keyboard.press('End')
+        page.keyboard.insert_text(latest)
+        wait(page, lambda: floating.paged.revision == 2)
+        reply.get_by_text('上一版预览', exact=True).wait_for()
+        reply.get_by_text('正在处理第 1 版，第 2 版仍是草稿。').wait_for()
+    finally:
+        release.set()
+    version_text = '第 1 版未发布，第 2 版草稿已保留。' if pair else '第 1 版已发布，第 2 版仍是草稿。'
+    reply.get_by_text(version_text).wait_for()
+    assert reply.count() == 1 and reply.get_attribute('data-turn-id') == identifier
+    receipt = floating.paged.publication_result
+    assert receipt['reason'] == ('draft_advanced' if pair else 'verified')
+    assert receipt['commit_started'] is (not pair)
+    assert (receipt['draft_revision'], receipt['current_draft_revision']) == (1, 2)
+    requests, outputs = len(calls), list(floating.outputs)
+    assert len(outputs) == (0 if pair else 1)
+    preview = reply.get_by_role('button', name='预览最新草稿', exact=True)
+    preview.click()
+    dialog = page.get_by_role('dialog', name='第 2 版草稿 · 文字预览')
+    dialog.get_by_text(latest).wait_for()
+    dialog.get_by_role('button', name='关闭', exact=True).click()
+    page.wait_for_function("document.activeElement?.textContent==='预览最新草稿' && document.activeElement.closest('.conversation-turn')")
+    preview.click()
+    dialog.get_by_text(latest).wait_for()
+    dialog.get_by_role('button', name='关闭', exact=True).click()
+    assert len(calls) == requests and list(floating.outputs) == outputs and digest(source) == original
+    if not pair:
+        result = floating.outputs[outputs[0]]
+        book = Document(result['output'])
+        assert book.paragraphs[1].text == changed and latest not in book.paragraphs[2].text
+        reply.locator('[role="status"]').scroll_into_view_if_needed()
+        page.wait_for_function("OfficeConversation.paintTimings().some(point=>Number.isFinite(point.final_answer_ms))")
+        point = page.evaluate('OfficeConversation.paintTimings()[0]')
+        assert point['request_ms'] < point['first_effective_ms'] < point['final_answer_ms']
+    else:
+        assert not reply.locator('[data-retry-turn]').count()
+        assert not list(source.parent.glob('*.agent-*.docx'))
+    evidence = os.getenv('LIX_CONVERSATION_EVIDENCE')
+    if evidence:
+        folder = Path(evidence)
+        folder.mkdir(parents=True, exist_ok=True)
+        label = 'pair' if pair else 'default'
+        page.screenshot(path=str(folder / f'{label}-continuing-draft.png'))
+        (folder / f'{label}-publication-transition.json').write_text(
+            json.dumps({'receipt': receipt, 'paint': page.evaluate('OfficeConversation.paintTimings()'),
+                        'model_invocations_before_and_after_preview': [requests, len(calls)],
+                        'published_copies_before_and_after_preview': [len(outputs), len(floating.outputs)]},
+                       ensure_ascii=False, indent=2), encoding='utf8')
+    if pair:
+        page.evaluate("""() => {
+            const wrap = OfficeAuth.wrapApi;
+            OfficeAuth.wrapApi = value => new Proxy(wrap(value), {get(target, name) {
+                if (name !== 'paged_preview_latest_draft') return target[name];
+                return async (...args) => {
+                    const result = await target[name](...args);
+                    await new Promise(resolve => window.releaseLatestPreview = resolve);
+                    return result;
+                };
+            }});
+        }""")
+        preview.click()
+        page.wait_for_function('typeof window.releaseLatestPreview === "function"')
+        page.evaluate("""async () => {
+            OfficePaged.close();
+            window.releaseLatestPreview();
+            await OfficeConversation.painted();
+        }""")
+        assert not dialog.count()
+        assert len(calls) == requests and list(floating.outputs) == outputs
+    assert not errors
 
 
 def test_inflight_invalid_reference_receives_then_requires_explicit_processing(paged_browser,monkeypatch):

@@ -8,6 +8,7 @@ import hashlib
 from ..model_connections import ConnectionState, from_values, plan_catalog
 from ..settings_store import SettingsError, SettingsStore
 from ..chat_policy import reply_policy, output_parameter, continuation_chain, public_continuations, safe_usage
+from ..visible_answer import LeadingThoughtFilter, visible_answer
 
 
 CHAT_REPLY_TOKENS = 512
@@ -713,6 +714,7 @@ class ModelConnections:
                 if hasattr(model, 'num_predict'):
                     model.num_predict = value['budget']['reply_token_reserve']
                 if options.get('stream', True) and callable(getattr(model, 'stream', None)):
+                    thought_filter = LeadingThoughtFilter()
                     stream = model.stream(messages)
                     with self.lock:
                         if visible():
@@ -732,7 +734,7 @@ class ModelConnections:
                         fragment = piece.content
                         if type(fragment) is not str:
                             raise ValueError('chat_response_incompatible')
-                        content += fragment
+                        content += thought_filter.feed(fragment)
                         if len(content) > 32000:
                             content = redact(content)[:32000]
                             turn['finish_reason'] = 'local_limit'
@@ -747,9 +749,10 @@ class ModelConnections:
                             if visible() and available > emitted:
                                 self.app._push({'type': 'answer_draft_delta', 'stream_id': token,'session_id':row['id'] if row else None, 'text': safe[emitted:available]})
                                 emitted = available
+                    content += thought_filter.finish()
                 else:
                     reply = model.invoke(messages)
-                    content = reply.content
+                    content = visible_answer(reply.content)
                     if 'budget' in turn and safe_usage(reply):
                         turn['usage'] = safe_usage(reply)
                     metadata = getattr(reply, 'response_metadata', {}) or {}

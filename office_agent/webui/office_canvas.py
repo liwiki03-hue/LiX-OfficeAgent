@@ -22,6 +22,7 @@ from .. import canvas_display
 from .. import canvas_geometry
 from .. import canvas_panes
 from ..canvas_drafts import implementation as canvas_implementation
+from ..edit_metrics import measure
 
 
 class OfficeCanvas:
@@ -32,6 +33,7 @@ class OfficeCanvas:
 
     def close(self):
         with self.lock:
+            self._invalidate_metrics()
             if hasattr(self, 'ai'):
                 self.ai.invalidate()
             from .canvas_ai import CanvasAI
@@ -61,6 +63,52 @@ class OfficeCanvas:
             self.recovery_status = ''
             self.recovery_dismissed = False
             self.checkpoint_revision = None
+            self._metric_adopting_trace = None
+
+    def _clear_metric_plans(self):
+        tokens = getattr(self, '_metric_plan_tokens', {})
+        for identifier, trace in getattr(self, '_metric_plan_traces', {}).items():
+            trace.stop(tokens.get(identifier), outcome='stale')
+        self._metric_plan_traces = {}
+        self._metric_plan_tokens = {}
+
+    def _invalidate_metrics(self, preserve=None, outcome='stale'):
+        binding = getattr(self, '_metric_draft_binding', None)
+        traces = {trace.id: trace for trace in getattr(self, '_metric_plan_traces', {}).values()}
+        if binding:
+            traces[binding['trace'].id] = binding['trace']
+        self._clear_metric_plans()
+        for trace in traces.values():
+            if trace is not preserve:
+                trace.finish(outcome=outcome)
+        self._metric_draft_binding = None
+
+    def _metrics_for_revision(self, document_id, revision, instruction_binding):
+        binding = self._metric_draft_binding
+        if (binding and binding['document_id'] == document_id and binding['draft_revision'] == revision
+                and binding['draft_sha256'] == sha(self.data) and binding['instruction_binding'] == instruction_binding
+                and binding['trace'].current()):
+            return binding['trace']
+        return None
+
+    def _metrics_for_plan(self, plan, epoch):
+        if self.floating.epoch != epoch or self.document_id != plan['document_id']:
+            return None
+        try:
+            return self._metrics_for_revision(plan['document_id'], plan['draft_revision'], self._instruction_binding())
+        except Exception:
+            return None
+
+    def _metric_pending_updates(self, plan, trace):
+        if trace is None:
+            return False
+        conversation = getattr(self.floating, 'conversation', None)
+        turns = getattr(conversation, 'turns', {})
+        revision = (plan.get('instruction_binding') or {}).get('revision', 0)
+        return any(row.get('parent_id') == trace.conversation_id and row.get('intent') == 'edit'
+                   and row.get('status') not in {'complete', 'failed', 'stopped', 'uncertain', 'interrupted'}
+                   and (type(row.get('instruction_revision')) is not int or row['instruction_revision'] > revision)
+                   for row in list(turns.values()))
 
     def active(self):
         return self.document_id is not None and self.floating.document and self.floating.document['id'] == self.document_id
@@ -207,7 +255,8 @@ class OfficeCanvas:
         return candidate, summaries, operations
 
     def _invalidate_edit(self, changed=None):
-        self.ai.invalidate()
+        preserve = self._metric_adopting_trace
+        self.ai.invalidate(preserve=preserve)
         if self.floating.runtime is not None:
             self.floating.runtime.stop()
         self.floating.app.pending_id = None
@@ -439,6 +488,7 @@ class OfficeCanvas:
                 self._replay_draft(found[0])
                 self.source_guard.check_source()
                 self.ai.invalidate()
+                self._invalidate_metrics()
                 from .canvas_ai import CanvasAI
                 self.ai = CanvasAI(self)
                 if self.floating.runtime:
@@ -487,6 +537,7 @@ class OfficeCanvas:
                 raise GuardError('放弃草稿需要明确确认，且须等待当前步骤结束')
             self.permit = self.revision
             self.ai.invalidate()
+            self._invalidate_metrics()
             return {'ok': True}
 
     def preview(self, document_id, revision, item_id, page=1):
@@ -547,7 +598,10 @@ class OfficeCanvas:
             self._editing()
             if self.publishing or self.previewing or self.floating.app.busy or not self.state()['dirty']:
                 raise GuardError('请先完成实际编辑并等待当前步骤结束')
-            proof = engine.verify(self.original, self.data, self.source.suffix.lower(), self.operations)
+            instruction_binding = self._instruction_binding()
+            trace = self._metrics_for_revision(document_id, revision, instruction_binding)
+            with measure(trace, 'reopen'):
+                proof = engine.verify(self.original, self.data, self.source.suffix.lower(), self.operations)
             for operation in self.operations:
                 self._check_protection(operation, self.data)
             changes = deepcopy(self.summaries)
@@ -566,15 +620,19 @@ class OfficeCanvas:
                     change['calculation_scope'] = '最终草稿；28位十进制预览，保存后由Office重算'
             identifier = uuid.uuid4().hex
             self.plans.clear()
+            self._clear_metric_plans()
             plan = {'id': identifier, 'document_id': document_id, 'draft_revision': revision, 'source': str(self.source),
                     'source_sha256': sha(self.original), 'candidate_sha256': sha(self.data), 'changes': changes,
                     'output': str(self.source.with_name(f'{self.source.stem}.agent-{identifier[:8]}{self.source.suffix}')),
                     'proof': proof, 'confirmation_required': True, 'mode': '净稿副本；保留原包非目标部件，不支持原生修订',
-                    'instruction_binding': self._instruction_binding(),
+                    'instruction_binding': instruction_binding,
                     'protection_binding': sorted(self.floating.protected_cells),
                     'implementation': canvas_implementation(),
                     'deadline': time.monotonic()+300, 'candidate': self.data, 'operations': deepcopy(self.operations)}
             self.plans[identifier] = plan
+            if trace:
+                self._metric_plan_traces[identifier] = trace
+                self._metric_plan_tokens[identifier] = trace.start('authorization')
             return {'ok': True, 'plan': {key: value for key, value in plan.items() if key not in {'deadline', 'candidate', 'operations'}}}
 
     def publish(self, document_id, revision, plan_id, confirmed, access_id=None):
@@ -586,6 +644,10 @@ class OfficeCanvas:
                     raise GuardError('当前草稿已保存或仍在处理，未重复自动保存')
                 confirmed = True
             plan = self.plans.pop(plan_id, None)
+            trace = self._metric_plan_traces.pop(plan_id, None)
+            token = self._metric_plan_tokens.pop(plan_id, None)
+            if trace:
+                trace.stop(token, outcome='ok' if confirmed is True else 'cancelled')
             if confirmed is not True:
                 return {'ok': True, 'cancelled': True}
             if not plan or plan['draft_revision'] != revision or time.monotonic() > plan['deadline'] or self.publishing or self.floating.app.busy:
@@ -600,7 +662,8 @@ class OfficeCanvas:
             if authorization:
                 plan['authorization'] = authorization
             self.publishing = self.floating.app.busy = True
-            threading.Thread(target=self._publish, args=(plan, self.source_guard, self.floating.app.editor, self.floating.epoch), daemon=True).start()
+            self.ai._notice('draft_publishing', {'kind': 'office_canvas', 'draft_revision': revision}, trace)
+            threading.Thread(target=self._publish, args=(plan, self.source_guard, self.floating.app.editor, self.floating.epoch, trace), daemon=True).start()
             return {'ok': True, 'publishing': True}
 
     def _instruction_binding(self):
@@ -620,41 +683,53 @@ class OfficeCanvas:
         return {'session_id': runtime.session_id, 'revision': runtime.revision,
                 'model': current}
 
-    def _publish(self, plan, source_guard, editor, epoch):
+    def _publish(self, plan, source_guard, editor, epoch, trace=None):
         source = source_guard.source
         job = editor.audit/plan['id']; candidate = job/('working'+source.suffix)
         log = {key: value for key, value in plan.items() if key not in {'deadline', 'candidate', 'operations'}}
         log.update(kind='office_canvas', target='已批准的表格/演示操作', before='原稿', after='批准草稿', risks=['净稿；Office人工排版未验证'], status='failed')
         output = Path(plan['output']); linked = False
         try:
-            source_guard.check_source()
-            _audit_path(editor.audit, directory=True, missing=True); editor.audit.mkdir(exist_ok=True)
-            _audit_path(editor.audit, directory=True); job.mkdir(); _audit_path(job, directory=True)
-            backup = job/('backup'+source.suffix); shutil.copy2(source, backup); log['backup'] = str(backup)
-            if digest(backup) != plan['source_sha256']: raise GuardError('备份摘要不一致')
-            with candidate.open('xb') as stream:
-                stream.write(plan['candidate']); stream.flush(); os.fsync(stream.fileno())
-            log['verification'] = engine.verify(backup.read_bytes(), candidate.read_bytes(), source.suffix.lower(), plan['operations'])
-            render = compare_documents(editor.space.root, backup, candidate)
-            log['render_diff'] = render
-            if render.get('inputs_unchanged') is not True or render.get('render', {}).get('status') not in {'equivalent', 'different'}:
-                raise GuardError('渲染或重开验证未通过，未发布副本')
-            source_guard.check_source()
-            if digest(candidate) != plan['candidate_sha256'] or digest(backup) != plan['source_sha256']:
-                raise GuardError('验证期间候选或备份发生变化')
-            target = editor.space.file(str(output), existing=False)
-            os.link(candidate, target); linked = True
-            log.update(status='verified', output_sha256=digest(target))
-            if log['output_sha256'] != plan['candidate_sha256']: raise GuardError('输出身份不一致')
-            (job/'audit.json').write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding='utf8')
+            with measure(trace, 'publication'):
+                source_guard.check_source()
+                _audit_path(editor.audit, directory=True, missing=True); editor.audit.mkdir(exist_ok=True)
+                _audit_path(editor.audit, directory=True); job.mkdir(); _audit_path(job, directory=True)
+                backup = job/('backup'+source.suffix); shutil.copy2(source, backup); log['backup'] = str(backup)
+                if digest(backup) != plan['source_sha256']: raise GuardError('备份摘要不一致')
+                with candidate.open('xb') as stream:
+                    stream.write(plan['candidate']); stream.flush(); os.fsync(stream.fileno())
+            with measure(trace, 'reopen'):
+                log['verification'] = engine.verify(backup.read_bytes(), candidate.read_bytes(), source.suffix.lower(), plan['operations'])
+            with measure(trace, 'render'):
+                render = compare_documents(editor.space.root, backup, candidate)
+                log['render_diff'] = render
+                if render.get('inputs_unchanged') is not True or render.get('render', {}).get('status') not in {'equivalent', 'different'}:
+                    raise GuardError('渲染或重开验证未通过，未发布副本')
+            with measure(trace, 'publication'):
+                source_guard.check_source()
+                if digest(candidate) != plan['candidate_sha256'] or digest(backup) != plan['source_sha256']:
+                    raise GuardError('验证期间候选或备份发生变化')
+                target = editor.space.file(str(output), existing=False)
+                os.link(candidate, target); linked = True
+                log.update(status='verified', output_sha256=digest(target))
+                if log['output_sha256'] != plan['candidate_sha256']: raise GuardError('输出身份不一致')
+                (job/'audit.json').write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding='utf8')
             with self.lock:
                 if self.floating.epoch != epoch or self.document_id != plan['document_id']:
+                    if trace:
+                        trace.finish(outcome='stale')
                     return
                 self.published_revision = plan['draft_revision']
                 self.floating.outputs[plan['id']] = {**log, 'source_version': plan['source_sha256'],
                     'instruction_revision': (plan.get('instruction_binding') or {}).get('revision', 0)}
                 self.floating.stage = 'verified'
-                self.floating.notice('draft_published', {'receipt': log, 'draft_revision': plan['draft_revision']})
+                valid_trace = self._metrics_for_plan(plan, epoch)
+                pending_updates = self._metric_pending_updates(plan, trace)
+                if trace:
+                    trace.finish(outcome='ok' if valid_trace is trace and not pending_updates else 'stale')
+                self.ai._notice('draft_published', {'receipt': log, 'draft_revision': plan['draft_revision'],
+                    'metric_binding_status': 'current' if valid_trace is trace and not pending_updates else 'stale',
+                    'instruction_revision': (plan.get('instruction_binding') or {}).get('revision', 0)}, trace if valid_trace is trace and not pending_updates else None)
         except Exception:
             with self.lock:
                 current = self.floating.epoch == epoch and self.document_id == plan['document_id']
@@ -663,12 +738,14 @@ class OfficeCanvas:
                 if current:
                     self.uncertain = uncertain
                     self.last_error = '副本结果待核实，请勿重复发布' if uncertain else '生成或渲染验证失败；未发布副本，草稿保留'
-                    self.floating.notice('draft_publish_failed', {'text': self.last_error, 'uncertain': self.uncertain})
+                    self.ai._notice('draft_publish_failed', {'text': self.last_error, 'uncertain': self.uncertain}, trace)
                 try:
                     if job.is_dir(): (job/'audit.json').write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding='utf8')
                 except OSError:
                     self.uncertain = True
         finally:
+            if trace:
+                trace.finish(outcome='error' if log['status'] in {'failed', 'uncertain'} else 'ok')
             try:
                 if candidate.is_file(): candidate.unlink()
             finally:

@@ -3,10 +3,43 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from tests.test_document_conversation import Answers
 from tests.test_model_connections import connection, payload, save, select
 from tests.test_office_canvas_browser import native_browser
 from tests.test_paged_browser import paged_browser
+from tests.test_professional_browser import EDGE, STATIC
+
+
+def test_final_answer_is_measured_when_it_replaces_an_unpainted_preview():
+    if not EDGE.is_file():
+        pytest.skip('Requires existing Windows Edge')
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(EDGE), headless=True, args=['--disable-background-networking'])
+        try:
+            page = browser.new_page()
+            page.set_content('<div id="floating-scroll"><div id="floating-timeline"></div></div>')
+            page.add_script_tag(path=STATIC / 'document_conversation.js')
+            page.evaluate("""() => {
+                const row = {id:'rapid-answer', question:'精简', document_id:'word', status:'running',
+                    intent:'edit', stage:'proposal', sequence:1, created:Date.now()/1000, text:'正在核对',
+                    preview:{id:'proposal', draft_revision:0, instruction_revision:1, text:'平均延迟为120 ms。'}};
+                OfficeConversation.echo({id:row.id, text:row.question, document:row.document_id});
+                OfficeConversation.restore({context_id:'word', turns:[row]}, {document_id:'word',
+                    draft_revision:0, instruction_revision:1, proposals:[{id:'proposal',status:'pending'}]});
+                OfficeConversation.merge({...row, sequence:2, status:'complete', stage:'complete', preview:null,
+                    text:'平均延迟为120 ms。', answer:'平均延迟为120 ms。'});
+            }""")
+            page.get_by_role('status').filter(has_text='平均延迟为120 ms。').wait_for()
+            page.wait_for_function('Number.isFinite(OfficeConversation.paintTimings()[0].final_answer_ms)', timeout=1500)
+            point = page.evaluate('OfficeConversation.paintTimings()[0]')
+            assert point['first_effective_source'] == 'final'
+            assert point['request_ms'] < point['first_effective_ms'] == point['final_answer_ms']
+        finally:
+            browser.close()
 
 
 def configure(page, api, monkeypatch):
@@ -32,6 +65,12 @@ def verify_answer(page, api, source, errors, answers, question):
     assert not api._floating.outputs and not api._floating.access.state()['id']
     assert source.read_bytes() == original and len(answers.calls) == 1
     assert (api._floating.paged.revision if source.suffix == '.docx' else api._floating.canvas.revision) == revision
+    page.wait_for_function('OfficeConversation.paintTimings().some(point=>Number.isFinite(point.question_echo_ms)&&Number.isFinite(point.final_answer_ms))')
+    painted = page.evaluate('OfficeConversation.paintTimings()')
+    assert len(painted) == 1 and {'id', 'request_ms', 'question_echo_ms', 'final_answer_ms'} <= painted[0].keys()
+    assert painted[0]['request_ms'] <= painted[0]['question_echo_ms'] <= painted[0]['final_answer_ms']
+    assert painted[0]['first_effective_source'] == 'final'
+    assert painted[0]['first_effective_ms'] == painted[0]['final_answer_ms']
     page.evaluate("document.getElementById('floating-timeline').replaceChildren();OfficeConversation.reset();OfficeFloating.refresh()")
     page.locator('.conversation-turn [role="status"]').filter(has_text='第二点依据').wait_for()
     assert page.locator('.conversation-turn [role="status"]').filter(has_text='第二点依据').count() == 1
@@ -41,6 +80,7 @@ def verify_answer(page, api, source, errors, answers, question):
         directory = Path(folder);directory.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(directory/(source.suffix[1:]+'-answer.png')))
         (directory/(source.suffix[1:]+'-timing.json')).write_text(json.dumps(page.evaluate('OfficeConversation.timings()'),ensure_ascii=False,indent=2),encoding='utf-8')
+        (directory/(source.suffix[1:]+'-paint-timing.json')).write_text(json.dumps(painted,ensure_ascii=False,indent=2),encoding='utf-8')
 
 
 def test_word_answer_and_same_turn_recovery(paged_browser, monkeypatch):

@@ -74,7 +74,8 @@
     state=acceptState(state);
     if(publicationProgress&&state.publication_result?.id===publicationProgress.id&&!state.publishing){
       const progress=publicationProgress;publicationProgress=null;
-      if(progress.generation===generation&&progress.feedback===errorGeneration)notice(state.publication_result.text);
+      if(progress.generation===generation&&progress.feedback===errorGeneration)
+        notice(state.publication_result.preview_latest_draft?'':state.publication_result.text);
     }
     if(host&&state.document_id===host.document?.id&&state.access?.serial>=(host.access?.serial??-1))host.access=state.access;
     if(pendingFeedback){
@@ -84,7 +85,16 @@
     }
     if(requirementsDialog&&(state.inbox_id!==requirementsDialog.inbox||state.requirement_session_id!==requirementsDialog.session))requirementsDialog.invalidate();
     const unsynced=adapter&&adapter.revision>state.draft_revision;
+    const draftRevision=unsynced?adapter.revision:state.draft_revision;
+    const validating=state.publication_in_progress,publication=state.publication_result;
+    const manualPreview=Boolean(!state.publishing&&!state.uncertain&&!state.publication_rolled_back
+      &&publication?.preview_latest_draft&&!publication.conversation_id);
+    const versionStatus=state.publishing&&validating&&!validating.conversation_id
+      ? '正在校验第 '+validating.draft_revision+' 版'+(draftRevision>validating.draft_revision?' · 第 '+draftRevision+' 版草稿':'')
+      : manualPreview?'第 '+publication.draft_revision+' 版'+(publication.reason==='verified'?'已发布':'未发布')+' · 第 '+draftRevision+' 版草稿':'';
     $('paged-save-state').textContent=state.uncertain?'结果待核实':state.publishing?'正在生成并验证副本':!state.editable?'只读':unsynced?'有未保存编辑 · 正在核对草稿 '+adapter.revision:state.dirty?'有未保存编辑 · 草稿 '+state.draft_revision:state.published_revision>0?'副本已验证 · 草稿 '+state.published_revision:'原稿 · 未修改';
+    if(versionStatus)$('paged-save-state').textContent=versionStatus;
+    $('paged-preview-latest').hidden=!manualPreview;
     $('paged-save-state').title=!state.editable&&!state.uncertain&&!state.publishing?'只读'+((state.reasons||[]).length?'：'+state.reasons.join('、'):''):$('paged-save-state').textContent;
     if(state.publication_rolled_back&&!state.uncertain&&!state.publishing){
       $('paged-save-state').textContent='副本已撤销 · 草稿未交付';
@@ -96,7 +106,7 @@
       $('paged-save-state').title='正文已回到本轮修改前，原件与此前内容保留';
       if($('paged-feedback')?.textContent==='副本已撤销，草稿保留；可重新审阅后生成新副本。')notice('');
     }
-    const status=state.uncertain?'结果待核实':state.publishing?'正在生成并验证副本':!state.editable?'当前文档只读':unsynced||state.dirty?'有未保存编辑':state.published_revision>0?'副本已验证':'原稿未修改';
+    const status=versionStatus||(state.uncertain?'结果待核实':state.publishing?'正在生成并验证副本':!state.editable?'当前文档只读':unsynced||state.dirty?'有未保存编辑':state.published_revision>0?'副本已验证':'原稿未修改');
     $('paged-save-state').dataset.kind=state.uncertain?'uncertain':!state.editable?'readonly':unsynced||state.dirty?'dirty':'normal';
     if(status!==announcedState){announcedState=status;clearTimeout(announcementTimer);const mine=generation;announcementTimer=setTimeout(()=>{if(mine===generation&&$('paged-state-announcement'))$('paged-state-announcement').textContent=status;},700);}
     $('paged-save').disabled=!opened||saving||state.publishing||state.uncertain||!state.editable||!state.dirty||unsynced;
@@ -108,9 +118,9 @@
     $('paged-reference').disabled=!opened||!state.editable||state.recovery_available;
     $('paged-table-reference').disabled=$('paged-reference').disabled;
     $('paged-pending').hidden=!state.pending_requirements;
-    $('paged-pending').disabled=sending||applying||host?.busy||state.publishing||state.uncertain||!state.editable||!reference||reference.draft_revision!==adapter?.revision;
+    $('paged-pending').disabled=sending||applying||host?.busy||state.publishing||state.uncertain||!state.editable||!reference||reference.draft_revision!==adapter?.revision||state.pending_reason==='number_conflict';
     $('paged-pending').title=$('paged-pending').disabled?'请等待当前步骤完成，并引用最新草稿后处理':'使用当前引用处理已保存要求';
-    const received=state.requirements||[],waiting={reference:reference?.draft_revision===adapter?.revision?'待处理':'待引用',model:'待核对接口',budget:'调用预算已用尽',review:'待核对建议',next_step:'下一步处理',applying:'采用后待处理',publishing:'保存后待处理',verify_result:'待核对结果',readonly:'只读，暂不处理',recovery:'待核对恢复草稿',ready:'待处理'};
+    const received=state.requirements||[],waiting={reference:reference?.draft_revision===adapter?.revision?'待处理':'待引用',model:'待核对接口',budget:'调用预算已用尽',review:'待核对建议',number_conflict:'请调整数字顺序要求',next_step:'下一步处理',applying:'采用后待处理',publishing:'保存后待处理',verify_result:'待核对结果',readonly:'只读，暂不处理',recovery:'待核对恢复草稿',ready:'待处理'};
     waiting.readonly=state.copy_error||['failed','uncertain'].includes(state.publication_result?.status)?'副本未就绪':'准备可编辑副本';
     if(!state.editable&&state.publishing)waiting.publishing='正在创建可编辑副本';
     const cancelled=received.filter(row=>row.status==='cancelled').length;
@@ -466,7 +476,14 @@
     $('floating-scroll').append(make('div','',null,'paged-proposals'));
     const bottom=make('footer','',root,'paged-statusbar'),metadata=make('div','',bottom,'paged-metadata');
     make('span','分页中…',metadata,'paged-statistics');
-    make('span','正在打开…',metadata,'paged-save-state').setAttribute('aria-live','off');
+    const version=make('div','',metadata,'paged-version');
+    make('span','正在打开…',version,'paged-save-state').setAttribute('aria-live','off');
+    const preview=button('预览最新草稿',version,async()=>{
+      if(preview.disabled||preview.hidden)return;
+      preview.disabled=true;
+      try{await previewLatestDraft(lastState.publication_result,preview);}
+      finally{preview.disabled=false;}
+    },'paged-preview-latest');preview.hidden=true;
     const announcement=make('span','',root,'paged-state-announcement');announcement.className='agent-visually-hidden';announcement.setAttribute('role','status');announcement.setAttribute('aria-live','polite');announcement.setAttribute('aria-atomic','true');
     tool('查找','search',bottom,()=>dialog('查找正文',node=>{const input=make('input','',node);input.maxLength=200;input.setAttribute('aria-label','查找文字');button('定位第一个匹配',node,async()=>{await adapter.request('find',{text:input.value});node.close();});button('关闭',node,()=>node.close());}));
     const paper=tool('纸张深色显示','moon',bottom,()=>{root.classList.toggle('paged-paper-dark');paper.setAttribute('aria-pressed',String(root.classList.contains('paged-paper-dark')));return adapter.request('paper',{dark:root.classList.contains('paged-paper-dark')});});paper.setAttribute('aria-pressed','false');
@@ -592,6 +609,21 @@
     for(const id of ['paged-top','paged-filebar','paged-work','paged-statusbar','paged-feedback','paged-reference-bar','paged-proposals','paged-close-ai','paged-recovery-actions','paged-state-announcement'])$(id)?.remove();
     root.classList.remove('paged-active','paged-ai-closed','paged-outline-open');
   }
+  async function previewLatestDraft(publication,trigger){
+    const editor=requireAdapter(),mine=generation;
+    if(!publication?.preview_latest_draft||publication.document_id!==host?.document?.id)throw Error('当前文档已改变，请重新查看草稿');
+    const state=await sync();
+    if(mine!==generation||editor.revision!==state.snapshot_revision)throw Error('草稿已更新，请重新预览');
+    const result=await call('paged_preview_latest_draft',publication.id,publication.document_id,state.source_version,state.snapshot_revision);
+    if(editor.revision!==result.draft_revision)throw Error('草稿已更新，请重新预览');
+    dialog('第 '+result.draft_revision+' 版草稿 · 文字预览',node=>{
+      for(const value of result.passages)make('p',value||'（空段落）',node);
+      if(result.removed_paragraphs)make('p','已移除 '+result.removed_paragraphs+' 段。',node);
+      if(!result.passages.length&&!result.removed_paragraphs)make('p','与校验时的版本相比，正文文字无变化。',node);
+      if(result.truncated)make('p','仅显示前 12 处文字变化。',node);
+      button('关闭',node,()=>node.close());
+    },trigger);
+  }
   function previewStructure(view,title){
     if(!view)throw Error('尚未取得结构内容');
     dialog(title,node=>{
@@ -613,7 +645,7 @@
     if(lastState.editable&&!lastState.publishing&&!/^(?:进度|到哪|停止|停一下)/.test(text))await sync();
     return {revision:adapter.revision,reference:reference?.draft_revision===adapter.revision?reference.id:null};
   }
-  window.OfficePaged={active,update,submit,beforeSwitch,close,previewStructure,messageContext,reportError:notice,presentationSource:async()=>{if(!opened||applying)throw Error('请等待当前草稿就绪');if(lastState.editable)await sync();return {document_id:host.document.id,draft_revision:adapter.revision};},invalidate:()=>{instructionEpoch++;instruction=-1;if(adapter)adapter.request('instruction',{revision:-1}).catch(()=>{});},capabilities:()=>requireAdapter().capabilities(),contract:()=>requireAdapter().contract(),selection:()=>requireAdapter().getSelection(),snapshot:()=>requireAdapter().getSnapshot(),subscribeChanges:handler=>requireAdapter().subscribeChanges(handler),tableCommand:command=>requireAdapter().applyTableCommand(command),undo:()=>requireAdapter().undo(),redo:()=>requireAdapter().redo(),history:()=>requireAdapter().history(),applyOperations,idMap,referenceLocator};
+  window.OfficePaged={active,update,submit,beforeSwitch,close,previewStructure,previewLatestDraft,messageContext,reportError:notice,presentationSource:async()=>{if(!opened||applying)throw Error('请等待当前草稿就绪');if(lastState.editable)await sync();return {document_id:host.document.id,draft_revision:adapter.revision};},invalidate:()=>{instructionEpoch++;instruction=-1;if(adapter)adapter.request('instruction',{revision:-1}).catch(()=>{});},capabilities:()=>requireAdapter().capabilities(),contract:()=>requireAdapter().contract(),selection:()=>requireAdapter().getSelection(),snapshot:()=>requireAdapter().getSnapshot(),subscribeChanges:handler=>requireAdapter().subscribeChanges(handler),tableCommand:command=>requireAdapter().applyTableCommand(command),undo:()=>requireAdapter().undo(),redo:()=>requireAdapter().redo(),history:()=>requireAdapter().history(),applyOperations,idMap,referenceLocator};
   window.OfficePaged.undoRound=undoRound;
   window.addEventListener('resize',layout);
   new MutationObserver(()=>{if(active()&&opened)adapter.request('theme',{theme:document.documentElement.dataset.theme||'dark'}).catch(()=>{});}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .. import office_canvas as engine
 from ..agent import OfficeAgent, ToolSpec, configured_decision_limit
+from ..edit_metrics import for_edit, measure
 from ..instruction_runtime import InstructionRuntime, InstructionPause, StaleInstruction
 from ..paged_documents import sha
 from ..professional_edits import _protect
@@ -51,12 +52,23 @@ class CanvasAI:
         self.error = ''
         self.sequence = 0
         self.answers = []
+        self._trace = None
+        self._client_id = None
+        self._job_traces = {}
+        self._proposal_traces = {}
 
     @property
     def floating(self):
         return self.canvas.floating
 
-    def invalidate(self):
+    def invalidate(self, preserve=None, outcome='stale'):
+        self.canvas._invalidate_metrics(preserve=preserve, outcome=outcome)
+        traces = {trace.id: trace for trace in [self._trace, *self._job_traces.values(), *self._proposal_traces.values()] if trace is not None}
+        for trace in traces.values():
+            if trace is not preserve:
+                trace.finish(outcome=outcome)
+        self._trace = preserve
+        self._proposal_traces = {key: trace for key, trace in self._proposal_traces.items() if trace is preserve}
         self.sequence += 1
         if self.runtime:
             self.runtime.stop()
@@ -65,6 +77,10 @@ class CanvasAI:
         for proposal in self.proposals.values():
             if proposal['status'] == 'pending':
                 proposal['status'] = 'stale'
+
+    def _notice(self, kind, payload, trace=None):
+        self.floating.notice(kind, {**payload, 'conversation_id': trace.conversation_id if trace else None,
+                                   'metric_attempt_id': trace.id if trace else None})
 
     def state(self):
         runtime = self.runtime
@@ -127,7 +143,9 @@ class CanvasAI:
                     if proposal['status'] == 'pending':
                         proposal['status'] = 'stale'
             while len(self.proposals) >= 16:
-                self.proposals.pop(next(iter(self.proposals)))
+                identifier = next(iter(self.proposals))
+                self.proposals.pop(identifier)
+                self._proposal_traces.pop(identifier, None)
             reference = {'id': uuid.uuid4().hex, 'document_id': document_id, 'draft_revision': revision,
                               'source_version': sha(self.canvas.original), 'draft_sha256': sha(self.canvas.data),
                               'item_id': item_id, 'target': target, 'old': old, 'action': action,
@@ -185,7 +203,9 @@ class CanvasAI:
                     if proposal['status'] == 'pending':
                         proposal['status'] = 'stale'
             while len(self.proposals) >= 16:
-                self.proposals.pop(next(iter(self.proposals)))
+                identifier = next(iter(self.proposals))
+                self.proposals.pop(identifier)
+                self._proposal_traces.pop(identifier, None)
             reference = {'id': uuid.uuid4().hex, 'kind': 'range', 'document_id': document_id,
                               'draft_revision': revision, 'source_version': sha(self.canvas.original),
                               'draft_sha256': sha(self.canvas.data), 'item_id': item_id, 'item_name': item['name'],
@@ -225,15 +245,19 @@ class CanvasAI:
                     raise GuardError('任务会话已改变')
                 runtime = InstructionRuntime(sha(self.canvas.original), persist=self.floating.persist,
                                              model_limit=configured_decision_limit())
-                runtime.notify = lambda kind, payload: self.floating.notice(kind, payload) if self.runtime is runtime and self.canvas.active() else None
+                runtime.notify = lambda kind, payload: self._notice(kind, payload, self._trace) if self.runtime is runtime and self.canvas.active() else None
                 self.runtime = self.floating.runtime = self.floating.app.instruction_runtime = runtime
             elif session_id != self.runtime.session_id:
                 raise GuardError('任务会话已改变')
             duplicate = client_id in self.runtime.ids
+            if not duplicate:
+                self._client_id = client_id
+                self._trace = for_edit(self.floating, client_id)
             record = self.runtime.submit(client_id, text)
             if not duplicate:
                 self.sequence += 1
                 self.canvas.plans.clear()
+                self.canvas._clear_metric_plans()
                 for proposal in self.proposals.values():
                     if proposal['status'] == 'pending': proposal['status'] = 'stale'
             started = False if duplicate else self.start()
@@ -248,6 +272,7 @@ class CanvasAI:
             if not duplicate:
                 self.sequence += 1
                 self.canvas.plans.clear()
+                self.canvas._clear_metric_plans()
                 for proposal in self.proposals.values():
                     if proposal['status'] == 'pending': proposal['status'] = 'stale'
             return {'ok': True, 'record': record, 'duplicate': duplicate, 'ai': self.state()}
@@ -257,29 +282,41 @@ class CanvasAI:
             return False
         if not active_requirements(self.runtime) or not self._current(self.reference):
             return False
+        trace = self._trace
+        if trace is None or not trace.current():
+            trace = for_edit(self.floating, self._client_id)
+            self._trace = trace
         try:
-            route = self.floating.api._connections.capture('agent')
+            with measure(trace, 'context'):
+                route = self.floating.api._connections.capture('agent')
         except Exception:
             self.sequence += 1
             self.error = '模型配置不可用；要求已保留，请修复后主动处理'
+            if trace:
+                trace.finish(outcome='error')
+            self._notice('canvas_ai_failed', {'text': self.error}, trace)
             return False
         runtime, reference = self.runtime, deepcopy(self.reference)
         self.floating.access.for_instruction()
         owner = uuid.uuid4().hex
         self.running = owner
+        self._job_traces[owner] = trace
+        queued = trace.start('queue') if trace else None
         self.sequence += 1
         self.floating.app._canvas_ai_owner = owner
         self.floating.app.busy = self.floating.app._model_task_active = True
         runtime.model_route = route.public()
         self.error = ''
-        self.floating.notice('canvas_ai_running', {'document_id': reference['document_id'], 'model': route.public()})
-        threading.Thread(target=self._run, args=(runtime, reference, route, owner), daemon=True).start()
+        self._notice('canvas_ai_running', {'document_id': reference['document_id'], 'model': route.public()}, trace)
+        threading.Thread(target=self._run, args=(runtime, reference, route, owner, trace, queued), daemon=True).start()
         return True
 
-    def _run(self, runtime, reference, route, owner):
+    def _run(self, runtime, reference, route, owner, trace=None, queued=None):
         app = self.floating.app
+        if trace:
+            trace.stop(queued)
         def current():
-            return self.running == owner and self.runtime is runtime and self.floating.runtime is runtime and not runtime.closed and self._current(reference)
+            return self.running == owner and self.runtime is runtime and self.floating.runtime is runtime and not runtime.closed and self._current(reference) and (trace is None or trace.current())
         def boundary(phase, state):
             runtime.boundary(phase, state)
             if not current(): raise StaleInstruction('当前草稿或任务已变化')
@@ -302,10 +339,11 @@ class CanvasAI:
                     raise GuardError('提案引用或原文不符')
                 if self.floating.api._connections.capture('agent').public() != route.public():
                     raise GuardError('模型配置已变化，请重新核对')
-                operation = self._range_operations(reference, parsed.edits) if batch else self._operation(reference, parsed.new)
-                self.canvas.guard(reference['document_id'], reference['draft_revision'])
-                if not batch:
-                    engine.transform(self.canvas.data, self.canvas.source.suffix.lower(), operation)
+                with measure(trace, 'validation'):
+                    operation = self._range_operations(reference, parsed.edits) if batch else self._operation(reference, parsed.new)
+                    self.canvas.guard(reference['document_id'], reference['draft_revision'])
+                    if not batch:
+                        engine.transform(self.canvas.data, self.canvas.source.suffix.lower(), operation)
                 if len(self.proposals) >= 16: raise GuardError('提案达到16项，请结束本轮后重新开始')
                 proposal = {'id': uuid.uuid4().hex, 'reference_id': reference['id'], 'old': reference['old'],
                             'new': json.dumps([edit.model_dump() for edit in parsed.edits], ensure_ascii=False) if batch else parsed.new, 'reason': parsed.reason, 'status': 'pending',
@@ -316,43 +354,56 @@ class CanvasAI:
                     proposal['operations'] = proposal.pop('operation')
                     proposal['edits'] = [edit.model_dump() for edit in parsed.edits]
                 self.proposals[proposal['id']] = proposal
+                if trace:
+                    self._proposal_traces[proposal['id']] = trace
                 self.sequence += 1
-                self.floating.notice('canvas_ai_proposal', deepcopy(proposal))
+                self._notice('canvas_ai_proposal', deepcopy(proposal), trace)
                 return {'id': proposal['id'], 'status': 'pending', 'wrote_nothing': True}
         try:
-            model = self.floating.api._connections.build_model(route)
-            limit = configured_decision_limit()
-            batch = reference.get('kind') == 'range'
-            tool = ToolSpec(name='propose_canvas_range' if batch else 'propose_canvas_edit', description='为宿主引用范围提出修改；只读格仅供分析，旧值必须完全一致，不写文件。', schema_model=CanvasRangeSuggestion if batch else CanvasSuggestion)
-            from ..skills_backend import workspace_skill_context
-            skill_context = workspace_skill_context(self.canvas.source.parent, on_load=lambda receipt:self.floating.notice('skill_loaded',receipt))
+            with measure(trace, 'context'):
+                model = self.floating.api._connections.build_model(route)
+                limit = configured_decision_limit()
+                batch = reference.get('kind') == 'range'
+                tool = ToolSpec(name='propose_canvas_range' if batch else 'propose_canvas_edit', description='为宿主引用范围提出修改；只读格仅供分析，旧值必须完全一致，不写文件。', schema_model=CanvasRangeSuggestion if batch else CanvasSuggestion)
+                from ..skills_backend import workspace_skill_context
+                skill_context = workspace_skill_context(self.canvas.source.parent, on_load=lambda receipt:self._notice('skill_loaded',receipt,trace))
             agent = OfficeAgent(model, dispatch, [tool], self.canvas.source.parent, persist=False,
                                 decision_limit=min(8, limit) if limit is not None else 8, context_tokens=route.context_window,
                                 reply_tokens=int(os.getenv('OFFICE_REPLY_BUDGET', '512')), runtime_boundary=boundary,
-                                stop_requested=lambda: not current(), skill_context=skill_context)
+                                stop_requested=lambda: not current(), skill_context=skill_context,
+                                metrics=trace.collector if trace else None)
             state = agent.run(agent.new_state(json.dumps(reference, ensure_ascii=False), constraints=['仅分析或修改宿主当前引用范围', '公式、合并与保护格保持只读；原稿不变，采用与副本发布由宿主按当前授权处理']))
             if current() and state.answer:
                 self.error = ''
                 self.answers.append({'id': uuid.uuid4().hex, 'text': state.answer, 'document_id': reference['document_id'], 'draft_revision': reference['draft_revision'], 'instruction_revision': runtime.revision})
                 self.answers = self.answers[-16:]
                 self.sequence += 1
-                self.floating.notice('canvas_ai_answer', {'text': state.answer, 'model': route.public()})
+                self._notice('canvas_ai_answer', {'text': state.answer, 'model': route.public()}, trace)
             elif current() and not any(row['status'] == 'pending' and row['instruction_revision'] == runtime.revision for row in self.proposals.values()):
                 self.error = '未形成可采用的建议；请核对保护要求、范围和模型回复后主动处理'
                 self.sequence += 1
-                self.floating.notice('canvas_ai_failed', {'text': self.error})
+                if trace:
+                    trace.finish(outcome='error')
+                self._notice('canvas_ai_failed', {'text': self.error}, trace)
             if current() and state.required.errors and not any(row['status'] == 'pending' for row in self.proposals.values()):
                 self.error = '修改建议未通过保护检查；模型文字回复不代表已经修改，草稿保持。'
                 self.sequence += 1
-                self.floating.notice('canvas_ai_failed', {'text': self.error})
+                if trace:
+                    trace.finish(outcome='error')
+                self._notice('canvas_ai_failed', {'text': self.error}, trace)
         except Exception:
             if current():
                 self.error = '建议未完成；草稿和要求保留，请核对引用及模型后主动处理'
                 self.sequence += 1
-                self.floating.notice('canvas_ai_failed', {'text': self.error})
+                if trace:
+                    trace.finish(outcome='error')
+                self._notice('canvas_ai_failed', {'text': self.error}, trace)
         finally:
             with self.canvas.lock:
                 valid = current()
+                self._job_traces.pop(owner, None)
+                if not valid and trace:
+                    trace.finish(outcome='stale')
                 if self.running == owner:
                     self.running = None
                     self.sequence += 1
@@ -395,7 +446,20 @@ class CanvasAI:
             if self.floating.api._connections.capture('agent').public() != proposal['model']:
                 raise GuardError('模型配置已变化，请重新生成建议')
             operations = proposal.get('operations')
-            result = self.canvas.apply_many(document_id, revision, operations) if operations else self.canvas.apply(document_id, revision, proposal['operation'])
+            trace = self._proposal_traces.get(proposal_id)
+            if trace is not None and not trace.current():
+                trace = None
+            previous = self.canvas._metric_adopting_trace
+            self.canvas._metric_adopting_trace = trace
+            try:
+                with measure(trace, 'apply'):
+                    result = self.canvas.apply_many(document_id, revision, operations) if operations else self.canvas.apply(document_id, revision, proposal['operation'])
+            finally:
+                self.canvas._metric_adopting_trace = previous
+            if trace:
+                self.canvas._metric_draft_binding = {'trace': trace, 'document_id': document_id,
+                    'draft_revision': self.canvas.revision, 'draft_sha256': sha(self.canvas.data),
+                    'instruction_binding': {'session_id': proposal['session_id'], 'revision': proposal['instruction_revision'], 'model': proposal['model']}}
             proposal['status'] = 'adopted'
             self.sequence += 1
             for summary in self.canvas.summaries[-len(operations) if operations else -1:]:
@@ -410,6 +474,9 @@ class CanvasAI:
             proposal = self.proposals.get(proposal_id)
             if not proposal or proposal['status'] != 'pending': raise GuardError('提案已失效')
             proposal['status'] = 'rejected'
+            trace = self._proposal_traces.pop(proposal_id, None)
+            if trace:
+                trace.finish(outcome='rejected')
             self.sequence += 1
             return {'ok': True, 'ai': self.state()}
 
@@ -426,6 +493,6 @@ class CanvasAI:
         with self.canvas.lock:
             self._guard(document_id, revision)
             self.floating.access.reset()
-            self.invalidate()
+            self.invalidate(outcome='cancelled')
             self.canvas.plans.clear()
             return {'ok': True, 'remote_cancelled': False, 'ai': self.state()}

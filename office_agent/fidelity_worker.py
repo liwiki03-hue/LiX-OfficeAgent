@@ -3,12 +3,68 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+
+def measured_conversion(command, environment, destination, source, report_path, prepare_seconds):
+    started = time.monotonic()
+    process = None
+    report = {'pdf_first_seen_seconds': None, 'worker_prepare_seconds': prepare_seconds}
+    sources = source if isinstance(source, tuple) else (source,)
+    if len(sources) == 2:
+        report['second_pdf_first_seen_seconds'] = None
+    code = 3
+    try:
+        process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        report['libreoffice_launch_seconds'] = time.monotonic() - started
+        waiting = time.monotonic()
+        deadline = started + 25
+        pdfs = [destination / (item.stem + '.pdf') for item in sources]
+        while True:
+            for index, pdf in enumerate(pdfs):
+                name = 'pdf_first_seen_seconds' if index == 0 else 'second_pdf_first_seen_seconds'
+                if report[name] is None and pdf.is_file():
+                    report[name] = time.monotonic() - started
+            returned = process.poll()
+            if returned is not None:
+                code = returned
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(.01)
+        report['libreoffice_wait_seconds'] = time.monotonic() - waiting
+    finally:
+        cleanup = time.monotonic()
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=2)
+        report['libreoffice_cleanup_seconds'] = time.monotonic() - cleanup
+        report['worker_conversion_seconds'] = time.monotonic() - started
+        try:
+            with report_path.open('x', encoding='utf-8') as stream:
+                json.dump(report, stream)
+        except (OSError, ValueError):
+            pass
+    return code
+
 def main():
-    if len(sys.argv) == 5 and sys.argv[1] in {"--convert", "--legacy", "--legacy-fixture", "--recalculate"}:
-        source, destination, executable = map(Path, sys.argv[2:])
+    pair = len(sys.argv) in {6, 7} and sys.argv[1] == '--convert-pair'
+    if pair or len(sys.argv) in {5, 6} and sys.argv[1] in {"--convert", "--legacy", "--legacy-fixture", "--recalculate"}:
+        prepared = time.monotonic()
+        if pair:
+            sources = tuple(map(Path, sys.argv[2:4]))
+            destination, executable = map(Path, sys.argv[4:6])
+            if any(item.suffix.lower() != '.docx' for item in sources) or sources[0].name.casefold() == sources[1].name.casefold():
+                return 2
+        else:
+            source, destination, executable = map(Path, sys.argv[2:5])
+            sources = (source,)
+        source = sources[0]
         temporary = destination / "temp"
         temporary.mkdir()
         environment = dict(os.environ, TEMP=str(temporary), TMP=str(temporary))
@@ -26,7 +82,10 @@ def main():
             return 2
         command = [str(executable), f"-env:UserInstallation={(destination / 'profile').as_uri()}",
                    "--headless", "--nologo", "--nodefault", "--nofirststartwizard", "--norestore",
-                   "--convert-to", f"{target_format}:{export_filter}", "--outdir", str(destination), source.as_uri()]
+                   "--convert-to", f"{target_format}:{export_filter}", "--outdir", str(destination), *[item.as_uri() for item in sources]]
+        timing_index = 6 if pair else 5
+        if len(sys.argv) > timing_index and sys.argv[1] in {'--convert', '--convert-pair'}:
+            return measured_conversion(command, environment, destination, sources, Path(sys.argv[timing_index]), time.monotonic() - prepared)
         try:
             return subprocess.run(command, env=environment, stdin=subprocess.DEVNULL,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
