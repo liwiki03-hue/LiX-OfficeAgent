@@ -80,8 +80,8 @@
     if (!panel || !ai || aiSignature === signature) return;
     aiSignature = signature; panel.replaceChildren();
     const reference = ai.read_reference||ai.reference;
-    make('p',reference ? '引用：'+reference.item_name+' · '+reference.location : '选择内容后点击“引用给AI”。',panel);
-    if (ai.running) make('p','正在生成建议；追加要求将在下一安全步骤处理。',panel).setAttribute('role','status');
+    if(reference)make('p','引用：'+reference.item_name+' · '+reference.location,panel).className='canvas-reference-status';
+    if (ai.running&&!window.OfficeConversation?.pending()) make('p','正在处理…',panel).setAttribute('role','status');
     if (ai.error) make('p',ai.error,panel).setAttribute('role','alert');
     if(!window.OfficeConversation)for(const answer of ai.answers||[])make('p',answer.text,panel);
     if (!ai.running && reference && ai.requirements?.length) button('处理已接收要求',panel,()=>guarded(async()=>{
@@ -135,13 +135,13 @@
     checkField();if(!selected)return;
     if(view.kind==='xlsx'&&selectedRange().count>1){
       const range=selectedRange();status(await call(editing?'canvas_ai_reference_range':'canvas_ai_read_range',host.document.id,state.draft_revision,view.item_id,range.start,range.end,...(editing?[[]]:[])));
-      $('floating-root').classList.add('office-ai-open');$('canvas-toggle-ai').setAttribute('aria-expanded','true');$('floating-input').focus();notice('已引用 '+range.label+'；公式、数值和保护格默认仅供分析。');return;
+      $('floating-root').classList.add('office-ai-open');$('canvas-toggle-ai').setAttribute('aria-expanded','true');$('floating-input').focus();notice('');return;
     }
     const numeric=view.kind==='xlsx'&&selected.type==='n';
     const select=async()=>{
       status(await call(editing?'canvas_ai_reference':'canvas_ai_read_reference',host.document.id,state.draft_revision,view.item_id,selected.id,...(editing?[numeric]:[])));
       $('floating-root').classList.add('office-ai-open');$('canvas-toggle-ai').setAttribute('aria-expanded','true');
-      $('floating-input').focus();notice('已引用当前草稿；填写要求后主动发送，不会自动调用模型。');
+      $('floating-input').focus();notice('');
     };
     if(numeric&&editing)return new Promise(resolve=>{let confirmed=false;const node=dialog('确认数值修改范围',node=>{make('p','仅允许修改 '+selected.id+' 的数值，按当前编辑方式处理；原文件保留。',node);button('取消',node,()=>node.close());button('允许本格数值建议',node,async()=>{confirmed=true;await select();node.close();resolve(true);});});node.addEventListener('close',()=>{if(!confirmed)resolve(false);});});
     await select();return true;

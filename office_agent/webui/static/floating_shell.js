@@ -231,9 +231,12 @@
       records.replaceChildren();
       for(const turn of state.conversation?.turns||[]){
         const entry=make('article','',records);entry.className='floating-history-turn';entry.dataset.recordTurn=turn.id;
-        make('h4',turn.question,entry);make('p',turn.undo?.message||turn.text||turn.answer,entry);
-        if(turn.model)make('p','模型：'+turn.model.model_id+' · '+(turn.model.connection_name||turn.model.connection_id),entry);
+        const title=make('h4',turn.question,entry);title.title=turn.question;
+        const status={failed:'失败',stopped:'已停止',interrupted:'未完成',uncertain:'待核对',waiting:'待处理',running:'处理中'}[turn.status];
+        if(status)make('small',status,entry);
         const details=make('details','',entry);make('summary','过程与依据',details);
+        make('p',turn.undo?.message||turn.text||turn.answer,details);
+        if(turn.model)make('p','模型：'+turn.model.model_id+' · '+(turn.model.connection_name||turn.model.connection_id),details);
         for(const step of turn.steps||[])make('p',step.text,details);
         for(const change of turn.changes||[]){make('p','原文：'+change.before,details);make('p','修改：'+change.after,details);}
         for(const reference of turn.references||[])make('p',[reference.scope,reference.location].filter(Boolean).join(' · '),details);
@@ -291,7 +294,7 @@
     $('floating-title').textContent = doc?.name || 'LiX · 文档助手';
     const phase = state.open_request?.phase;
     const opening = ['receiving','admission_pending','parsing'].includes(phase);
-    $('floating-identity').textContent = doc ? (state.stage === 'changed' ? '源文件已改变，请重新选择并读取' : doc.ready ? '已在本机打开' : doc.source_origin === 'native_drop' ? '正在本机打开解析' : '等待读取同意') + ' · ' + (doc.editable ? '对话修改 · 原稿保留' : '只读材料') : '拖入DOCX/XLSX后在本机打开；发送才调用模型';
+    $('floating-identity').textContent = doc ? (state.stage === 'changed' ? '源文件已改变，请重新打开' : doc.ready ? doc.editable ? '' : '只读' : doc.source_origin === 'native_drop' ? '正在打开…' : '等待读取同意') : '本机打开，发送才调用模型';
     $('floating-read').hidden = !doc || doc.ready || doc.source_origin === 'native_drop';
     $('floating-composer').hidden = false;
     $('floating-drop').hidden = !state.draft_drop_pending&&(!state.drop_pending || !['failed','blocked','cancelled'].includes(phase));
@@ -320,13 +323,14 @@
       back.title = label;
       positionBack();
     }
-    const openingText = {receiving:'已接收文件，正在打开',admission_pending:'正在检查文件与访问范围；可以先写要求',parsing:'正在本机解析；可先保存要求，尚未调用模型',failed:state.open_request?.error || '本地打开失败，可重试；输入保留',cancelled:'已取消打开；输入保留'};
+    const openingText = {receiving:'正在打开…',admission_pending:'正在检查文件…',parsing:'正在打开…',failed:state.open_request?.error || '打开失败，可重试',cancelled:'已取消打开，输入保留'};
     $('floating-progress').textContent = openingText[phase] || (state.needs_clarification ? stages.needs_clarification : state.busy ? (state.stage === 'executing' || state.paged?.publishing || state.canvas?.publishing ? '正在写副本与验证；补充要求将排队' : '正在生成方案；可以继续追加要求') : state.plans.length ? '方案待审阅，尚未写入' : pendingResult ? '上一版副本已验证；新要求待明确选择版本后处理' : stages[state.stage] || '就绪');
     const publication = state.paged?.publication_result;
     const manualVersion = publication?.preview_latest_draft && !publication.conversation_id
       && !state.paged.uncertain && !state.paged.publication_rolled_back;
-    $('floating-progress').hidden = Boolean(manualVersion && state.stage === 'verified'
-      && !openingText[phase] && !state.busy && !state.plans.length && !pendingResult && !state.needs_clarification);
+    const turnInView=state.conversation?.turns?.some(turn=>turn.document_id===doc?.id&&['running','waiting','complete'].includes(turn.status));
+    $('floating-progress').hidden = Boolean(!openingText[phase]&&!state.plans.length&&!pendingResult&&!state.needs_clarification
+      && (manualVersion&&state.stage==='verified'&&!state.busy || turnInView&&(state.busy||state.stage==='verified')));
     $('floating-progress').classList.add('state-badge');
     if(state.paged?.requirements?.length&&state.paged.requirements.every(row=>row.cancelled)){
       $('floating-progress').hidden=false;
@@ -495,7 +499,7 @@
     document.addEventListener('pointerdown', event => {if(menuDetails.open&&!menuDetails.contains(event.target))menuDetails.open=false;});
     const fitMenu=()=>{if(!menuDetails.open)return;const top=menuDetails.getBoundingClientRect().bottom,composer=$('floating-controls')?.getBoundingClientRect().top||innerHeight;menu.style.maxHeight=Math.max(88,Math.min(innerHeight-12,composer-8)-top)+'px';};
     menuDetails.addEventListener('toggle',fitMenu);window.addEventListener('resize',fitMenu);
-    make('p', '拖入DOCX/XLSX后在本机打开；发送才调用模型', root, 'floating-identity');
+    make('p', '本机打开，发送才调用模型', root, 'floating-identity');
     button('重试本地打开此文件', root, async () => {if(window.OfficePaged?.active()&&!await window.OfficePaged.beforeSwitch())return;if(window.OfficeNative?.active()&&!await window.OfficeNative.beforeSwitch())return;await call('floating_admit_drop');}, 'floating-drop').hidden = true;
     const read = make('section', '', root, 'floating-read'); read.hidden = true;
     make('p', '允许读取当前文件并在软件内查看？发送要求时，模型会收到任务所需的有界片段。读取不批准写入。', read);
@@ -508,8 +512,8 @@
     const welcome = make('section', '', body, 'floating-welcome');
     make('span', '', welcome).className = 'agent-icon agent-icon-document';
     make('p', 'LiX', welcome).className = 'agent-eyebrow';
-    make('h1', '让下一次修改，更清楚', welcome);
-    make('p', '拖入文档，或选择一个文件开始。', welcome).className = 'agent-welcome-note';
+    make('h1', '打开文档', welcome);
+    make('p', '拖入文档，或选择文件。', welcome).className = 'agent-welcome-note';
     button('选择文档', welcome, () => $('floating-choose').click()).className = 'agent-welcome-choose';
     const examples = make('div', '', welcome); examples.className = 'agent-suggestions';
     for (const text of ['润色文字，保留原意', '统一术语与表达', '核对数字和单位']) button(text, examples, async () => {
@@ -517,7 +521,7 @@
       if (input.value && !await ask('替换未发送的要求？不会调用模型。')) return;
       input.value = text + '。'; input.focus();
     });
-    make('p', '本机打开 · 对话修改 · 原稿保留', welcome).className = 'agent-welcome-safety';
+    make('p', '本机打开，发送时才调用模型。', welcome).className = 'agent-welcome-safety';
     (async () => {
       let seen = false;
       try { seen = localStorage.getItem('lix.shell-intro-seen') === 'true'; } catch (_) {}
@@ -540,10 +544,11 @@
     const conversationHeader = make('div', '', conversation, 'floating-conversation-heading');
     make('span', '', conversationHeader).className = 'agent-icon agent-icon-chat';
     make('strong', '对话', conversationHeader);
-    make('span', '围绕当前文档', conversationHeader).className = 'agent-conversation-note';
     const scroll = make('div', '', conversation, 'floating-scroll');
     const timeline = make('div', '', scroll, 'floating-timeline'); timeline.setAttribute('aria-label', '要求与处理进展');
-    const latest = button('有新进展 · 回到最新', conversation, () => { scroll.scrollTop = scroll.scrollHeight; latest.hidden = true; }, 'floating-latest'); latest.hidden = true;
+    const latest = button('回到最新', conversation, () => { scroll.scrollTop = scroll.scrollHeight; latest.hidden = true; }, 'floating-latest');
+    const down = make('span', '', latest); down.className='agent-icon agent-icon-chevron-down'; down.setAttribute('aria-hidden','true');
+    latest.hidden = true;
     make('div', '', scroll, 'floating-plans');
     make('p', '就绪', root, 'floating-progress').setAttribute('role', 'status');
     const taskDetails = make('details', '', root, 'floating-task-details'); make('summary', '保护与任务版本', taskDetails);
@@ -554,8 +559,8 @@
     make('p', '正文局部文字修改默认保护数字、单位、公式和引文的字面值；不代表事实核验。', taskDetails).className = 'floating-note';
     make('p', '本机任务要求保存在当前文档父目录的 .office_agent 中。历史恢复只填草稿，不恢复批准。', taskDetails).className = 'floating-note';
     const composer = make('form', '', root, 'floating-composer'); composer.onsubmit = event => { event.preventDefault(); submit(); };
-    const label = make('label', '修改要求（运行中可追加）', composer); label.htmlFor = 'floating-input'; label.className = 'agent-visually-hidden';
-    const input = make('textarea', '', composer, 'floating-input'); input.rows = 2; input.maxLength = 4000; input.placeholder = '描述你想怎样修改…';
+    const label = make('label', '提问或说明修改要求（运行中可追加）', composer); label.htmlFor = 'floating-input'; label.className = 'agent-visually-hidden';
+    const input = make('textarea', '', composer, 'floating-input'); input.rows = 2; input.maxLength = 4000; input.placeholder = '提问或说明修改要求…';
     input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } };
     const footer = make('div', '', composer); footer.className = 'agent-composer-footer';
     make('div', '', footer, 'floating-models');

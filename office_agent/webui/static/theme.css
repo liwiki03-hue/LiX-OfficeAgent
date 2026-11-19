@@ -492,6 +492,9 @@ button.nav-item.active { background: var(--accent-soft); color: var(--ink); }
 .history-item.history-current { border-left: 4px solid var(--accent); }
 .history-item[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .history-item-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: anywhere; }
+.file-drop-active, .file-drop.drag-active .file-drop-idle { display: none; }
+.file-drop.drag-active .file-drop-active { display: inline; }
+.file-entry-formats { color: var(--muted); font-size: var(--fs-caption); }
 .history-item-state { justify-self: start; max-width: 100%; box-sizing: border-box; color: var(--muted); font-size: var(--fs-caption); line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
 .history-item-state[data-attention="true"] { color: var(--warn); }
 .history-source { margin-top: 8px; color: var(--muted); font-size: var(--fs-caption); }

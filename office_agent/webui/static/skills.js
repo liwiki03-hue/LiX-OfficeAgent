@@ -123,8 +123,8 @@
     if (rows.some(item => seen.has(item.id) || !seen.add(item.id))) throw Error();
     clearEditor(); revision++; node('skills-list').replaceChildren();
     loaded = true; workspaceReady = true; renderList();
-    if (browser()) node('skills-scope').textContent = '当前文档工作区 · 技能不改变文件或工具权限。';
-    status(rows.length ? '已读取 ' + rows.length + ' 项技能；选择一项查看。' : '当前工作区还没有技能，可从“添加”新建或导入。');
+    if (browser()) node('skills-scope').textContent = '';
+    status(rows.length ? '' : '当前工作区还没有技能。');
   }
   function renderList() {
     node('skills-list').replaceChildren();
@@ -138,8 +138,8 @@
         const text = document.createElement('span'); text.className = 'skill-entry-text';
         const title = document.createElement('strong'); title.textContent = item.name;
         const description = document.createElement('span'); description.textContent = item.description; description.className = 'skill-entry-description';
-        const info = document.createElement('small'); info.textContent = (item.source === 'builtin' ? '内置' : '工作区') + ' · ' + (item.enabled ? '已启用' : '已停用');
-        text.append(title, description, info); button.append(icon, text); button.title = item.name;
+        const info = document.createElement('small'); info.className = 'skill-entry-state'; info.textContent = item.enabled ? '已启用' : '已停用';
+        text.append(title, description); button.append(icon, text, info); button.title = item.name;
       } else button.textContent = item.name + ' — ' + item.description + ' [' + item.source + ' · ' + (item.enabled ? '已启用' : '已停用') + ']';
       button.setAttribute('aria-label', '读取技能 ' + item.name + ' (' + item.id + ')');
       button.addEventListener('click', () => select(item)); node('skills-list').append(button);

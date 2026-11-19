@@ -60,7 +60,7 @@ def test_chat_edits_and_saves_copies_without_selecting_permissions(paged_browser
          lambda: {'state': api._floating.paged.state(), 'feedback': page.locator('#paged-feedback').text_content()}, 100)
     wait(page, lambda: not page.locator('#floating-send').is_disabled(), lambda: errors)
     page.wait_for_function("document.getElementById('paged-save-state').textContent.includes('副本已验证 · 草稿 1')")
-    page.wait_for_function("document.getElementById('paged-reference-state').textContent.startsWith('继续修改')")
+    page.wait_for_function("document.getElementById('paged-reference-content').textContent === '实验完成于2025年，温度120 ℃。'")
     first = next(iter(api._floating.outputs.values()))
     assert source.read_bytes() == original and Path(first['backup']).read_bytes() == original
     assert Document(first['output']).paragraphs[1].text == '实验完成于2025年，温度120 ℃。'
@@ -79,7 +79,11 @@ def test_chat_edits_and_saves_copies_without_selecting_permissions(paged_browser
     assert not page.locator('dialog[open]').count()
     page.wait_for_function("document.getElementById('paged-save-state').textContent.includes('副本已验证 · 草稿 2')")
     try:
-        page.wait_for_function("document.getElementById('paged-feedback').textContent==='草稿 2 的副本已通过验证；原文件未改动。'&&document.getElementById('floating-progress').textContent==='副本已验证，继续输入即可修改'")
+        latest = page.locator('.conversation-turn').last
+        latest.get_by_role('status').filter(has_text='实验开展于2025年，温度120 ℃。').wait_for()
+        latest.get_by_role('button', name='撤销本次修改', exact=True).wait_for()
+        page.locator('#floating-progress').wait_for(state='hidden')
+        page.locator('#paged-feedback').wait_for(state='hidden')
     except Exception:
         failure = {'feedback': page.locator('#paged-feedback').text_content(), 'progress': page.locator('#floating-progress').text_content(),
                    'paged': api._floating.paged.state(), 'stage': api._floating.stage,
@@ -90,7 +94,7 @@ def test_chat_edits_and_saves_copies_without_selecting_permissions(paged_browser
         raise
     page.screenshot(path=str(out / '03-second-automatic-copy.png'))
     permission(page, 'edit')
-    page.wait_for_function("document.getElementById('paged-reference-state').textContent.startsWith('继续修改')")
+    page.wait_for_function("document.getElementById('paged-reference-content').textContent === '实验开展于2025年，温度120 ℃。'")
     page.locator('#floating-input').fill('将“实验开展于”改成“实验实施于”，保留数字和单位。')
     page.locator('#floating-send').click()
     wait(page, lambda: api._floating.paged.revision == 3 and not api._floating.app.busy,

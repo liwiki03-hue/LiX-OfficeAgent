@@ -5,12 +5,12 @@
   if (!dialog || dialog.classList.contains('settings-workspace')) return;
   dialog.classList.add('settings-workspace');
   const pages = [
-    ['machine', '通用与外观', '调整显示偏好，查看本机环境。'],
-    ['model', '模型与服务', '管理连接和模型；保存与实际调用验证分别进行。'],
-    ['skills', '技能', '为文档任务添加可复用的工作方法。'],
-    ['rag', '文档检索', '查看索引，在明确授权的范围内查找内容。'],
-    ['account', '数据与隐私', '管理本机历史、记忆和当前会话。'],
-    ['updates', '关于与更新', '查看版本与发布状态，按需检查更新。']
+    ['machine', '通用与外观'],
+    ['model', '模型与服务'],
+    ['skills', '技能'],
+    ['rag', '文档检索'],
+    ['account', '数据与隐私'],
+    ['updates', '关于与更新']
   ];
   const make = (tag, text, parent, className) => {
     const element = document.createElement(tag);
@@ -21,17 +21,19 @@
   };
   const group = (parent, title, elements) => {
     const section = make('section', '', null, 'settings-group');
-    make('h4', title, section);
+    if (title) make('h4', title, section);
     for (const element of elements.filter(Boolean)) section.append(element);
     parent.append(section);
     return section;
   };
   const nav = dialog.querySelector('.settings-nav');
-  for (const [key, title, description] of pages) {
+  for (const [key, title] of pages) {
     nav.append($('tab-' + key));
     const pane = $('settings-pane-' + key);
-    const heading = make('header', '', null, 'settings-page-heading');
-    make('h3', title, heading); make('p', description, heading); pane.prepend(heading);
+    const heading = make('h3', title, null, 'visually-hidden');
+    heading.id = 'settings-title-' + key;
+    pane.prepend(heading);
+    pane.setAttribute('aria-labelledby', heading.id);
   }
   const compactNav = make('label', '', null, 'settings-compact-nav');
   compactNav.htmlFor = 'settings-section';
@@ -48,8 +50,11 @@
     sectionSelect.value = dialog.dataset.tab;
   });
   const machine = $('settings-pane-machine').querySelector('.settings-form');
-  group(machine, '显示', [machine.querySelector('label[for="settings-theme-choice"]'), $('settings-theme-choice'), $('settings-theme-state')]);
-  group(machine, '本机能力', [$('settings-probe'), $('settings-probe-status')]);
+  const display = group(machine, '', [machine.querySelector('label[for="settings-theme-choice"]'), $('settings-theme-choice'), $('settings-theme-state')]);
+  machine.prepend(display);
+  const diagnostics = make('details', '', machine, 'settings-group settings-explanation');
+  make('summary', '本机诊断', diagnostics);
+  diagnostics.append($('settings-probe'), $('settings-probe-status'));
   const model = $('settings-pane-model').querySelector('.settings-form');
   const manager = $('connection-manager');
   if (manager) { manager.open = true; manager.classList.add('settings-group'); }
@@ -128,7 +133,7 @@
   const entries = [];
   for (const [key, title] of pages) {
     const pane = $('settings-pane-' + key);
-    entries.push({key, title, text: title, target: pane.querySelector('.settings-page-heading h3')});
+    entries.push({key, title, text: title, target: $('tab-' + key)});
     for (const label of pane.querySelectorAll('label,summary')) {
       const text = [...label.childNodes].filter(child => child.nodeType === Node.TEXT_NODE).map(child => child.textContent).join(' ').trim();
       if (!text) continue;
@@ -144,14 +149,15 @@
     const matches = entries.filter(entry => (entry.title + ' ' + entry.text).toLocaleLowerCase().includes(query)).slice(0, 20);
     if (!matches.length) make('p', '没有匹配的设置名称。试试“主题”“模型”或“技能”。', results);
     for (const entry of matches) {
-      const button = make('button', entry.text + ' · ' + entry.title, results, 'settings-search-result'); button.type = 'button';
+      const button = make('button', entry.text===entry.title?entry.title:entry.text+' · '+entry.title, results, 'settings-search-result'); button.type = 'button';
       button.addEventListener('click', () => {
         window.OfficeSettings.selectTab('tab-' + entry.key);
         if ($('settings-pane-' + entry.key).hidden) return;
         search.value = ''; results.hidden = true;
         for (let parent = entry.target?.parentElement; parent && parent !== dialog; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
-        entry.target?.scrollIntoView({block: 'center'});
-        entry.target?.focus();
+        const target=entry.target=== $('tab-'+entry.key)&&!entry.target.getClientRects().length?sectionSelect:entry.target;
+        target?.scrollIntoView({block: 'center'});
+        target?.focus();
       });
     }
   };

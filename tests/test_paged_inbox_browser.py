@@ -105,6 +105,13 @@ def test_receive_without_model_then_review_apply_and_verified_copy(paged_browser
     page.get_by_role('dialog').get_by_role('button',name='关闭',exact=True).click()
     assert page.evaluate('document.activeElement.id')=='paged-requirement-details'
     select_model(page);select_reference(page)
+    page.wait_for_function("document.getElementById('paged-reference-state').textContent==='已引用 · 正文第2段'")
+    page.locator('#paged-reference-state').click()
+    assert page.locator('#paged-reference-content').is_visible()
+    page.get_by_role('button', name='取消引用', exact=True).click()
+    assert page.locator('#paged-reference-chip').is_hidden()
+    assert page.locator('#floating-input').evaluate('node => node === document.activeElement')
+    select_reference(page)
     assert not calls
     page.get_by_role('button',name='处理已保存要求',exact=True).click()
     wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))
@@ -161,6 +168,7 @@ def test_preview_tracks_latest_draft_when_rendering(paged_browser, monkeypatch, 
     changed = '实验完成于2025年，温度120 ℃。'
     reply.locator('.conversation-preview').get_by_text(changed, exact=True).wait_for()
     reply.get_by_text('预览', exact=True).wait_for()
+    assert not reply.locator('.conversation-body[role="status"]').is_visible()
     reply.locator('.conversation-preview').scroll_into_view_if_needed()
     page.wait_for_function("OfficeConversation.paintTimings().some(point=>point.first_effective_source==='proposal_preview')")
     identifier = reply.get_attribute('data-turn-id')
@@ -177,10 +185,14 @@ def test_preview_tracks_latest_draft_when_rendering(paged_browser, monkeypatch, 
         page.keyboard.insert_text(latest)
         wait(page, lambda: floating.paged.revision == 2)
         reply.get_by_text('上一版预览', exact=True).wait_for()
-        reply.get_by_text('正在处理第 1 版，第 2 版仍是草稿。').wait_for()
+        reply.get_by_text('正在校验第 1 版副本，第 2 版仍是草稿。').wait_for()
+        turn = floating.conversation.turns[identifier]
+        stage_before = turn['stage']
+        floating.conversation.event('instruction_applied', {'conversation_id': identifier, 'revision': 0})
+        assert floating.conversation.turns[identifier]['stage'] == stage_before
     finally:
         release.set()
-    version_text = '第 1 版未发布，第 2 版草稿已保留。' if pair else '第 1 版已发布，第 2 版仍是草稿。'
+    version_text = '第 1 版未发布，第 2 版草稿已保留。' if pair else '第 1 版已保存，第 2 版仍是草稿。'
     reply.get_by_text(version_text).wait_for()
     assert reply.count() == 1 and reply.get_attribute('data-turn-id') == identifier
     receipt = floating.paged.publication_result
@@ -351,14 +363,14 @@ def test_stop_resets_requirement_counter_and_rejects_retired_session_snapshot(pa
         page.wait_for_function("document.getElementById('floating-status').textContent.includes('已停止后续派发')")
         page.locator('#floating-input').fill('新一轮精简文字，保留数字和单位。');page.locator('#floating-send').click()
         page.wait_for_function("document.getElementById('floating-input').value === ''")
-        page.wait_for_function("document.getElementById('paged-requirement-state').textContent.startsWith('已收到 1 条')")
+        page.wait_for_function("document.getElementById('paged-requirement-state').textContent.startsWith('1 条要求待处理')")
         page.wait_for_function("!document.getElementById('floating-status').textContent.includes('已停止后续派发')")
         assert api._floating.runtime.session_id!=old_session and len(built)==1
         page.evaluate('state=>window.OfficePaged.update(state)',old_state)
-        assert page.locator('#paged-requirement-state').text_content().startswith('已收到 1 条')
+        assert page.locator('#paged-requirement-state').text_content().startswith('1 条要求待处理')
         page.locator('#floating-input').fill('追加：保留表格和结论。');page.locator('#floating-send').click()
         page.wait_for_function("document.getElementById('floating-input').value === ''")
-        page.wait_for_function("document.getElementById('paged-requirement-state').textContent.startsWith('已收到 2 条')")
+        page.wait_for_function("document.getElementById('paged-requirement-state').textContent.startsWith('2 条要求待处理')")
         assert api._floating.runtime.revision==2 and len(built)==1
     finally:release.set()
     wait(page,lambda:any(row['status']=='adopted' for row in api._floating.paged.proposals.values()))

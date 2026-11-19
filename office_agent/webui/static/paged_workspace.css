@@ -9,13 +9,12 @@
 #paged-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--card); }
 #paged-recovery-actions[hidden] { display: none; }
 #floating-root .paged-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent,white); }
-#paged-work { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 360px; }
+#paged-work { --paged-chat-width: clamp(320px, calc(40vw - 132px), 390px); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) var(--paged-chat-width); }
 #paged-editor-main { min-width: 0; min-height: 0; background: #e8eaed; position: relative; }
 .paged-frame { border: 0; width: 100%; height: 100%; display: block; }
 #paged-work #floating-conversation { border-left: 1px solid var(--paged-line); padding: 12px 10px; gap: 10px; background: var(--bg); min-width: 0; height: auto; }
 #paged-work #floating-controls { gap: 8px; }
 #paged-work #floating-scroll { scrollbar-gutter: stable; }
-#paged-work #floating-timeline:empty::before { content: '围绕当前文档提出修改要求'; display: block; color: var(--muted); margin: 12px 0; line-height: 1.7; }
 #paged-work #floating-input { min-height: 88px; height: 100px; max-height: 160px; font-size: var(--fs-body-lg); }
 #paged-work #floating-progress { font-size: var(--fs-body); }
 #paged-reference-bar p { margin: 6px 0 0; font-size: var(--fs-caption); line-height: 1.5; overflow-wrap: anywhere; }
@@ -26,7 +25,9 @@
 #paged-work .floating-message { font-size: var(--fs-body); line-height: var(--lh-body); }
 #floating-timeline .conversation-turn { padding: 12px 0; border: 0; min-height: 0; height: auto; overflow: visible; }
 #floating-timeline .conversation-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: none; height: auto; overflow: visible; font: inherit; }
-#floating-timeline .conversation-preview { margin-bottom: 8px; padding-inline-start: 9px; border-inline-start: 2px solid var(--border); }
+#floating-timeline .conversation-body:empty { display: none; }
+#floating-timeline .conversation-body.conversation-progress { margin-top: 6px; font-size: var(--fs-caption); color: var(--muted); }
+#floating-timeline .conversation-preview { padding-inline-start: 9px; border-inline-start: 2px solid var(--border); }
 #floating-timeline .conversation-preview small { display: block; margin-bottom: 3px; color: var(--muted); }
 #floating-timeline .conversation-actions { display: flex; flex-wrap: wrap; align-items: center; margin-top: 6px; min-height: 0; }
 #floating-timeline .conversation-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; height: auto; padding: 3px 6px; border: 0; background: transparent; color: var(--muted); font: inherit; line-height: 1.5; text-align: left; white-space: normal; }
@@ -36,13 +37,14 @@
 #paged-statusbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 1px 12px; border-top: 1px solid var(--paged-line); min-height: 32px; font-size: var(--fs-caption); }
 #paged-metadata { display: flex; flex: 1; align-items: center; min-width: 0; gap: 12px; }
 #paged-version { display: flex; align-items: center; gap: 6px; min-width: 0; }
-#paged-preview-latest { flex-shrink: 0; white-space: nowrap; }
+#paged-preview-latest, #paged-readonly-reasons { flex-shrink: 0; white-space: nowrap; }
 #paged-statistics { flex: 0 0 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #paged-save-state { border-left: 1px solid var(--border); padding-left: 12px; }
 #paged-statusbar button, #paged-statusbar select { min-height: 26px; height: 26px; padding: 2px 8px; font-size: var(--fs-caption); border-radius: 4px; }
 #paged-statusbar select { background: var(--card); color: var(--ink); border: 1px solid var(--border); }
 #paged-feedback { flex: 0 0 auto; margin: 0; padding: 8px 16px; background: var(--card); color: var(--warn); line-height: 1.5; font-size: var(--fs-body); }
 #paged-feedback:empty { display: none; }
+#floating-root.paged-active:not(.paged-ai-closed) #paged-feedback[data-conversation-progress='true'] { display: none; }
 #paged-outline { display: none; min-width: 0; overflow: auto; padding: 16px 12px; border-right: 1px solid var(--paged-line); }
 #paged-outline h2 { margin: 0 0 16px; font-size: var(--fs-body-lg); }
 #paged-outline-items { display: grid; gap: 4px; }

@@ -5,16 +5,25 @@
   const api = () => window.OfficeAuth.wrapApi(window.pywebview.api);
   const make = (tag, text, host) => { const node = document.createElement(tag); if (text) node.textContent = text; if(tag==='button'){node.type='button';node.className='btn secondary';}host?.append(node); return node; };
   const section = make('section', '', parent); section.className = 'settings-group';
-  make('h4', '网络与诊断', section);
+  make('h4', '网络', section);
   const label = make('label', '网络方式', section), mode = make('select', '', label); mode.id = 'network-mode';
   for (const [value, title] of [['direct', '直连'], ['auto', '自动（显式系统／环境代理）'], ['manual', '手动代理']]) { const option = make('option', title, mode); option.value = value; }
   const proxyLabel = make('label', '代理地址', section), proxy = make('input', '', proxyLabel); proxy.id = 'network-proxy'; proxy.type = 'password'; proxy.autocomplete = 'off'; proxy.placeholder = 'http://127.0.0.1:7890；留空保持已存代理';
-  make('p', '自动模式支持显式代理，不解析 PAC；本机模型与 NO_PROXY 地址直连。', section);
+  const proxyRule = make('p', '使用显式代理，跳过 PAC。本机模型和 NO_PROXY 地址直连。', section);
+  const renderMode = () => {
+    proxyLabel.hidden = mode.value !== 'manual';
+    proxyRule.hidden = mode.value !== 'auto';
+  };
+  mode.addEventListener('change', renderMode);
+  renderMode();
   const status = make('p', '', section); status.setAttribute('role', 'status');
   const actions = make('div', '', section); actions.className = 'actions';
   const save = make('button', '保存网络设置', actions); save.type = 'button';
-  const diagnostics = make('button', '查看诊断', actions); diagnostics.type = 'button';
-  const repair = make('button', '检查下载缓存', actions); repair.type = 'button';
+  const extra = make('details', '', section); extra.className = 'settings-explanation';
+  make('summary', '诊断与缓存', extra);
+  const utilities = make('div', '', extra); utilities.className = 'actions';
+  const diagnostics = make('button', '查看诊断', utilities); diagnostics.type = 'button';
+  const repair = make('button', '检查下载缓存', utilities); repair.type = 'button';
   let revision = '', pending = false;
   const load = async () => {
     if (pending) return;
@@ -24,12 +33,13 @@
     const value = snapshot.values || snapshot;
     mode.value = value.network_mode || 'direct'; proxy.value = '';
     proxy.placeholder = value.network_proxy_configured ? '已保存代理；留空保持' : 'http://127.0.0.1:7890';
+    renderMode();
   };
   save.onclick = async () => {
     if (pending) return;
     pending = true; save.disabled = true;
     try {
-      const changes = {network_mode: mode.value}; if (proxy.value) changes.network_proxy = proxy.value;
+      const changes = {network_mode: mode.value}; if (mode.value === 'manual' && proxy.value) changes.network_proxy = proxy.value;
       const result = await api().plan_settings_edit(changes, revision);
       proxy.value = '';
       if (!result?.ok) { status.textContent = '设置未保存，请重新读取或检查代理地址。'; return; }

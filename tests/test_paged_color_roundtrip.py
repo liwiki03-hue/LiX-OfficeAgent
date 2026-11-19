@@ -108,6 +108,11 @@ def test_failed_open_releases_layout_for_next_file_read_consent(paged_browser):
     page.get_by_role('button', name='同意读取并打开', exact=True).click()
     page.wait_for_function("document.getElementById('paged-save-state')?.dataset.kind === 'readonly'")
     assert not api._floating.paged.editable
+    page.get_by_role('button', name='查看只读原因', exact=True).click()
+    reasons = page.get_by_role('dialog', name='只读原因')
+    assert reasons.get_by_text(api._floating.paged.reasons[0], exact=True).is_visible()
+    reasons.get_by_role('button', name='关闭', exact=True).click()
+    page.wait_for_function("document.activeElement.id === 'paged-readonly-reasons'")
     source.write_bytes(good)
     page.locator('#floating-choose').click()
     consent = page.get_by_role('button', name='同意读取并打开', exact=True)

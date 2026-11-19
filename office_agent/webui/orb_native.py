@@ -193,7 +193,7 @@ class NativeOrb:
                 paths = None
             self._accept = drop_candidates(tuple(str(p) for p in paths)) if paths is not None else False
             event.Effect = DragDropEffects.Copy if self._accept else getattr(DragDropEffects, 'None')
-            self.tooltip.SetToolTip(self.orb, '松开后在本机打开解析；发送才调用模型' if self._accept else '仅支持本地DOCX/XLSX/PPTX；多文件需分次拖入')
+            self.tooltip.SetToolTip(self.orb, '松开以打开' if self._accept else '请拖入一个本地 DOCX、XLSX 或 PPTX 文件')
             self.visual.refresh()
 
         def leave(sender, event):

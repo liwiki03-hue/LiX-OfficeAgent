@@ -14,6 +14,7 @@ def test_diagnostic_preview_export_uses_theme_and_only_sanitized_fields(floating
     target = tmp_path / 'diagnostic-export.json'
     api._app.window.create_file_dialog = lambda *args, **kwargs: [str(target)]
     page.evaluate("async()=>{OfficeSettings.show();await OfficeSettings.selectTab('tab-machine');}")
+    page.get_by_text('诊断与缓存', exact=True).click()
     show = page.get_by_role('button', name='查看诊断', exact=True)
     assert 'btn' in show.get_attribute('class') and show.bounding_box()['height'] >= 30
     show.click()

@@ -6,14 +6,24 @@
   const button=(text,parent,action,id)=>{const node=make('button',text,parent,id);node.type='button';node.addEventListener('click',()=>Promise.resolve(action()).catch(error=>{if(!error.stale)notice(error.message);}));return node;};
   const tool=(text,icon,parent,action,id)=>window.OfficeAgentElements.iconButton(button(text,parent,action,id),icon);
   let adapter, identity='', host, opened=false, opening=false, generation=0, reference=null, lastState, changes=Promise.resolve(), saving=false, sending=false, applying=false, instruction=0, signature='', recoveryNotice='', autosave, errorGeneration=0;
-  let announcedState='', announcementTimer, instructionEpoch=0,requirementsDialog=null,pendingFeedback=null;
+  let announcedState='', announcementTimer, instructionEpoch=0,requirementsDialog=null,referenceDismissed=false;
   const retiredSessions=new Set();
   const retiredInboxes=new Set();
   const automaticAttempts=new Set();
   let automaticSaving=null, publicationProgress=null,lastExportRevision=-1,undoing=false;
   const api=()=>window.OfficeAuth.wrapApi(window.pywebview.api);
   const active=()=>!!adapter;
-  function notice(text){pendingFeedback=null;const target=$('paged-feedback')||$('floating-status');if(target){target.textContent=text||'';errorGeneration++;}}
+  function notice(text){const target=$('paged-feedback')||$('floating-status');if(target){target.textContent=text||'';delete target.dataset.conversationProgress;errorGeneration++;}}
+  function showReference(value){
+    reference=value;referenceDismissed=false;
+    const chip=$('paged-reference-chip');
+    if(!chip)return;
+    chip.hidden=!value;
+    $('paged-reference-detail').open=false;
+    const table=/^table-(\d+)$/.exec(value?.table_id||'');
+    $('paged-reference-state').textContent=value?'已引用 · '+(value.location||(table?'表格 '+(Number(table[1])+1):value.kind==='append'?'文末':'文字选区')):'';
+    $('paged-reference-content').textContent=value?.old||'';
+  }
   async function call(name,...args){const mine=generation,result=await api()[name](...args);if(mine!==generation){const error=Error('文档已切换，旧结果未进入当前草稿');error.stale=true;throw error;}if(!result?.ok)throw Error(result?.error||'宿主未完成操作；请核对当前草稿');return result;}
   async function publish(name,args,id,text){
     const mine=generation;
@@ -74,19 +84,18 @@
     state=acceptState(state);
     if(publicationProgress&&state.publication_result?.id===publicationProgress.id&&!state.publishing){
       const progress=publicationProgress;publicationProgress=null;
+      const result=state.publication_result,conversationSaved=result.conversation_id&&result.status==='verified';
       if(progress.generation===generation&&progress.feedback===errorGeneration)
-        notice(state.publication_result.preview_latest_draft?'':state.publication_result.text);
+        notice(result.preview_latest_draft||conversationSaved?'':result.text);
     }
     if(host&&state.document_id===host.document?.id&&state.access?.serial>=(host.access?.serial??-1))host.access=state.access;
-    if(pendingFeedback){
-      const current=pendingFeedback.generation===errorGeneration&&pendingFeedback.inbox===state.inbox_id&&pendingFeedback.session===state.requirement_session_id;
-      if(!current)pendingFeedback=null;
-      else if(!state.pending_requirements&&state.instruction_revision>=pendingFeedback.revision)notice('');
-    }
     if(requirementsDialog&&(state.inbox_id!==requirementsDialog.inbox||state.requirement_session_id!==requirementsDialog.session))requirementsDialog.invalidate();
     const unsynced=adapter&&adapter.revision>state.draft_revision;
     const draftRevision=unsynced?adapter.revision:state.draft_revision;
     const validating=state.publication_in_progress,publication=state.publication_result;
+    const conversationProgress=state.publishing&&validating?.conversation_id
+      &&validating.id===publicationProgress?.id&&publicationProgress.feedback===errorGeneration;
+    $('paged-feedback').dataset.conversationProgress=String(Boolean(conversationProgress));
     const manualPreview=Boolean(!state.publishing&&!state.uncertain&&!state.publication_rolled_back
       &&publication?.preview_latest_draft&&!publication.conversation_id);
     const versionStatus=state.publishing&&validating&&!validating.conversation_id
@@ -95,6 +104,7 @@
     $('paged-save-state').textContent=state.uncertain?'结果待核实':state.publishing?'正在生成并验证副本':!state.editable?'只读':unsynced?'有未保存编辑 · 正在核对草稿 '+adapter.revision:state.dirty?'有未保存编辑 · 草稿 '+state.draft_revision:state.published_revision>0?'副本已验证 · 草稿 '+state.published_revision:'原稿 · 未修改';
     if(versionStatus)$('paged-save-state').textContent=versionStatus;
     $('paged-preview-latest').hidden=!manualPreview;
+    $('paged-readonly-reasons').hidden=state.editable||state.publishing||state.uncertain||!state.reasons?.length;
     $('paged-save-state').title=!state.editable&&!state.uncertain&&!state.publishing?'只读'+((state.reasons||[]).length?'：'+state.reasons.join('、'):''):$('paged-save-state').textContent;
     if(state.publication_rolled_back&&!state.uncertain&&!state.publishing){
       $('paged-save-state').textContent='副本已撤销 · 草稿未交付';
@@ -123,8 +133,9 @@
     const received=state.requirements||[],waiting={reference:reference?.draft_revision===adapter?.revision?'待处理':'待引用',model:'待核对接口',budget:'调用预算已用尽',review:'待核对建议',number_conflict:'请调整数字顺序要求',next_step:'下一步处理',applying:'采用后待处理',publishing:'保存后待处理',verify_result:'待核对结果',readonly:'只读，暂不处理',recovery:'待核对恢复草稿',ready:'待处理'};
     waiting.readonly=state.copy_error||['failed','uncertain'].includes(state.publication_result?.status)?'副本未就绪':'准备可编辑副本';
     if(!state.editable&&state.publishing)waiting.publishing='正在创建可编辑副本';
-    const cancelled=received.filter(row=>row.status==='cancelled').length;
-    const receiptText=received.length?'已收到 '+received.length+' 条'+(cancelled?' · 已取消 '+cancelled+' 条':'')+(state.pending_requirements?' · '+(waiting[state.pending_reason]||'待处理'):''):'';
+    const queued=state.pending_requirements?received.filter(row=>!['included','stopped','cancelled'].includes(row.status)).length:0;
+    const reason=waiting[state.pending_reason];
+    const receiptText=queued?queued+' 条要求待处理'+(reason&&reason!=='待处理'?' · '+reason:''):'';
     if($('paged-requirement-state').textContent!==receiptText)$('paged-requirement-state').textContent=receiptText;
     $('paged-requirement-state').dataset.inbox=state.inbox_id||'';
     $('paged-requirement-details').hidden=!received.length;
@@ -170,14 +181,13 @@
       const result=await adapter.applyApprovedProposal(grant.proposal,rev,grant.proposal.instruction_revision,grant.token);
       await changes;
       const response=await call('paged_applied',grant.token,host.document.id,result.prior_revision,result.revision);
-      reference=null;$('paged-reference-state').textContent='已修改草稿';renderState(response);
+      showReference(null);renderState(response);
       await sync();
       if(accessId&&host.access?.id===accessId){
         try{
           const target=result.reference||(proposal.edits?{nodes:proposal.edits.map(edit=>{const cell=proposal.reference.cells.find(row=>row.node_id===edit.node_id);return {node_id:edit.node_id,start:cell.start,end:cell.start+edit.new.length};}),whole_table:false}:{node_id:proposal.reference.node_id,start:proposal.reference.start,end:proposal.reference.start+proposal.new.length});
-          reference=(await call('paged_reference',host.document.id,adapter.revision,target)).reference;
-          $('paged-reference-state').textContent='继续修改';
-        }catch(error){if(error.stale)throw error;$('paged-reference-state').textContent='已修改草稿；下次发送时使用当前选区或光标所在段落';}
+          showReference((await call('paged_reference',host.document.id,adapter.revision,target)).reference);
+        }catch(error){if(error.stale)throw error;}
         if(host.access.level==='save_copy')automaticSaving={accessId,revision:adapter.revision};
       }
     }finally{applying=false;}
@@ -187,7 +197,7 @@
     const feedbackVersion=errorGeneration;
     await sync();const target=await adapter.getSelectionReference(allowParagraph,table);
     const result=await call('paged_reference',host.document.id,adapter.revision,target);
-    reference=result.reference;$('paged-reference-state').textContent='已引用：'+reference.old.slice(0,100);
+    showReference(result.reference);
     if(feedbackVersion===errorGeneration)notice('');
   }
   async function submit(clientId,text){
@@ -196,8 +206,8 @@
     sending=true;
     try{
       const append=/末尾|文末|结尾|最后|\bend\b|\bappend\b/i.test(text)&&/添加|增加|补充|追加|插入|\badd\b|\bappend\b/i.test(text);
-      if(!append&&!applying&&lastState?.editable&&['edit','save_copy'].includes(host.access?.level||'save_copy')&&reference?.draft_revision!==adapter.revision){
-        try{await capture(!/所选|选中|选区/.test(text)&&(/光标|当前段|这一?段/.test(text)||adapter.revision>0&&/最新草稿/.test(text)));}catch(error){if(error.stale)throw error;reference=null;}
+      if(!append&&!applying&&!referenceDismissed&&lastState?.editable&&['edit','save_copy'].includes(host.access?.level||'save_copy')&&reference?.draft_revision!==adapter.revision){
+        try{await capture(!/所选|选中|选区/.test(text)&&(/光标|当前段|这一?段/.test(text)||adapter.revision>0&&/最新草稿/.test(text)));}catch(error){if(error.stale)throw error;showReference(null);}
       }
       const target=!append&&!applying&&reference?.draft_revision===adapter.revision?reference.id:null;
       const result=await call('paged_submit',clientId,text,target,host.document.id,host.document.version,lastState?.requirement_session_id||'',lastState?.inbox_id);
@@ -205,10 +215,7 @@
       const newer=olderState(result);
       lastState=acceptState(result);instruction=lastState.instruction_revision;renderState(lastState);
       if(!applying)await adapter.request('instruction',{revision:instruction}).catch(()=>{});
-      if(mine===generation&&feedbackVersion===errorGeneration){
-        notice(newer?'要求已保存；列表已有更新，请核对当前有效要求。':result.pending_requirements?'要求 '+result.record.revision+' 已保存；'+({reference:'正在准备处理范围',model:'请选择有效模型，要求已保留',budget:'本轮调用预算已用尽，核对后开始新一轮',review:'核对建议与保护要求后主动处理',next_step:'将在下一安全步骤处理',applying:'采用完成后继续处理',publishing:'副本验证完成后继续处理',verify_result:'先核对不确定的副本结果',readonly:'将自动创建可编辑副本并继续处理',recovery:'先核对恢复草稿'}[result.pending_reason]||'等待处理'):'');
-        if(!newer&&result.pending_requirements)pendingFeedback={generation:errorGeneration,inbox:lastState.inbox_id,session:lastState.requirement_session_id,revision:result.record.revision};
-      }
+      if(mine===generation&&feedbackVersion===errorGeneration)notice(newer?'要求已更新，请核对列表。':'');
       return result;
     }catch(error){if(mine===generation&&!error.stale)notice(error.message);throw error;
     }finally{sending=false;}
@@ -237,13 +244,13 @@
       const result=await adapter.applyValidatedOperations(operations,{token:prepared.token,instruction_revision:instruction});
       await changes;
       const response=await call('paged_applied_operations',prepared.token,host.document.id,result.prior_revision,result.revision);
-      reference=null;renderState(response);await sync();return response;
+      showReference(null);renderState(response);await sync();return response;
     }finally{applying=false;}
   }
   async function idMap(){await sync();return call('paged_id_map',host.document.id);}
   async function referenceLocator(locatorId,start,end){
     const result=await call('paged_reference_locator',host.document.id,adapter.revision,locatorId,start,end);
-    reference=result.reference;$('paged-reference-state').textContent='已引用：'+reference.old.slice(0,100);
+    showReference(result.reference);
     return result;
   }
   function manageRequirements(){
@@ -405,13 +412,14 @@
       return;
     }
     if(lastState.continuation_pending&&lastState.pending_requirements){
+      if(referenceDismissed)return;
       if(!window.OfficeModelSelector?.readyForRequest())return;
       const key=access.id+':continue-copy:'+lastState.requirement_session_id+':'+lastState.instruction_revision;
       if(automaticAttempts.has(key))return;
       automaticAttempts.add(key);
       await sync();
       const target=reference?.draft_revision===adapter.revision?{reference}:await call('paged_automatic_reference',host.document.id,adapter.revision,lastState.requirement_session_id,lastState.instruction_revision);
-      reference=target.reference;$('paged-reference-state').textContent=reference.kind==='append'?'追加到文末':'已自动引用正文';
+      showReference(target.reference);
       const result=await call('paged_start_pending',host.document.id,adapter.revision,reference.id,lastState.instruction_revision,lastState.requirement_session_id);
       renderState(result);notice(result.started?'正在处理已发送要求':'请选择有效模型，要求已保留');
       return;
@@ -467,7 +475,12 @@
     tool('收起对话侧栏','panel-right-close',$('floating-conversation-heading'),()=>setSidebar(true,true),'paged-close-ai').setAttribute('aria-controls','floating-conversation');
     $('floating-conversation').append($('floating-controls'));
     const referenceBar=make('div','',$('floating-controls'),'paged-reference-bar');
-    tool('引用选区','quote',referenceBar,()=>capture(),'paged-reference');make('p','选择文字讨论修改',referenceBar,'paged-reference-state');
+    tool('引用选区','quote',referenceBar,()=>capture(),'paged-reference');
+    const chip=make('div','',referenceBar,'paged-reference-chip');chip.hidden=true;
+    const referenceDetail=make('details','',chip,'paged-reference-detail');
+    make('summary','',referenceDetail,'paged-reference-state');
+    make('p','',referenceDetail,'paged-reference-content');
+    tool('取消引用','x',chip,()=>{showReference(null);referenceDismissed=true;$('floating-input').focus();},'paged-reference-clear');
     tool('引用整表，最多8个段落','freeze',referenceBar,()=>capture(false,true),'paged-table-reference');
     make('span','',referenceBar,'paged-requirement-state').setAttribute('role','status');
     tool('查看已收到要求','chat',referenceBar,manageRequirements,'paged-requirement-details').hidden=true;
@@ -484,6 +497,15 @@
       try{await previewLatestDraft(lastState.publication_result,preview);}
       finally{preview.disabled=false;}
     },'paged-preview-latest');preview.hidden=true;
+    const readonly=button('查看原因',version,()=>{
+      const reasons=lastState.reasons;
+      dialog('只读原因',node=>{
+        const list=make('ul','',node);
+        for(const reason of reasons)make('li',reason,list);
+        button('关闭',node,()=>node.close());
+      },readonly);
+    },'paged-readonly-reasons');
+    readonly.setAttribute('aria-label','查看只读原因');readonly.hidden=true;
     const announcement=make('span','',root,'paged-state-announcement');announcement.className='agent-visually-hidden';announcement.setAttribute('role','status');announcement.setAttribute('aria-live','polite');announcement.setAttribute('aria-atomic','true');
     tool('查找','search',bottom,()=>dialog('查找正文',node=>{const input=make('input','',node);input.maxLength=200;input.setAttribute('aria-label','查找文字');button('定位第一个匹配',node,async()=>{await adapter.request('find',{text:input.value});node.close();});button('关闭',node,()=>node.close());}));
     const paper=tool('纸张深色显示','moon',bottom,()=>{root.classList.toggle('paged-paper-dark');paper.setAttribute('aria-pressed',String(root.classList.contains('paged-paper-dark')));return adapter.request('paper',{dark:root.classList.contains('paged-paper-dark')});});paper.setAttribute('aria-pressed','false');
@@ -497,9 +519,8 @@
   }
   function frameEvent(type,value){
     if(type==='changed'){
-      reference=null;const mine=generation,documentId=host.document.id;
+      showReference(null);const mine=generation,documentId=host.document.id;
       changes=changes.then(()=>{if(mine!==generation)return;return call('paged_changed',documentId,value.revision,value.apply_token).then(result=>renderState(result));}).catch(error=>notice(error.message));
-      $('paged-reference-state').textContent='草稿已改变，请重新引用当前文字';
       clearTimeout(autosave);autosave=setTimeout(()=>{if(opened)sync().catch(error=>notice('恢复快照未更新：'+error.message));},1800);
     }else if(type==='state'){
       $('paged-statistics').textContent='第 '+value.page+' / '+value.pages+' 页 · '+value.characters+' 字符 · 本引擎分页';
@@ -600,7 +621,7 @@
   function close(){
     automaticAttempts.clear();automaticSaving=null;publicationProgress=null;lastExportRevision=-1;
     requirementsDialog?.invalidate();
-    retiredSessions.clear();retiredInboxes.clear();lastState=null;pendingFeedback=null;
+    retiredSessions.clear();retiredInboxes.clear();lastState=null;referenceDismissed=false;
     generation++;opened=false;clearTimeout(autosave);clearTimeout(announcementTimer);announcedState='';adapter?.closeDocument();adapter=null;reference=null;identity='';signature='';recoveryNotice='';
     const root=$('floating-root');if(!root?.classList.contains('paged-active'))return;
     const top=$('paged-top'),header=top?.querySelector('header');if(header)root.prepend(header);

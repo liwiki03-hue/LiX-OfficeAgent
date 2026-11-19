@@ -79,3 +79,4 @@
 .canvas-frozen-grid td[data-frozen-row='true'],.canvas-frozen-grid td[data-frozen-col='true']{background:#fff}
 .canvas-frozen-grid [data-frozen-row='true'][data-frozen-col='true'],.canvas-frozen-grid thead [data-frozen-col='true']{z-index:8}
 .canvas-frozen-grid tbody th[data-frozen-row='true']{z-index:8}
+.canvas-reference-status { color: var(--muted); font-size: var(--fs-caption); }

@@ -722,7 +722,8 @@ class DocumentConversation:
                     version_text = payload.get('publication_text')
                     publication = payload.get('publication')
                     if version_text:
-                        text += '\n' + version_text
+                        text += '\n' + (f"第 {publication['draft_revision']} 版已保存，第 {publication['current_draft_revision']} 版仍是草稿。"
+                                        if publication and publication['reason'] == 'verified' else version_text)
                     if payload.get('pending_updates'):
                         self.update(identifier, 'version_complete', text + '\n追加要求已保留。', results=results, changes=changes,
                                     publication=publication, preview=None)
@@ -741,7 +742,9 @@ class DocumentConversation:
                             preview=row.get('preview') if publication and publication['reason'] == 'draft_advanced' else None)
             elif kind in {'instruction_applied', 'canvas_ai_running'}:
                 preview = row.get('preview')
-                if not preview or preview['instruction_revision'] != payload.get('revision'):
+                incoming = payload.get('revision')
+                publishing = (row.get('publication') or {}).get('reason') == 'validating'
+                if not publishing and (not preview or type(incoming) is int and incoming > preview['instruction_revision']):
                     self.update(identifier, 'model', '正在按当前有效要求生成修改建议。')
             elif kind == 'instruction_received':
                 target = self.turns.get(payload.get('client_id'))

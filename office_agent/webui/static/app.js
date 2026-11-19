@@ -82,7 +82,7 @@ function applyTheme(theme) {
     if (id === "settings-theme") button.textContent = "切换主题（当前：" + themeNames[theme] + "）";
   });
   const state = el("settings-theme-state");
-  if (state) state.textContent = "当前为" + themeNames[theme] + "。" + themePersistence;
+  if (state) state.textContent = themePersistence;
   const choice = el("settings-theme-choice");
   if (choice) choice.value = theme;
 }
@@ -124,7 +124,7 @@ async function flushTheme() {
       if (!result?.ok || result.theme !== pending.theme) throw Error('Theme preference was not saved');
       if (themePending.revision === pending.revision) {
         themePending = null;
-        themePersistence = "已保存在本机。";
+        themePersistence = "";
         applyTheme(pending.theme);
       }
     }
@@ -147,7 +147,7 @@ async function restoreTheme() {
     if (owner !== api || revision !== themeRevision) return;
     if (!result?.ok) throw Error('Theme preference was not read');
     if (themes.includes(result.theme)) {
-      themePersistence = "已保存在本机。";
+      themePersistence = "";
       applyTheme(result.theme);
       try { localStorage.setItem(themeStorageKey, result.theme); } catch (_) {}
     } else saveTheme(document.documentElement.dataset.theme);
@@ -882,7 +882,7 @@ function renderHistory() {
     button.setAttribute("aria-pressed", String(session.session_dir === historySelected));
     const title = document.createElement("strong");
     title.className = "history-item-title";
-    title.textContent = translateHistoryText(String(session.question || "未记录指令"));
+    title.textContent = translateHistoryText(String(session.question || session.file?.split(/[\\/]/).pop() || "未命名任务"));
     title.title = title.textContent;
     button.append(title);
     const stateLabels = { failed: "失败", error: "失败", pending: "待确认", awaiting_confirmation: "待确认",

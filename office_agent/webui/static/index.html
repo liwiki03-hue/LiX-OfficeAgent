@@ -57,7 +57,8 @@
         <section class="file-entry card" id="file-entry" aria-label="文档选择">
           <div id="file-empty">
             <div class="card-title" id="file-entry-title">先选择要处理的文档</div>
-            <div id="file-drop" class="file-drop" tabindex="0" role="button" aria-label="拖入一个Office文件或按回车选择文档">也可拖入一个 .docx / .xlsx / .doc / .xls 文件。拖入后仍需在系统选择框确认；旧版 .doc/.xls 的修改预览暂不可用。</div>
+            <div id="file-drop" class="file-drop" tabindex="0" role="button" aria-label="拖入一个 Office 文件或按回车选择文档"><span class="file-drop-idle">拖入文档</span><span class="file-drop-active">松开以打开</span></div>
+            <details class="file-entry-formats"><summary>支持的格式</summary><p>支持 DOCX、XLSX、PPTX、DOC 和 XLS。拖入后在系统选择框确认文件。旧版 DOC、XLS 的修改预览暂不可用。</p></details>
           </div>
           <details id="file-options" class="file-options">
             <summary>最近文档 / 粘贴路径</summary>
@@ -83,7 +84,7 @@
           <div class="activity" id="activity" role="status" aria-live="polite">正在连接桌面服务；连接完成后可选择文档。</div>
           <!-- 提交与输入同区；确认保存和撤销只放在当前计划/输出旁。 -->
           <div class="prompt-bar">
-            <textarea id="prompt" rows="2" aria-label="自然语言任务指令" aria-describedby="input-help" placeholder="输入任务，例如：概括文档内容，或先预览修改计划"></textarea>
+            <textarea id="prompt" rows="2" aria-label="自然语言任务指令" aria-describedby="input-help" placeholder="提问或说明修改要求…"></textarea>
             <button class="btn primary" id="btn-ask" disabled>发送</button>
             <button class="btn secondary" id="btn-stop" type="button" title="停止后续模型和工具步骤；当前请求可能需要先返回" hidden>停止</button>
           </div>
@@ -408,7 +409,7 @@
             <button id="citations-rollback" class="btn secondary" type="button" disabled>撤销本次输出…</button>
             <p>必须选择所有受重排影响的段落及已有书目；范围外有影响、映射缺失、同 DOI 元数据冲突或来源变化时整组拒绝。释放的书目段落保留“未使用”占位。续编回执只恢复版本绑定的编号/元数据候选，不恢复旧的取证、写入或撤销批准；新增主张仍须重新取证与审阅。保存后另选新副本可继续编排，其索引须另行建立。</p>
           </details>
-          <div class="input-help" id="input-help">Enter 发送，Shift+Enter 换行，Ctrl+Enter 兼容发送。真正写入前会独立确认。</div>
+          <div class="input-help visually-hidden" id="input-help">Enter 发送，Shift+Enter 换行。写入前需确认。</div>
           <div class="actions">
             <span class="pill" id="busy-pill" style="display:none;"><span class="pdot"></span><span id="busy-label">正在处理</span></span>
           </div>
@@ -685,12 +686,11 @@
         </section>
         <section class="settings-pane" id="settings-pane-machine" aria-labelledby="tab-machine" hidden>
           <div class="settings-form">
-            <p>这里只影响这台电脑上的显示与检测，不改动任何文档。</p>
             <button class="btn secondary" id="settings-probe" type="button">检测本机 Office 环境</button>
             <p id="settings-probe-status" class="settings-hint">尚未检测。</p>
             <label for="settings-theme-choice">界面主题</label><select id="settings-theme-choice"><option value="dark">深色</option><option value="light">浅色</option></select>
             <button class="btn secondary" id="settings-theme" type="button" hidden>切换主题</button>
-            <p id="settings-theme-state" class="settings-hint"></p>
+            <p id="settings-theme-state" class="settings-hint" role="status"></p>
           </div>
         </section>
         <section class="settings-pane" id="settings-pane-account" aria-labelledby="tab-account" hidden>

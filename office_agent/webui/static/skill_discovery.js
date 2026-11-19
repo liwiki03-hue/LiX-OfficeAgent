@@ -91,7 +91,8 @@
     for(const item of matches){
       const entry=make('button','',list,'skill-entry');entry.type='button';entry.dataset.candidate=item.candidate_id;
       iconFor(entry,item);
-      const text=make('span','',entry,'skill-entry-text');make('strong',item.display_name||item.name,text);make('span',item.description||item.source,text,'skill-entry-description');make('span',item.provider==='featured'?item.source+' · 安装前检查兼容性':'兼容性待核对',text,'skill-entry-description');
+      const text=make('span','',entry,'skill-entry-text');make('strong',item.display_name||item.name,text);make('span',item.description||item.source,text,'skill-entry-description');
+      make('small','查看',entry,'skill-entry-state');
       entry.onclick=()=>detail(item);
     }
     if(result&&!matches.length)make('p',result.ok===false?'本次查询未完成；可主动重试或改用其他来源。':result.query===input.value.trim()?'没有匹配的已收录技能。':'当前结果没有匹配项，可搜索公开目录。',list);
@@ -104,7 +105,7 @@
       if(mine!==epoch||!active())return;
       if(!response?.ok){status.textContent='精选目录不可读；仍可搜索公开技能或检查 GitHub 来源。';return;}
       featured=response;items=response.items;result={featured:true};render();
-      status.textContent='精选 '+items.length+' 项 · 离线来源快照 · '+response.reviewed_at.slice(0,10)+' · 安装前检查兼容性';
+      status.textContent='精选 '+items.length+' 项 · 离线来源快照';
     }catch(_){if(mine===epoch&&active())status.textContent='精选目录未加载；仍可主动搜索公开技能。';}
   }
   function invalidate(message) {
@@ -135,6 +136,11 @@
     finally{pending=false;controls();}
   }
   $('skills-public-search').onclick=search;
+  const scope=make('p','skills.sh 仅接收查询词。',root,'settings-hint');
+  root.querySelector('.actions').after(scope);
+  sourceChoice.addEventListener('change',()=>{
+    scope.textContent={lix:'读取本机工作流。','openai/plugins':'读取公开插件清单。','skills.sh':'skills.sh 仅接收查询词。'}[sourceChoice.value];
+  });
   sourceChoice.onchange=()=>{invalidate(sourceChoice.value==='lix'?'输入已保留；点击浏览工作流，本机读取不联网。':'搜索来源已切换；输入已保留，按 Enter 查询。');$('skills-public-search').textContent=sourceChoice.value==='lix'?'浏览工作流':'搜索公开技能';items=[];result=null;render();};
   const featuredButton=make('button','精选目录',root.querySelector('.actions'),'btn secondary');featuredButton.type='button';featuredButton.onclick=()=>{invalidate();showFeatured();};
   $('skills-github-check').onclick=()=>inspectSource('resolve_github_skill',$('skills-github-url').value.trim());

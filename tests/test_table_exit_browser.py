@@ -289,6 +289,9 @@ def test_cell_enter_tab_composition_and_stale_plans(tmp_path, monkeypatch):
         service.proposals['old'] = {'id': 'old', 'status': 'pending', 'draft_revision': service.revision, 'instruction_revision': 1}
         frame.locator('#frame-error').evaluate("node=>node.textContent='另一项提示保留'")
         frame.locator('.superdoc-page').get_by_text('121 ms', exact=True).first.click()
+        page.get_by_role('button', name='引用整表，最多8个段落', exact=True).click()
+        page.locator('#paged-reference-chip').wait_for()
+        frame.locator('.superdoc-page').get_by_text('121 ms', exact=True).first.click()
         before = inspect_frame(frame)
         frame.evaluate("document.querySelector('.ProseMirror').dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'正文'}))")
         frame.get_by_role('button', name='在表格后继续正文', exact=True).click()
@@ -298,7 +301,7 @@ def test_cell_enter_tab_composition_and_stale_plans(tmp_path, monkeypatch):
         frame.get_by_role('button', name='在表格后继续正文', exact=True).click()
         assert '请先完成当前输入' not in frame.locator('#frame-error').text_content()
         assert frame.locator('#frame-error').text_content() == '另一项提示保留'
-        page.wait_for_function("document.getElementById('paged-reference-state').textContent.includes('草稿已改变')")
+        page.locator('#paged-reference-chip').wait_for(state='hidden')
         deadline = time.monotonic()+5
         while service.proposals['old']['status'] != 'stale':
             if time.monotonic()>deadline:

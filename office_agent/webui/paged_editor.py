@@ -25,7 +25,7 @@ from ..settings_store import SettingsError
 from ..requirement_history import active_requirements, change_requirement, runtime_requirements
 from .bridge import _reject_links, _DEFAULT_REPLY_BUDGET
 from .draft_suggestions import DraftModel, DraftNumberConflict, model_failure, validate_append, validate_suggestion
-from .document_conversation import deferred, edited_text_excerpt, intent
+from .document_conversation import DocumentConversation, deferred, edited_text_excerpt, intent
 
 
 class DraftSuggestion(BaseModel):
@@ -491,10 +491,14 @@ class PagedEditor:
             from ..model_content import check_scope
             check_scope(selected)
             identifier = uuid.uuid4().hex
+            locator = self.draft_locators[item['id']]
+            book = Document(io.BytesIO(self.data))
+            paragraph = list(book.element.body.iter(W+'p'))[locator['paragraph_index']]
+            location = DocumentConversation._word_location(book, paragraph)
             record = {'id':identifier,'document_id':document_id,'draft_revision':revision,'node_id':item['id'],
                       'start':target['start'],'end':target['end'],'old':selected,'context':selected,
                       'text_sha256':sha(selected.encode('utf8')),'coordinate':'UTF-16 code units',
-                      'draft_locator_id':self.draft_locators[item['id']]['id'], 'locator_scope':'current_draft',
+                      'location':location, 'draft_locator_id':locator['id'], 'locator_scope':'current_draft',
                       'source_host_locator_id':self.locator_map.get(item['id'])}
             self.references = {identifier:record}
             return {'ok':True, 'reference':deepcopy(record)}
