@@ -19,7 +19,7 @@ from .document_open import OPEN_FORMATS, read_local_view
 from .paged_editor import PagedEditor
 from .office_canvas import OfficeCanvas, OfficeCanvasApi
 from .document_access import DocumentAccess
-from .document_conversation import DocumentConversation, intent as conversation_intent
+from .document_conversation import DocumentConversation, STALE_SELECTION, TURN_LIMIT, intent as conversation_intent
 from .round_undo import RoundUndo
 
 
@@ -739,7 +739,7 @@ class FloatingSession:
                 self.runtime.executing = False
         return result
 
-    def stop(self):
+    def stop(self, *, announce=True):
         self.authenticated()
         self.conversation.stop()
         self.copy_continuation = None
@@ -771,7 +771,8 @@ class FloatingSession:
                     else '已停止后续派发，当前副本已进入写入，正在核验结果。')
             self.notice('stop_requested', {'text': text, 'publication_pending': True})
             return {'ok': True, 'stopped': True, 'publication_stop': publication_stop}
-        self.notice('stop_requested', {'text': '已停止后续派发。已发送的远端请求可能继续处理或计费。已开始的副本事务将安全收尾。'})
+        if announce:
+            self.notice('stop_requested', {'text': '已停止后续派发。已发送的远端请求可能继续处理或计费。已开始的副本事务将安全收尾。'})
         if result.get('reason') == 'no_active_model_task' and (was_opening or had_access):
             return {'ok': True, 'local_open_cancelled': was_opening, 'stopped': True}
         return result
@@ -1219,33 +1220,46 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def conversation_undo_abort(self, turn_id, token, document_id):
         return self._floating_call(self._floating.round_undo.abort, turn_id, token, document_id)
 
-    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None):
+    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None):
         def action():
             floating = self._floating
             floating.authenticated()
             if not floating.document or floating.document['id'] != document_id or floating.document['version'] != version:
                 raise ValueError('文档或来源版本已改变；消息没有进入其他文件')
+            if context_id is not None and context_id != floating.conversation.binding:
+                raise ValueError('对话已切换，旧消息未发送')
             local = conversation_intent(text) in {'status', 'stop'}
             opening = bool(floating.open_request and floating.open_request.get('phase') == 'parsing')
-            if local or opening and not floating.document.get('ready'):
+            at_limit = len(floating.conversation.turns) >= TURN_LIMIT
+            known = floating.conversation.turns.get(client_id) if isinstance(client_id, str) else None
+            known_read = known is not None and known['intent'] == 'read'
+            if local or at_limit or known_read or opening and not floating.document.get('ready'):
                 reference_value = None
             elif floating.paged.active():
                 floating.paged.guard(document_id, revision)
                 reference_value = floating.paged.references.get(reference) if isinstance(reference, str) else None
             elif floating.canvas.active():
                 floating.canvas.guard(document_id, revision)
-                reference_value = next((item for item in [floating.canvas.ai.read_reference, floating.canvas.ai.reference] if item and item['id'] == reference), None)
+                references = (floating.canvas.ai.read_reference, floating.canvas.ai.reference)
+                reference_value = next((item for item in references if item and (reference is None or item['id'] == reference)), None)
             else:
                 floating.check_source()
                 reference_value = None
-            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value)
+            if not local and not at_limit and not known_read and reference is not None and reference_value is None:
+                raise ValueError(STALE_SELECTION)
+            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id)
             if turn['intent'] == 'stop' and not duplicate:
                 result = floating.stop()
                 stop_text = {'cancelling': '正在停止副本校验，草稿保留。', 'committing': '已停止后续派发，当前副本正在完成核验。'}.get(
                     result.get('publication_stop'), '已停止后续派发，已有要求与结果保留。')
-                floating.conversation.update(client_id, 'stopped', stop_text, status='complete')
+                if turn.get('transient'):
+                    turn.update(stage='stopped', text=stop_text, answer=stop_text, sequence=1)
+                    floating.conversation.control_turn = turn
+                else:
+                    floating.conversation.update(client_id, 'stopped', stop_text, status='complete')
             return {'ok': True, 'handled': turn['intent'] != 'edit', 'duplicate': duplicate,
-                    'turn': deepcopy(floating.conversation.turns[client_id]), 'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
+                    'turn': deepcopy(turn if turn.get('transient') else floating.conversation.turns[client_id]),
+                    'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
         return self._floating_call(action)
 
     def conversation_retry(self, client_id, document_id, version):
@@ -1263,13 +1277,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             if (row.get('publication') or {}).get('reason') == 'draft_advanced':
                 raise ValueError('请预览或保存当前草稿，旧发布请求已失效')
             if row['intent'] == 'read':
-                if client_id in floating.conversation.readers:
-                    raise ValueError('原请求仍未释放，暂未重复请求模型')
-                floating.conversation.cancelled.discard(client_id)
-                floating.conversation.readers.add(client_id)
-                floating.conversation.update(client_id, 'reading', '正在按当前版本重新读取并回答。')
-                revision = floating.paged.revision if floating.paged.active() else floating.canvas.revision if floating.canvas.active() else 0
-                threading.Thread(target=floating.conversation._answer, args=(client_id, revision, None, floating.conversation.generation), daemon=True).start()
+                floating.conversation.retry_answer(row)
                 return {'ok': True}
             if floating.app.busy or floating.paged.preparing or floating.paged.publishing or floating.canvas.publishing:
                 raise ValueError('已有步骤仍在安全收尾，未重复创建文件')
@@ -1340,14 +1348,47 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             return {'ok': True}
         return self._floating_call(action)
 
-    def conversation_output(self, identifier, document_id, version):
+    def conversation_new(self, context_id, document_id, version):
+        def action():
+            floating = self._floating
+            floating.authenticated()
+            with floating.lock:
+                floating.check_source()
+                if not floating.document.get('ready') or (document_id, version) != (floating.document['id'], floating.document['version']):
+                    raise ValueError('文档或版本已改变，请重新读取')
+                if (floating.app.busy or floating.conversation.readers or floating.paged.preparing or floating.paged.publishing
+                        or floating.paged.applying or floating.canvas.publishing or floating.canvas.ai.running is not None
+                        or floating.round_undo.busy or floating.paged.uncertain or floating.canvas.uncertain):
+                    raise ValueError('上一对话仍在处理或核对结果；请等待结束后开始新对话。')
+                state = floating.conversation.new_conversation(context_id)
+                floating.stop(announce=False)
+                floating.runtime = floating.app.instruction_runtime = None
+                floating.stage = 'idle'
+                return {'ok': True, 'conversation': state}
+        return self._floating_call(action)
+
+    def conversation_archive(self, document_id, version, archive_id=None):
+        def action():
+            floating = self._floating
+            floating.authenticated()
+            with floating.lock, floating.conversation.lock:
+                floating.check_source()
+                if not floating.document.get('ready') or (document_id, version) != (floating.document['id'], floating.document['version']):
+                    raise ValueError('文档或版本已改变，请重新读取')
+                if archive_id is None:
+                    return {'ok': True, 'archives': floating.conversation.archives()}
+                return {'ok': True, 'turns': floating.conversation.archived(archive_id)}
+        return self._floating_call(action)
+
+    def conversation_output(self, identifier, document_id, version, archive_id=None):
         def action():
             floating = self._floating
             floating.authenticated()
             floating.check_source()
             if floating.document['id'] != document_id or floating.document['version'] != version or not isinstance(identifier, str) or not re.fullmatch('[a-f0-9]{32}', identifier):
                 raise ValueError('结果归属已改变')
-            known = next((result for turn in floating.conversation.turns.values() for result in turn['results'] if result.get('id') == identifier and result.get('verified')), None)
+            turns = floating.conversation.archived(archive_id) if archive_id is not None else floating.conversation.turns.values()
+            known = next((result for turn in turns for result in turn['results'] if result.get('id') == identifier and result.get('verified')), None)
             if not known:
                 raise ValueError('此结果不属于当前对话')
             target = floating.app.editor.audit / identifier / 'audit.json'
@@ -1358,7 +1399,8 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
                 raise ValueError('结果文件或审计已改变，未打开旧记录')
             receipt = {key: value for key, value in receipt.items() if key not in {'authorization', 'continue_editing', 'automatic_requirements'}}
             receipt['source_version'] = receipt.get('source_sha256')
-            floating.outputs[identifier] = receipt
+            if archive_id is None:
+                floating.outputs[identifier] = receipt
             return {'ok': True, 'output': receipt}
         return self._floating_call(action)
 

@@ -340,6 +340,9 @@
     $('floating-revisions').textContent = state.revision ? '要求已收到 ' + state.revision + ' · 已纳入模型请求 ' + state.applied_revision : '';
     $('floating-actual-model').textContent = state.actual_model ? '本轮实际使用：' + state.actual_model.model_id + ' · ' + state.actual_model.connection_name : '';
     $('floating-open-trace').textContent = (state.open_trace || []).filter(row => row.open_request_id === state.open_request?.id).map(row => row.stage + ' · ' + row.elapsed_ms + ' ms · ' + row.code).join('\n');
+    $('floating-new-conversation').hidden = !doc?.ready || !state.conversation?.at_limit;
+    $('floating-new-conversation').disabled = submitting;
+    if($('floating-old-conversations'))$('floating-old-conversations').hidden = !doc?.ready;
     const identity = doc ? doc.id + ':' + doc.version : '';
     if (viewVersion !== identity) { viewVersion = identity; $('floating-document').replaceChildren(); }
     renderPlans(state); if($('floating-root').hidden)renderOutputs(state);
@@ -348,7 +351,9 @@
     if($('floating-outputs'))return $('floating-outputs');
     const parent=$('simple-document-records')||$('history-view');if(!parent)return null;
     const section=make('section','',parent,'floating-output-records');section.setAttribute('aria-label','当前文档结果记录');
-    make('h3','本文件记录',section);make('div','',section,'floating-turn-records');make('div','',section,'floating-proposal-records');return make('div','',section,'floating-outputs');
+    make('h3','本文件记录',section);
+    button('查看旧对话',section,event=>showArchivedConversations(event.currentTarget),'floating-old-conversations').hidden=!snapshot?.document?.ready;
+    make('div','',section,'floating-turn-records');make('div','',section,'floating-proposal-records');return make('div','',section,'floating-outputs');
   }
   async function refresh(automatic=false) {
     if (!window.OfficeFloating.active || polling || !window.OfficeAuth?.isAuthenticated()) return;
@@ -360,6 +365,9 @@
       const state = await api().floating_snapshot(cursor);
       if (mine !== epoch || !state?.ok) return;
       window.OfficeConversation?.connection(true);
+      if(snapshot?.conversation?.context_id&&state.conversation?.context_id&&snapshot.conversation.context_id!==state.conversation.context_id){
+        $('floating-timeline').replaceChildren();window.OfficeConversation?.reset();pending=null;epoch++;
+      }
       if(snapshot?.epoch===state.epoch&&snapshot.access?.serial>state.access?.serial)state.access=snapshot.access;
       if (snapshot && snapshot.epoch !== state.epoch) { if(snapshot.conversation?.context_id!==state.conversation?.context_id){$('floating-timeline').replaceChildren();window.OfficeConversation?.reset();} adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();accessDialog?.close();feedback(''); }
       const switched = !snapshot || snapshot.document?.id !== state.document?.id || snapshot.document?.version !== state.document?.version;
@@ -407,18 +415,21 @@
     const input = $('floating-input'), text = restored?restored.text:input.value.trim();
     if (submitting || !text || !snapshot?.document) return;
     if(restored&&(restored.document!==snapshot.document.id||restored.version!==snapshot.document.version)){feedback('文档已改变，旧消息保留；没有发送当前草稿或重复执行。');return;}
-    if (snapshot.document.ready && !window.OfficePaged?.active() && !window.OfficeNative?.active() && !window.OfficeModelSelector?.readyForRequest()) { feedback('请先在输入区选择有效的文档 Agent 模型；要求已保留。'); return; }
+    const atLimit=snapshot.conversation?.at_limit;
+    if (!atLimit && snapshot.document.ready && !window.OfficePaged?.active() && !window.OfficeNative?.active() && !window.OfficeModelSelector?.readyForRequest()) { feedback('请先在输入区选择有效的文档 Agent 模型；要求已保留。'); return; }
     if (!restored&&(!pending || pending.text !== text || pending.session !== snapshot.session_id || pending.document !== snapshot.document.id)) {
       const bytes = crypto.getRandomValues(new Uint8Array(16));
-      pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null};
+      pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null, context:snapshot.conversation?.context_id||null};
     }
     const sending = restored||pending, ownEpoch=epoch; submitting = true; render(snapshot);
     window.OfficeConversation?.echo(sending);
     let result;
     try {
       await window.OfficeConversation?.painted();
-      const context=window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null};
-      const receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,context.revision,context.reference):null;
+      const readContext=sending.readContext||(atLimit?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null});
+      sending.readContext=readContext;window.OfficeConversation?.messageContext(sending.id,readContext);
+      const receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,readContext.revision,readContext.reference,sending.context):null;
+      if(ownEpoch!==epoch||snapshot?.document?.id!==sending.document)throw Error('对话已切换，旧消息未继续处理。');
       if(receipt&&!receipt.ok)throw Error(receipt.error||'消息未受理；原话保留。');
       if(receipt?.turn)window.OfficeConversation?.merge(receipt.turn);
       if(receipt&&!receipt.handled)await window.OfficeConversation?.painted();
@@ -429,6 +440,41 @@
     } catch (error) { if(ownEpoch===epoch&&snapshot?.document?.id===sending.document){feedback(error.message);if(window.OfficePaged?.active())window.OfficePaged.reportError(error.message);window.OfficeConversation?.failed(sending.id,error.message,!result);} }
     if (result?.ok && ownEpoch===epoch && snapshot?.document?.id===sending.document) { if (input.value.trim() === text) input.value = ''; if(pending?.id===sending.id)pending = null; }
     submitting = false; if (snapshot) render(snapshot);
+  }
+  async function showArchivedConversations(trigger) {
+    const owner=snapshot?.document;
+    if(!owner?.ready)return;
+    const result=await call('conversation_archive',owner.id,owner.version);
+    if(!result?.ok||snapshot?.document?.id!==owner.id)return;
+    const dialog=make('dialog','',document.body);dialog.className='floating-history-dialog';dialog.setAttribute('aria-label','旧对话');
+    make('h2','旧对话',dialog);
+    const close=button('关闭',dialog,()=>dialog.close());
+    const list=make('div','',dialog), messages=make('div','',dialog);
+    if(!result.archives.length)make('p','这个文件还没有归档对话。',list);
+    let selection=0;
+    for(const [index,archive] of result.archives.entries()){
+      button('旧对话 '+(index+1)+' · '+new Date(archive.modified*1000).toLocaleString(),list,async()=>{
+        const mine=++selection;
+        const reply=await call('conversation_archive',owner.id,owner.version,archive.id);
+        if(!dialog.open||mine!==selection||snapshot?.document?.id!==owner.id)return;
+        messages.replaceChildren();
+        if(!reply?.ok){make('p',reply?.error||'旧对话无法读取。',messages);return;}
+        for(const turn of reply.turns){
+          const entry=make('article','',messages);entry.className='floating-history-turn';
+          make('h4',turn.question,entry);make('p',turn.answer||turn.text,entry);
+          for(const output of turn.results||[])if(output.verified){
+            button('查看副本 · '+output.name,entry,async()=>{
+              const verified=await call('conversation_output',output.id,owner.id,owner.version,archive.id);
+              if(!dialog.open||snapshot?.document?.id!==owner.id)return;
+              if(!verified?.ok){make('p',verified?.error||'旧副本无法核对。',entry);return;}
+              dialog.close();await openHistoryOutput(output.id);
+            });
+          }
+        }
+      });
+    }
+    dialog.addEventListener('close',()=>{dialog.remove();if(trigger?.isConnected)trigger.focus();});
+    dialog.showModal();close.focus();
   }
   async function restoreDrafts() {
     const result = await call('floating_restore_drafts');
@@ -544,6 +590,14 @@
     const conversationHeader = make('div', '', conversation, 'floating-conversation-heading');
     make('span', '', conversationHeader).className = 'agent-icon agent-icon-chat';
     make('strong', '对话', conversationHeader);
+    const nextConversation=button('开始新对话',conversationHeader,async()=>{
+      const owner=snapshot?.document, context=snapshot?.conversation?.context_id;
+      if(submitting||!owner?.ready||!context)return;
+      nextConversation.disabled=true;
+      try{const result=await call('conversation_new',context,owner.id,owner.version);
+        if(result?.ok&&snapshot?.document?.id===owner.id)$('floating-input').focus();
+      }finally{nextConversation.disabled=submitting;}
+    },'floating-new-conversation');nextConversation.hidden=true;
     const scroll = make('div', '', conversation, 'floating-scroll');
     const timeline = make('div', '', scroll, 'floating-timeline'); timeline.setAttribute('aria-label', '要求与处理进展');
     const latest = button('回到最新', conversation, () => { scroll.scrollTop = scroll.scrollHeight; latest.hidden = true; }, 'floating-latest');

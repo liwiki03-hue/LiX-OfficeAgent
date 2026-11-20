@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_document_conversation import Answers
+from tests.test_document_conversation import Answers, RetryAnswers, send
+from tests.test_floating_browser import open_floating_menu
+from tests.test_paged_inbox_browser import select_reference
 from tests.test_model_connections import connection, payload, save, select
 from tests.test_office_canvas_browser import native_browser
 from tests.test_paged_browser import paged_browser
@@ -89,6 +91,116 @@ def test_word_answer_and_same_turn_recovery(paged_browser, monkeypatch):
     verify_answer(page, api, source, errors, answers, '最后一段总结了什么？')
 
 
+def test_word_retry_button_preserves_original_selection(paged_browser, monkeypatch):
+    page, api, source, errors = paged_browser
+    configure(page, api, monkeypatch)
+    model = RetryAnswers('沿用原选区。')
+    monkeypatch.setattr(api._connections, 'build_model', model.build_model)
+    select_reference(page)
+    page.locator('#floating-input').fill('所选内容是什么？')
+    page.locator('#floating-send').click()
+    failed = page.locator('.conversation-turn[data-state="failed"]')
+    retry = failed.get_by_role('button', name='从此处恢复', exact=True)
+    retry.wait_for()
+    turn_id = failed.get_attribute('data-turn-id')
+    retry.click()
+    reply = page.locator(f'.conversation-turn[data-turn-id="{turn_id}"][data-state="complete"]')
+    reply.get_by_text('正文第2段').wait_for()
+    assert page.locator('.conversation-turn').count() == 1
+    assert model.builds == 2 and len(model.calls) == 1
+    assert '温度120 ℃' in model.calls[0] and '非目标段落不变' not in model.calls[0]
+    assert not api._floating.outputs and not api._floating.access.state()['id'] and not errors
+
+
+def test_lost_receipt_replays_original_reference_instead_of_current_selection(paged_browser, monkeypatch):
+    page, api, source, errors = paged_browser
+    answers = configure(page, api, monkeypatch)
+    select_reference(page)
+    page.evaluate("""() => {
+        const wrap=OfficeAuth.wrapApi;
+        window.retainedAttempts=[];
+        OfficeAuth.wrapApi=value=>new Proxy(wrap(value),{get(target,key){
+            if(key!=='conversation_begin')return target[key];
+            return async(...args)=>{
+                retainedAttempts.push(args);
+                if(retainedAttempts.length===1)throw Error('fixture: transport lost before accept');
+                return target[key](...args);
+            };
+        }});
+    }""")
+    page.locator('#floating-input').fill('所选内容是什么？')
+    page.locator('#floating-send').click()
+    retry = page.locator('.conversation-turn[data-state="interrupted"]').get_by_role('button', name='从此处恢复', exact=True)
+    retry.wait_for()
+    select_reference(page, '非目标段落不变。')
+    retry.click()
+    page.locator('.conversation-turn').get_by_text('原选区已失效').wait_for()
+    attempts = page.evaluate('retainedAttempts')
+    assert len(attempts) == 2 and attempts[0][0] == attempts[1][0]
+    assert attempts[0][5] == attempts[1][5] and attempts[0][5]
+    assert not answers.calls and not api._floating.outputs and not errors
+
+
+def test_natural_language_consultation_uses_no_editor_submit(paged_browser, monkeypatch):
+    page, api, source, errors = paged_browser
+    answers = configure(page, api, monkeypatch)
+    select_reference(page)
+    page.evaluate("""() => {
+        window.testEditorSubmissions = [];
+        OfficePaged.submit = async (...args) => {
+            testEditorSubmissions.push(args);
+            return {ok: true};
+        };
+    }""")
+    for phrase, count in [('这段需要修改吗？', 1), ('这段有没有必要改', 2)]:
+        page.locator('#floating-input').fill(phrase)
+        page.locator('#floating-send').click()
+        page.wait_for_function("count => document.querySelectorAll('.conversation-turn[data-state=complete]').length === count", arg=count)
+        assert not page.evaluate('testEditorSubmissions')
+        assert not api._floating.access.state()['id'] and not api._floating.paged.proposals and not api._floating.outputs
+    page.locator('#floating-input').fill('能帮我把这段改成两句吗？')
+    page.locator('#floating-send').click()
+    page.wait_for_function('testEditorSubmissions.length === 1')
+    assert page.evaluate('testEditorSubmissions[0][1]') == '能帮我把这段改成两句吗？'
+    assert len(answers.calls) == 2 and not errors
+
+
+def test_start_new_conversation_from_limit_and_view_old_turns(paged_browser, monkeypatch):
+    page, api, source, errors = paged_browser
+    answers = configure(page, api, monkeypatch)
+    conversation = api._floating.conversation
+    seed = send(api._floating, 'archival-seed', '进度如何？')['turn']
+    with conversation.lock:
+        conversation.turns.update({f'prior-{index}': dict(seed, id=f'prior-{index}', question=f'旧对话第 {index} 条')
+                                   for index in range(78)})
+        conversation.persist()
+    await_limit = page.get_by_role('button', name='开始新对话', exact=True)
+    page.locator('#floating-input').fill('进度如何？')
+    page.locator('#floating-send').click()
+    await_limit.wait_for()
+    assert len(conversation.turns) == 80
+    page.locator('#floating-input').fill('停止')
+    page.locator('#floating-send').click()
+    page.locator('.conversation-turn').last.get_by_text('已停止后续派发').wait_for()
+    page.locator('#floating-input').fill('尚未发送的草稿要求')
+    await_limit.click()
+    page.wait_for_function('!document.querySelector(".conversation-turn")')
+    assert page.locator('#floating-input').input_value() == '尚未发送的草稿要求'
+    page.locator('#floating-input').fill('整篇文档内容是什么？')
+    page.locator('#floating-send').click()
+    page.locator('.conversation-turn[data-state="complete"] [role="status"]').filter(has_text='第二点依据').wait_for()
+    open_floating_menu(page, '工具与记录')
+    page.get_by_role('button', name='历史记录', exact=True).click()
+    page.get_by_role('button', name='文档任务', exact=True).click()
+    page.get_by_role('button', name='查看旧对话', exact=True).click()
+    history = page.get_by_role('dialog', name='旧对话', exact=True)
+    history.get_by_role('button', name='旧对话 1', exact=False).click()
+    history.get_by_role('heading', name='旧对话第 77 条', exact=True).wait_for()
+    assert history.locator('.floating-history-turn').count() == 80
+    assert len(conversation.turns) == 1 and len(answers.calls) == 1
+    assert not api._floating.outputs and not errors
+
+
 def test_canvas_answer_numeric_read_without_write_permission(native_browser, monkeypatch):
     page, api, source, errors = native_browser
     answers = configure(page, api, monkeypatch)
@@ -99,6 +211,31 @@ def test_canvas_answer_numeric_read_without_write_permission(native_browser, mon
     if page.locator('#canvas-toggle-ai').get_attribute('aria-expanded') != 'true':
         page.locator('#canvas-toggle-ai').click()
     verify_answer(page, api, source, errors, answers, '这段内容表示什么？')
+
+
+def test_canvas_retry_button_uses_original_reference(native_browser, monkeypatch):
+    page, api, source, errors = native_browser
+    configure(page, api, monkeypatch)
+    model = RetryAnswers('沿用原选区。')
+    monkeypatch.setattr(api._connections, 'build_model', model.build_model)
+    if source.suffix == '.xlsx':
+        page.locator('.canvas-grid button[data-target="B2"]').click()
+        selected, outside, location = '120', '合并说明', '实验 · B2'
+    else:
+        page.get_by_role('button', name='引用片段 run-0', exact=True).click()
+        selected, outside, location = '实验汇报', '温度120', '第 1 页 · 普通文字'
+    if page.locator('#canvas-toggle-ai').get_attribute('aria-expanded') != 'true':
+        page.locator('#canvas-toggle-ai').click()
+    page.locator('#floating-input').fill('所选内容是什么？')
+    page.locator('#floating-send').click()
+    failed = page.locator('.conversation-turn[data-state="failed"]')
+    restore = failed.get_by_role('button', name='从此处恢复', exact=True)
+    restore.click()
+    reply = page.locator('.conversation-turn[data-state="complete"]')
+    reply.get_by_text(location).wait_for()
+    assert page.locator('.conversation-turn').count() == 1 and not errors
+    assert model.builds == 2 and len(model.calls) == 1 and selected in model.calls[0] and outside not in model.calls[0]
+    assert not api._floating.outputs and not api._floating.access.state()['id']
 
 
 def test_retry_local_message_keeps_new_unsent_draft_and_original_id(paged_browser, monkeypatch):

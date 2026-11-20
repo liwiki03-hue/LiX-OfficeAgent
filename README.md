@@ -1,5 +1,11 @@
 # LiX
 
+## 0.7.13 · 2026-11-20
+
+Word、Excel 和 PPT 的选区问答重试会核对原选区。询问修改意见时只给建议；选区内的“最后”按所选对象理解。文档对话满额后仍可查进度和停止，也可归档旧轮次后继续提问。
+
+本次为源码更新。Windows 下载仍对应 0.7.11 预览安装包。
+
 ## 0.7.12 · 2026-11-20
 
 编辑器先显示改后文字，再在实际校验时提示进度。继续编辑时，回复会分别标明已保存副本和当前草稿。对话栏、历史、设置和技能入口减少重复说明，保留选区、失败原因和恢复动作。
@@ -24,7 +30,7 @@
 
 本次 q-final-20261114 包含固定原版渲染器，其余环境首次准备仍需联网。安装器未签名，最终安装和完整首次准备尚未验收；前一诊断候选出现 uv 缓存访问拒绝。本机源码完整回归已通过，GitHub CI 以运行页面为准；旧预览的安装证据不代表本候选。
 
-项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。主分支提供 0.7.12 开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
+项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。主分支提供 0.7.13 开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
 
 LiX 是原 Office Agent 的正式名称，面向 Windows 的本机文档助手。已有配置、历史和文件安全链沿用；内部 Python 包名和旧启动入口保持兼容。
 

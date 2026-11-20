@@ -17,9 +17,10 @@ def export(document):
     return base64.b64encode(stream.getvalue()).decode(),manifest
 
 
-def make_round(draft, monkeypatch):
+def make_round(draft, monkeypatch, *, real_render=False):
     page,floating,source=draft
-    monkeypatch.setattr('office_agent.fidelity.compare_documents',lambda *args,**kwargs:{'inputs_unchanged':True,'render':{'status':'different'}})
+    if not real_render:
+        monkeypatch.setattr('office_agent.fidelity.compare_documents',lambda *args,**kwargs:{'inputs_unchanged':True,'render':{'status':'different'}})
     baseline=Document(source);baseline.paragraphs[2].text='此前人工编辑保留。'
     encoded,manifest=export(baseline)
     page.changed(page.document_id,1);page.sync(page.document_id,1,encoded,manifest)

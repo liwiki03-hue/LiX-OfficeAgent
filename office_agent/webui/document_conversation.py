@@ -20,6 +20,11 @@ from ..writes import digest
 
 
 TERMINAL = {'complete', 'failed', 'stopped', 'uncertain', 'interrupted'}
+TURN_LIMIT = 80
+HISTORY_LIMIT = 64
+CONVERSATION_BYTES = 1024 * 1024
+STALE_SELECTION = '原选区已失效，请重新选择后提问。'
+DOCUMENT_SCOPE = re.compile(r'全文|整篇|整个(?:文档|文件)|文末|(?:文档|文件|正文)(?:的)?(?:最后|末尾|结尾)')
 
 
 def _skill_receipt(value):
@@ -61,6 +66,8 @@ def intent(text, editing=False):
         return 'read'
     if re.search(r'^(?:如何|怎么)|解释|讲解|是什么|什么意思|表示什么|总结了什么|为什么|依据在哪|有什么关系', value):
         return 'read'
+    if re.search(r'(?:需要|有没有必要|有必要|要不要|该不该|是否(?:需要|应该)?)(?:再|先)?(?:修改|改写|改动|调整|润色|改)(?:吗|呢|[？?。.!！]|$)|(?:给我|提供|列出|提出).{0,8}(?:修改建议|改写建议)', value):
+        return 'read'
     modification = bool(re.search(r'改成|改为|替换|换进去|删(?:除|掉)|添(?:加|上)|增(?:加|补|添)|补充|追加|插入|重写|改写|润色|压缩|扩写|缩写|精简|修改|改一下|直接改(?:吧|。|$)|保存(?:为|副本)|\b(?:replace|rewrite|append|insert|delete|edit)\b', value, re.I))
     if re.search(r'帮我处理(?:一下)?|处理一下', value) and not modification:
         return 'clarify'
@@ -95,6 +102,8 @@ class DocumentConversation:
         self.metric_totals = {}
         self.answer_provenance = {}
         self.edit_traces = {}
+        self.read_requests = {}
+        self.control_turn = None
 
     def reset(self):
         with self.lock:
@@ -113,6 +122,8 @@ class DocumentConversation:
             self.metric_totals = {}
             self.answer_provenance = {}
             self.edit_traces = {}
+            self.read_requests = {}
+            self.control_turn = None
 
     def state(self):
         with self.lock:
@@ -120,8 +131,8 @@ class DocumentConversation:
             undo = getattr(self.floating,'round_undo',None)
             for row in rows:
                 row['undo'] = undo.public(row['id']) if undo else None
-            return {'context_id': self.binding, 'turns': rows,
-                    'active_task': self.active_task, 'storage_error': self.storage_error}
+            return {'context_id': self.binding, 'turns': rows, 'control_turn': deepcopy(self.control_turn),
+                    'at_limit': len(rows) >= TURN_LIMIT, 'active_task': self.active_task, 'storage_error': self.storage_error}
 
     def stop(self):
         with self.lock:
@@ -153,27 +164,82 @@ class DocumentConversation:
         if not self.floating.document or not self.floating.document.get('ready'):
             return
         try:
-            from .bridge import _reject_links
-            target = self._target()
-            _reject_links(target)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            _reject_links(target)
-            payload = {'schema': 1, 'source_key': self.floating.source_key, **self.state()}
-            data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-            if len(data) > 1024 * 1024:
-                raise ValueError('对话记录达到容量，当前内存内容保留')
-            temporary = target.with_name(uuid.uuid4().hex + '.tmp')
-            try:
-                with temporary.open('xb') as stream:
-                    stream.write(data)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary, target)
-            finally:
-                temporary.unlink(missing_ok=True)
+            self._save_snapshot(self._target(), self.binding, list(self.turns.values()), self.active_task)
             self.storage_error = ''
         except (OSError, ValueError):
             self.storage_error = '本机对话记录未保存，当前窗口内容保留。'
+
+    def _save_snapshot(self, target, context, turns, active_task=None):
+        from .bridge import _reject_links
+        payload = dict(schema=1, source_key=self.floating.source_key, context_id=context,
+                       turns=turns, active_task=active_task)
+        data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        if len(data) > CONVERSATION_BYTES:
+            raise ValueError('对话记录达到容量，当前内存内容保留')
+        _reject_links(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _reject_links(target)
+        temporary = target.with_name(uuid.uuid4().hex + '.tmp')
+        try:
+            with temporary.open('xb') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _archive_dir(self):
+        return self._target().with_suffix('')
+
+    @staticmethod
+    def _archive_id(context):
+        return hashlib.sha256(context.encode('utf-8')).hexdigest()[:32] if context else None
+
+    def _archive_files(self):
+        from .bridge import _reject_links
+        directory = self._archive_dir()
+        _reject_links(directory)
+        if not directory.is_dir():
+            return []
+        current = self._archive_id(self.binding)
+        files = [path for path in directory.iterdir() if path.stem != current
+                 and path.suffix == '.json' and re.fullmatch('[a-f0-9]{32}', path.stem)]
+        return sorted(files, key=lambda path: path.lstat().st_mtime_ns, reverse=True)
+
+    def archived(self, archive_id):
+        from .bridge import _read_bounded_json, _reject_links
+        if not isinstance(archive_id, str) or not re.fullmatch('[a-f0-9]{32}', archive_id):
+            raise ValueError('历史对话标识无效')
+        target = self._archive_dir() / (archive_id + '.json')
+        _reject_links(target)
+        archive = _read_bounded_json(target, CONVERSATION_BYTES)
+        rows = archive.get('turns')
+        if (archive.get('schema') != 1 or archive.get('source_key') != self.floating.source_key
+                or self._archive_id(archive.get('context_id')) != archive_id or archive['context_id'] == self.binding
+                or not isinstance(rows, list) or len(rows) > TURN_LIMIT):
+            raise ValueError('历史对话无法安全读取')
+        return rows
+
+    def archives(self):
+        return [{'id': path.stem, 'modified': path.lstat().st_mtime} for path in self._archive_files()[:HISTORY_LIMIT]]
+
+    def new_conversation(self, context):
+        with self.lock:
+            if not context or context != self.binding or not self.turns:
+                raise ValueError('对话已切换；没有重复开始新对话')
+            if self.readers:
+                raise ValueError('上一对话仍在回答；请等待结束后开始新对话。')
+            if len(self._archive_files()) >= HISTORY_LIMIT:
+                raise ValueError('本文件的已保存对话达到归档上限，历史和当前草稿保留。')
+            identifier = uuid.uuid4().hex
+            old = self._archive_dir() / (self._archive_id(self.binding) + '.json')
+            self._save_snapshot(old, self.binding, list(self.turns.values()))
+            self._save_snapshot(self._target(), identifier, [])
+            self.reset()
+            self.binding = identifier
+            self.storage_error = ''
+            return self.state()
 
     def restore(self):
         with self.lock:
@@ -186,11 +252,12 @@ class DocumentConversation:
                 if not target.is_file():
                     return
                 _reject_links(target)
-                payload = _read_bounded_json(target, 1024 * 1024)
+                payload = _read_bounded_json(target, CONVERSATION_BYTES)
                 if payload.get('schema') != 1 or payload.get('source_key') != self.floating.source_key:
                     return
                 rows = payload.get('turns')
-                if not isinstance(rows, list) or len(rows) > 80:
+                context = payload.get('context_id') or self.binding
+                if not isinstance(rows, list) or len(rows) > TURN_LIMIT or not isinstance(context, str) or not re.fullmatch(r'[A-Za-z0-9-]{1,100}', context):
                     raise ValueError('对话快照无效')
                 for row in rows:
                     if not isinstance(row, dict) or not re.fullmatch(r'[A-Za-z0-9-]{1,100}', row.get('id', '')):
@@ -208,7 +275,7 @@ class DocumentConversation:
                     if row.get('status') not in TERMINAL:
                         row.update(status='interrupted', text='上次操作已中断。要求与已知结果保留；请核对后选择恢复，不会自动重做。')
                     self.turns[row['id']] = row
-                self.binding = payload.get('context_id') or self.binding
+                self.binding = context
             except (OSError, ValueError, TypeError):
                 self.storage_error = '历史对话无法安全恢复；当前文档仍可读取。'
 
@@ -226,7 +293,7 @@ class DocumentConversation:
                     self.update(row['id'], 'interrupted', '工作文档已切换，旧版本的回答已停止接收。原问题保留，可按当前副本重试。', status='interrupted')
             self.persist()
 
-    def receive(self, client_id, text, document_id, revision=0, reference=None):
+    def receive(self, client_id, text, document_id, revision=0, reference=None, context_id=None):
         floating = self.floating
         floating.authenticated()
         if (not isinstance(client_id, str) or not re.fullmatch(r'[A-Za-z0-9-]{1,100}', client_id)
@@ -238,21 +305,35 @@ class DocumentConversation:
         if not floating.document or floating.document['id'] != document_id or not floating.document.get('ready') and not (control or opening):
             raise ValueError('当前文档尚未获准读取，消息未转给其他文档')
         with self.lock:
+            if context_id is not None and context_id != self.binding:
+                raise ValueError('对话已切换，旧消息未发送')
             if client_id in self.turns:
                 row = self.turns[client_id]
                 if row['question'] != text.strip() or row['document_id'] != document_id:
                     raise ValueError('相同消息标识不能对应另一条内容或文档')
                 return deepcopy(row), True
-            if len(self.turns) >= 80:
-                raise ValueError('当前文档对话达到80轮，请完成后重新打开新会话')
             self.binding = self.binding or uuid.uuid4().hex
             task = self.turns.get(self.active_task)
             mode = intent(text, bool(task and task['status'] not in TERMINAL))
+            mixed_scope = bool(mode == 'read' and reference is not None and floating.app.path.suffix.lower() == '.docx'
+                               and DOCUMENT_SCOPE.search(text) and re.search(r'所选|选中|选区|当前引用', text))
+            if mixed_scope:
+                mode = 'clarify'
+            overflow = len(self.turns) >= TURN_LIMIT
+            if overflow and mode not in {'status', 'stop'}:
+                raise ValueError('当前文档对话达到80轮，请点击「开始新对话」。')
+            if overflow and self.control_turn and self.control_turn['id'] == client_id:
+                return deepcopy(self.control_turn), True
             row = {'id': client_id, 'document_id': document_id, 'source_version': floating.document['version'],
                    'working_version': floating.document['version'], 'draft_revision': revision,
                    'question': text.strip(), 'intent': mode, 'status': 'accepted', 'stage': 'accepted',
                    'text': '', 'answer': '', 'sequence': 0, 'created': time.time(),
                    'steps': [], 'results': [], 'changes': [], 'references': [], 'parent_id': None}
+            if overflow:
+                value = self._progress(task) if mode == 'status' else '正在登记停止。'
+                row.update(stage=mode, text=value, status='complete', answer=value, transient=True)
+                self.control_turn = row
+                return deepcopy(row), False
             self.turns[client_id] = row
             self.turn_metrics[client_id] = TurnMetrics()
             if mode == 'edit':
@@ -275,14 +356,19 @@ class DocumentConversation:
                 if deferred(text):
                     self.update(client_id, 'deferred', '要求已记下，等待你主动处理；暂不修改文档。', status='waiting')
             elif mode == 'clarify':
-                self.update(client_id, 'clarify', '你想让我点评这段内容，还是直接改写？', status='waiting')
+                self.update(client_id, 'clarify', '你想先核对当前选区，还是整篇文档？' if mixed_scope else '你想让我点评这段内容，还是直接改写？', status='waiting')
             elif mode == 'status':
-                task = task or next((item for item in reversed(list(self.turns.values())) if item['id'] != client_id and item['status'] not in TERMINAL), None)
-                text = ('当前进度：' + task['text']) if task else '当前没有正在执行的文档修改任务。'
+                text = self._progress(task, client_id)
                 self.update(client_id, 'answer', text, status='complete', answer=text)
             elif mode == 'stop':
                 self.update(client_id, 'stopping', '正在登记停止。')
             else:
+                if reference is not None and not (floating.app.path.suffix.lower() == '.docx' and DOCUMENT_SCOPE.search(text)):
+                    row['read_scope'] = 'selection'
+                    self.read_requests[client_id] = (deepcopy(reference), self._read_binding())
+                else:
+                    row['read_scope'] = 'document'
+                    reference = None
                 self.answer_queues[client_id] = self.turn_metrics[client_id].start('queue')
                 self.update(client_id, 'reading', '我会依据当前获准读取的内容回答，保持文档不变。')
                 if not floating.document.get('ready'):
@@ -296,6 +382,35 @@ class DocumentConversation:
             if not floating.document.get('ready') and mode == 'edit':
                 self.update(client_id, 'opening', '要求已收到。文档正在本机解析，完成后按本条要求继续。', status='waiting')
             return deepcopy(row), False
+
+    def _progress(self, task, exclude=None):
+        if task is None or task['status'] in TERMINAL:
+            task = next((item for item in reversed(list(self.turns.values()))
+                         if item['id'] != exclude and item['status'] not in TERMINAL), None)
+        return '当前进度：' + task['text'] if task else '当前没有正在执行的文档修改任务。'
+
+    def retry_answer(self, row):
+        with self.lock:
+            identifier = row['id']
+            if identifier in self.readers or len(self.readers) >= 2:
+                raise ValueError('原请求仍未释放或已有两个问题正在处理；暂未重复请求模型')
+            if row['status'] not in {'failed', 'interrupted'}:
+                raise ValueError('此回合当前不能重试；没有重复派发')
+            saved = self.read_requests.get(identifier)
+            binding = self._read_binding()
+            legacy = row.get('read_scope') is None
+            old_scopes = {item.get('scope') for item in row.get('references', [])}
+            old_document = (legacy and DOCUMENT_SCOPE.search(row['question']) and self.floating.app.path.suffix.lower() == '.docx'
+                            and '仅当前引用' not in old_scopes)
+            if (row['source_version'] != binding[1] or saved and saved[1] != binding
+                    or not saved and row.get('read_scope') == 'selection'
+                    or legacy and not old_document):
+                self.update(identifier, 'failed', STALE_SELECTION, status='failed', failure_code='stale_selection')
+                return
+            self.cancelled.discard(identifier)
+            self.readers.add(identifier)
+            self.update(identifier, 'reading', '正在重新核对原读取范围。')
+            threading.Thread(target=self._answer, args=(identifier, binding[3], saved[0] if saved else None, self.generation), daemon=True).start()
 
     def update(self, identifier, stage, text, *, status='running', answer=None, **values):
         with self.lock:
@@ -327,9 +442,15 @@ class DocumentConversation:
 
     def history(self, identifier=None):
         with self.lock:
+            current = self.turns.get(identifier)
+            binding = self.read_requests.get(identifier)
             rows = [dict(question=row['question'], answer=row['answer'], draft_revision=row['draft_revision'],
                          working_version=row['working_version']) for row in self.turns.values()
-                    if row['id'] != identifier and row['intent'] == 'read' and row['answer'] and row['status'] == 'complete'][-4:]
+                    if row['id'] != identifier and row['intent'] == 'read' and row['answer'] and row['status'] == 'complete'
+                    and (current is None or current.get('read_scope') == row.get('read_scope')
+                         and current['working_version'] == row['working_version']
+                         and (current.get('read_scope') != 'selection' or binding is not None
+                              and self.read_requests.get(row['id']) == binding))][-4:]
             return json.dumps(rows, ensure_ascii=False)[-10000:]
 
     def edit_trace(self, identifier):
@@ -432,12 +553,12 @@ class DocumentConversation:
         return ('表格' + str(list(body.iter(W + 'tbl')).index(table) + 1) + '第' + str(list(table.findall(W + 'tr')).index(row) + 1)
                 + '行第' + str(list(row.findall(W + 'tc')).index(cell) + 1) + '格第' + str(list(cell.findall(W + 'p')).index(node) + 1) + '段')
 
-    def _word_reference(self, book, reference):
+    def _word_reference(self, book, reference, *, bound=False):
         from docx.text.paragraph import Paragraph
         from ..paged_documents import W
         from .paged_editor import utf16_slice
         paged = self.floating.paged
-        issued = paged.references.get(reference.get('id')) if isinstance(reference, dict) else None
+        issued = (reference if bound else paged.references.get(reference.get('id'))) if isinstance(reference, dict) else None
         if not issued or issued != reference or issued.get('document_id') != paged.document_id or issued.get('draft_revision') != paged.revision:
             raise ValueError('引用已过期或不是当前宿主签发的引用，请重新引用')
         binding = paged.draft_locator_binding
@@ -482,10 +603,12 @@ class DocumentConversation:
             sources[0]['aliases'] = ['当前引用', '当前选区']
         return context, sources
 
-    def _material(self, text, reference, *, with_sources=False):
+    def _material(self, text, reference, *, with_sources=False, read_binding=None):
         with self.floating.lock:
             binding = self._read_binding()
-            material, references, sources = self._read_material(text, reference)
+            if read_binding is not None and binding != read_binding:
+                raise ValueError(STALE_SELECTION)
+            material, references, sources = self._read_material(text, reference, bound=read_binding is not None)
             if binding != self._read_binding():
                 raise ValueError('读取期间草稿已改变，请重新引用')
             model_references = [{'location': source['label'], 'scope': source.get('aliases', [])} for source in sources]
@@ -494,7 +617,7 @@ class DocumentConversation:
             evidence = {'binding': binding, 'sources': sources, 'model_references': model_references}
             return (material, references, evidence) if with_sources else (material, references)
 
-    def _read_material(self, text, reference):
+    def _read_material(self, text, reference, *, bound=False):
         floating = self.floating
         floating.check_source()
         if not floating.document.get('ready'):
@@ -508,14 +631,15 @@ class DocumentConversation:
             if reference is not None:
                 if not active:
                     raise ValueError('引用不属于当前草稿，请重新引用')
-                context, selected = self._word_reference(book, reference)
-                if not re.search(r'全文|整篇|最后|末尾|文末|第.{1,5}节', text):
+                if not DOCUMENT_SCOPE.search(text):
+                    context, selected = self._word_reference(book, reference, bound=bound)
                     return context, [{'scope': '仅当前引用', 'draft_revision': paged.revision}], selected
             rows = [{'location': f'正文段落{i + 1}', 'text': paragraph.text} for i, paragraph in enumerate(book.paragraphs) if paragraph.text.strip()]
             for index, table in enumerate(book.tables):
                 rows.extend({'location': f'表格{index + 1}行{r + 1}', 'text': '\t'.join(cell.text for cell in row.cells)} for r, row in enumerate(table.rows))
             if re.search(r'最后|末尾|文末|结尾', text) and book.paragraphs:
-                rows = [row for row in rows if row['location'].startswith('正文段落')][-2:]
+                count = 1 if DOCUMENT_SCOPE.search(text) and re.search(r'(?:最后一段|末段)', text) else 2
+                rows = [row for row in rows if row['location'].startswith('正文段落')][-count:]
                 scope = '文末正文'
             elif sum(len(row['text']) for row in rows) <= 16000:
                 scope = '整篇已覆盖（正文与普通表格文字）'
@@ -533,7 +657,7 @@ class DocumentConversation:
             return json.dumps(rows, ensure_ascii=False), [{'scope': scope, 'location': row['location'], 'draft_revision': paged.revision} for row in rows], sources
         if floating.canvas.active():
             canvas = floating.canvas
-            ref = reference or canvas.ai.reference
+            ref = reference
             if not ref or ref.get('draft_revision') != canvas.revision or ref.get('draft_sha256') != hashlib.sha256(canvas.data).hexdigest():
                 raise ValueError('请先引用当前单元格、范围或幻灯片文字；不需要数值修改权限')
             location = ref['item_name'] + ' · ' + ref['location']
@@ -604,13 +728,21 @@ class DocumentConversation:
                 return
             row = self.turns[identifier]
             with metrics.span('context'):
-                material, references, evidence = self._material(row['question'], reference, with_sources=True)
+                request = self.read_requests.get(identifier)
+                material, references, evidence = self._material(row['question'], reference, with_sources=True,
+                                                                 read_binding=request[1] if request else None)
                 check_scope(row['question'], material)
             if not current():
                 return
             route = self.floating.api._connections.capture('agent')
             self.update(identifier, 'model', '正在依据已读取内容回答。', references=references)
             model = self.floating.api._connections.build_model(route)
+            with self.floating.lock:
+                if not current():
+                    return
+                self.floating.check_source()
+                if evidence['binding'] != self._read_binding():
+                    raise ValueError(STALE_SELECTION if request else '发送前草稿已改变，请按当前内容重新提问。')
             goal = json.dumps({'question': row['question'], 'current_material': material, 'references': evidence['model_references'],
                                'conversation': self.history(identifier)}, ensure_ascii=False)
             agent = OfficeAgent(model, lambda *_: (_ for _ in ()).throw(ValueError('本轮仅回答，不提供修改工具')),
@@ -642,9 +774,11 @@ class DocumentConversation:
         except Exception as error:
             if current():
                 message = str(error) if isinstance(error, ValueError) else '本轮回答未完成；问题与最后已知进度保留，可核对模型后重试。'
-                self.update(identifier, 'failed', message, status='failed')
+                self.update(identifier, 'failed', message, status='failed',
+                            failure_code='stale_selection' if message == STALE_SELECTION else None)
         finally:
-            self.readers.discard(identifier)
+            with self.lock:
+                self.readers.discard(identifier)
 
     def event(self, kind, payload):
         if not isinstance(payload, dict):

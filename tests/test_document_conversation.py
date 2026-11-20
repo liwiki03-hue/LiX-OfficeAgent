@@ -45,6 +45,33 @@ def attach(floating, connections):
     floating.api._connections = connections
 
 
+def retry(floating, identifier):
+    return FloatingApi.conversation_retry(floating.api, identifier, floating.document['id'], floating.document['version'])
+
+
+class RetryAnswers(Answers):
+    def __init__(self, answer='这是所选标记。', *, entered=None, release=None):
+        super().__init__(entered, release)
+        self.answer = answer
+        self.builds = 0
+
+    def build_model(self, route):
+        self.builds += 1
+        if self.builds == 1:
+            raise TimeoutError('fixture: model construction')
+        return self._model()
+
+    def _model(self):
+        def invoke(messages):
+            self.calls.append(str(messages))
+            if self.entered:
+                self.entered.set()
+                assert self.release.wait(5)
+            return {'content': self.answer}
+        model = SimpleNamespace(bind_tools=lambda _: model, invoke=invoke)
+        return model
+
+
 def send(floating, identifier, text, revision=0, reference=None):
     return FloatingApi.conversation_begin(floating.api, identifier, text, floating.document['id'], floating.document['version'], revision, reference)
 
@@ -54,6 +81,232 @@ def finish(floating):
     while floating.conversation.readers:
         assert time.monotonic() < deadline
         time.sleep(.01)
+
+
+def test_word_retry_keeps_original_range_after_selection_changes_and_rejects_new_draft(draft):
+    service, floating, source = draft
+    selected = '原选区标记甲。'
+    service.changed(service.document_id, 1)
+    service.sync(service.document_id, 1, *snapshot(service, selected))
+    ref = service.reference(service.document_id, 1, {'node_id': 'node-1', 'start': 0, 'end': len(selected)})['reference']
+    entered, release = threading.Event(), threading.Event()
+    connections = RetryAnswers(entered=entered, release=release)
+    attach(floating, connections)
+    original = source.read_bytes()
+    send(floating, 'read-selected', '所选内容是什么？', 1, ref['id'])
+    finish(floating)
+    assert floating.conversation.turns['read-selected']['status'] == 'failed'
+    assert connections.builds == 1 and not connections.calls
+    service.reference(service.document_id, 1, {'node_id': 'node-2', 'start': 0, 'end': 6})
+    try:
+        retry(floating, 'read-selected')
+        assert entered.wait(3)
+        with pytest.raises(ValueError, match='不能重试|未释放'):
+            retry(floating, 'read-selected')
+    finally:
+        release.set()
+        finish(floating)
+    assert len(connections.calls) == 1 and selected in connections.calls[0]
+    assert '非目标内容保持' not in connections.calls[0] and '验收报告' not in connections.calls[0]
+    assert '正文第2段' in floating.conversation.turns['read-selected']['answer']
+    assert floating.conversation.metrics_state('read-selected')['attempt_count'] == 2
+    connections = RetryAnswers()
+    attach(floating, connections)
+    ref = service.reference(service.document_id, 1, {'node_id': 'node-1', 'start': 0, 'end': len(selected)})['reference']
+    send(floating, 'stale-selected', '所选内容是什么？', 1, ref['id'])
+    finish(floating)
+    service.changed(service.document_id, 2)
+    service.sync(service.document_id, 2, *snapshot(service, '草稿的新文字。'))
+    retry(floating, 'stale-selected')
+    assert '原选区已失效' in floating.conversation.turns['stale-selected']['text']
+    assert connections.builds == 1 and not connections.calls
+    assert not service.proposals and not floating.outputs and source.read_bytes() == original
+
+
+@pytest.mark.parametrize('canvas', ['.xlsx', '.pptx'], indirect=True)
+def test_canvas_retry_retains_original_read_only_reference(canvas):
+    service, floating, source, _, _ = canvas
+    item, target, other, selected, outside = (('sheet-0', 'B2', 'A4', '120', '合并说明') if source.suffix == '.xlsx'
+                                             else ('slide-0', 'run-0', 'run-1', '实验汇报', '温度120'))
+    connections = RetryAnswers()
+    attach(floating, connections)
+    original = source.read_bytes()
+    ref = service.ai.select(service.document_id, 0, item, target, False, True)['reference']
+    send(floating, 'canvas-selected', '所选内容是什么？', 0, ref['id'])
+    finish(floating)
+    assert connections.builds == 1 and not connections.calls
+    replacement = service.ai.select(service.document_id, 0, item, other, False, True)['reference']
+    assert replacement['id'] != ref['id']
+    retry(floating, 'canvas-selected')
+    finish(floating)
+    row = floating.conversation.turns['canvas-selected']
+    assert row['status'] == 'complete' and row['references'][0]['location'] == ref['item_name'] + ' · ' + ref['location']
+    assert len(connections.calls) == 1 and selected in connections.calls[0] and outside not in connections.calls[0]
+    assert not floating.access.state()['id'] and not service.ai.proposals and not floating.outputs and source.read_bytes() == original
+
+
+def test_word_full_scope_survives_reopen_but_selected_scope_requires_fresh_selection(draft):
+    service, floating, source = draft
+    service.changed(service.document_id, 1)
+    service.sync(service.document_id, 1, *snapshot(service))
+    ref = service.reference(service.document_id, 1, {'node_id':'node-1', 'start':0, 'end':4})['reference']
+    first = RetryAnswers()
+    attach(floating, first)
+    send(floating, 'saved-selection', '所选内容是什么？', 1, ref['id'])
+    finish(floating)
+    attach(floating, RetryAnswers())
+    send(floating, 'saved-whole', '整篇文档内容是什么？', 1)
+    finish(floating)
+    current = RetryAnswers()
+    current.builds = 1
+    api = SimpleNamespace(_app=type(floating.app)(), _auth=floating.api._auth, _memory_key=lambda:'self-created-test')
+    reopened = FloatingSession(api)
+    assert reopened.admit(str(source))['ok'] and reopened.read(reopened.read_token, True)['ok']
+    attach(reopened, current)
+    retry(reopened, 'saved-selection')
+    assert '原选区已失效' in reopened.conversation.turns['saved-selection']['text']
+    assert current.builds == 1 and not current.calls
+    retry(reopened, 'saved-whole')
+    finish(reopened)
+    assert reopened.conversation.turns['saved-whole']['status'] == 'complete'
+    assert len(current.calls) == 1 and '非目标内容保持' in current.calls[0]
+    assert not reopened.outputs and not reopened.access.state()['id']
+
+
+def test_selected_title_and_document_end_have_distinct_model_material(draft):
+    from tests.test_round_undo import export
+    from docx import Document
+    service, floating, source = draft
+    book = Document(source)
+    book.paragraphs[-1].text = '最终结论'
+    service.changed(service.document_id, 1)
+    service.sync(service.document_id, 1, *export(book))
+    reference = service.reference(service.document_id, 1, {'node_id': 'round-node-0', 'start': 0, 'end': 4})['reference']
+    for index, (question, answer, include, exclude, where) in enumerate([
+        ('所选标题是什么？', '验收报告', '验收报告', '最终结论', '正文第1段'),
+        ('我选中的标题最后两个字是什么？', '报告', '验收报告', '最终结论', '正文第1段'),
+        ('整篇文档最后一段写了什么？', '最终结论', '最终结论', '验收报告', '正文第3段'),
+    ]):
+        connections = RetryAnswers(answer)
+        connections.builds = 1
+        attach(floating, connections)
+        identifier = 'scope-' + str(index)
+        send(floating, identifier, question, 1, reference['id'])
+        finish(floating)
+        turn = floating.conversation.turns[identifier]
+        assert turn['status'] == 'complete' and turn['answer'].startswith(answer + '\n') and where in turn['answer']
+        assert len(connections.calls) == 1 and include in connections.calls[0] and exclude not in connections.calls[0]
+        assert not floating.outputs and not floating.access.state()['id']
+
+
+def test_turn_limit_controls_rollover_migration_and_archived_output(draft, monkeypatch):
+    from copy import deepcopy
+    from pathlib import Path
+    from tests.test_round_undo import make_round
+    service, floating, source, receipt, _ = make_round(draft, monkeypatch, real_render=True)
+    conversation = floating.conversation
+    output = Path(receipt['output'])
+    assert receipt['render_diff']['inputs_unchanged'] and output.is_file()
+    conversation.turns['round-a']['results'] = [{'id': receipt['id'], 'name': output.name, 'verified': True,
+                                                'sha256': receipt['output_sha256']}]
+    attach(floating, RetryAnswers())
+    seed = send(floating, 'first-status', '进度如何？')['turn']
+    conversation.turns.update({f'migration-{index}': dict(deepcopy(seed), id=f'migration-{index}') for index in range(77)})
+    assert len(conversation.turns) == 79
+    entered, release = threading.Event(), threading.Event()
+    connections = RetryAnswers(entered=entered, release=release)
+    connections.builds = 1
+    attach(floating, connections)
+    held = service.data
+    try:
+        send(floating, 'eightieth', '请解释这份报告。', revision=2)
+        assert entered.wait(3)
+        document = floating.document
+        context = conversation.binding
+        with pytest.raises(ValueError, match='开始新对话'):
+            send(floating, 'ordinary-extra', '另一条问题？', revision=2)
+        with pytest.raises(ValueError, match='上一对话仍在'):
+            FloatingApi.conversation_new(floating.api, context, document['id'], document['version'])
+        progress = send(floating, 'overflow-progress', '进度如何？')['turn']
+        assert progress['transient'] and '正在' in progress['answer']
+        stop = send(floating, 'overflow-stop', '停止')['turn']
+        assert stop['transient'] and '已停止' in stop['answer'] and len(conversation.turns) == 80
+        assert conversation.turns['eightieth']['status'] == 'stopped'
+    finally:
+        release.set()
+        finish(floating)
+    assert len(connections.calls) == 1
+    legacy = json.loads(conversation._target().read_bytes())
+    assert legacy['schema'] == 1 and len(legacy['turns']) == 80 and 'control_turn' not in legacy
+    state = FloatingApi.conversation_new(floating.api, context, document['id'], document['version'])['conversation']
+    assert not state['turns'] and state['context_id'] != context
+    assert service.data == held and output.is_file() and len(floating.outputs) == 1
+    with pytest.raises(ValueError, match='对话已切换'):
+        FloatingApi.conversation_new(floating.api, context, document['id'], document['version'])
+    send(floating, 'new-question', '整篇文档内容是什么？', revision=2)
+    finish(floating)
+    assert conversation.turns['new-question']['status'] == 'complete' and len(connections.calls) == 2
+    api = SimpleNamespace(_app=type(floating.app)(), _auth=floating.api._auth, _memory_key=lambda:'self-created-test')
+    reopened = FloatingSession(api)
+    assert reopened.admit(str(source))['ok'] and reopened.read(reopened.read_token, True)['ok']
+    attach(reopened, connections)
+    assert list(reopened.conversation.turns) == ['new-question']
+    assert reopened.conversation.binding == state['context_id']
+    active = reopened.document
+    archive, = FloatingApi.conversation_archive(api, active['id'], active['version'])['archives']
+    archived = FloatingApi.conversation_archive(api, active['id'], active['version'], archive['id'])['turns']
+    assert len(archived) == 80 and archived[-1]['status'] == 'stopped'
+    opened = FloatingApi.conversation_output(api, receipt['id'], active['id'], active['version'], archive['id'])['output']
+    assert Path(opened['output']) == output and 'authorization' not in opened
+    assert not reopened.outputs
+    assert reopened.select_history_output(receipt['id'])['ok']
+    assert reopened.app.path == output and not reopened.document['ready']
+    assert not reopened.access.state()['id'] and reopened.runtime is None
+    assert len(connections.calls) == 2 and len(list(source.parent.glob('*.agent-*.docx'))) == 1
+
+
+def test_full_legacy_file_recovers_and_archives_without_loading_old_approvals(draft):
+    from copy import deepcopy
+    service, first, source = draft
+    attach(first, RetryAnswers())
+    row = send(first, 'legacy-seed', '进度如何？')['turn']
+    first.conversation.turns.update({f'legacy-{index}': dict(deepcopy(row), id=f'legacy-{index}') for index in range(79)})
+    first.conversation.persist()
+    version = first.document['version']
+    api = SimpleNamespace(_app=type(first.app)(), _auth=first.api._auth, _memory_key=lambda:'self-created-test')
+    restored = FloatingSession(api)
+    assert restored.admit(str(source))['ok'] and restored.read(restored.read_token, True)['ok']
+    attach(restored, RetryAnswers())
+    conv = restored.conversation
+    assert len(conv.turns) == 80 and not restored.access.state()['id']
+    assert send(restored, 'legacy-progress', '进度如何？')['turn']['transient']
+    assert FloatingApi.conversation_new(api, conv.binding, restored.document['id'], version)['ok']
+    assert len(conv.archived(conv.archives()[0]['id'])) == 80 and not conv.turns
+
+
+def test_consultation_during_edit_does_not_join_older_requirements(draft):
+    from office_agent.instruction_runtime import InstructionRuntime
+    service, floating, source = draft
+    connections = RetryAnswers()
+    connections.builds = 1
+    attach(floating, connections)
+    edit = '能帮我把这段改成两句吗？'
+    send(floating, 'edit-in-progress', edit)
+    runtime = InstructionRuntime(floating.document['version'])
+    floating.runtime = runtime
+    runtime.submit('edit-in-progress', edit)
+    revision = runtime.revision
+    reply = send(floating, 'consult-in-progress', '这段需要修改吗？')
+    finish(floating)
+    assert reply['handled'] and floating.conversation.turns['consult-in-progress']['status'] == 'complete'
+    assert floating.conversation.active_task == 'edit-in-progress' and runtime.revision == revision
+    assert len(connections.calls) == 1 and not floating.outputs and not service.proposals
+
+
+@pytest.mark.parametrize('text', ['这段需要修改吗？', '这段需要修改吗?', '这段有没有必要改', '给我修改建议，先别动原文'])
+def test_consultation_only_does_not_become_an_active_edit(text):
+    assert intent(text) == intent(text, editing=True) == 'read'
+    assert intent('能帮我把这段改成两句吗？') == 'edit'
 
 
 @pytest.mark.parametrize('text,expected', [

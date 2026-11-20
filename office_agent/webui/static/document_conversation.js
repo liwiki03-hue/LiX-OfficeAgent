@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const rows=new Map(),nodes=new Map(),timings=[],paintTimings=new Map();
-  let context=null,connected=true,handlers={},paged=null;
+  let context=null,connected=true,handlers={},paged=null,controlId=null;
   const terminal=new Set(['complete','failed','stopped','uncertain','interrupted']);
   const make=(tag,text,parent)=>{const node=document.createElement(tag);node.textContent=text||'';parent?.append(node);return node;};
   function afterVisiblePaint(element, callback, onFrame){
@@ -107,7 +107,7 @@
       }else if(node.preview)node.preview.hidden=true;
       node.assistant.dataset.state=row.status;
       if(terminal.has(row.status)){node.pending?.remove();node.pending=null;}
-      const canRetry=publication?.reason!=='draft_advanced'&&row.failure_code!=='number_conflict'&&['failed','interrupted','uncertain'].includes(row.status);
+      const canRetry=publication?.reason!=='draft_advanced'&&!['number_conflict','stale_selection'].includes(row.failure_code)&&['failed','interrupted','uncertain'].includes(row.status);
       const action=undo.available?'undo':undo.recoverable?'reconcile':canRetry?'retry':'';
       const actionKey=JSON.stringify([action,Boolean(undo.busy),canPreview?publication.id:null]);
       if(node.actionKey!==actionKey){
@@ -143,6 +143,10 @@
   }
   function merge(row){
     if(!row||typeof row.id!=='string'||typeof row.question!=='string'||!Number.isInteger(row.sequence))return;
+    if(row.transient&&controlId!==row.id){
+      const old=nodes.get(controlId);old?.user.remove();old?.assistant.remove();
+      nodes.delete(controlId);rows.delete(controlId);paintTimings.delete(controlId);controlId=row.id;
+    }
     const previous=rows.get(row.id);
     if(previous&&!previous.local&&previous.sequence>row.sequence)return;
     if(previous&&!previous.local&&previous.sequence===row.sequence&&JSON.stringify(previous.undo)===JSON.stringify(row.undo)){render(previous);return;}
@@ -165,13 +169,14 @@
     setTimeout(()=>{const current=rows.get(row.id);if(current?.local&&current.status==='sending'){current.text='消息还在等待应用接收';render(current);}},1800);
   }
   function failed(id,text,uncertain=false){const row=rows.get(id);if(!row||!row.local&&terminal.has(row.status))return;row.status=uncertain?'interrupted':'failed';row.text=text;render(row);}
-  function reset(){for(const node of nodes.values()){node.user.remove();node.assistant.remove();}rows.clear();nodes.clear();paintTimings.clear();context=null;paged=null;const latest=document.getElementById('floating-latest');if(latest)latest.hidden=true;}
+  function reset(){for(const node of nodes.values()){node.user.remove();node.assistant.remove();}rows.clear();nodes.clear();paintTimings.clear();context=null;paged=null;controlId=null;const latest=document.getElementById('floating-latest');if(latest)latest.hidden=true;}
   function restore(state,editor){
     if(!state)return;
     if(context&&context!==state.context_id&&state.context_id)reset();
     context=state.context_id||context;
     paged=editor??null;
     for(const row of state.turns||[])merge(row);
+    if(state.control_turn)merge(state.control_turn);
     for(const row of rows.values())if(row.local)render(row);
   }
   function measureVisibleRows(){for(const [id,node] of nodes)visibleAnswer(rows.get(id),node);}
@@ -189,5 +194,7 @@
     connection:value=>{if(connected===value)return;connected=value;for(const row of rows.values()){const node=nodes.get(row.id);if(node)node.signature=null;render(row);}},
     proposalHost:id=>{const node=nodes.get(id),row=rows.get(id);if(!node||!row||terminal.has(row.status))return null;node.pending??=make('div','',node.assistant);node.pending.className='conversation-pending';return node.pending;},
     pending:()=>[...rows.values()].some(row=>!terminal.has(row.status)&&!['clarify','reference','scope','deferred','choices'].includes(row.stage)),
-    has:id=>rows.has(id),message:id=>rows.get(id)?.local&&rows.get(id).request?{...rows.get(id).request}:null,timings:()=>timings.slice(-160),paintTimings:()=>Array.from(paintTimings.values(),value=>({...value})),reset};
+    has:id=>rows.has(id),message:id=>rows.get(id)?.local&&rows.get(id).request?{...rows.get(id).request}:null,
+    messageContext:(id,value)=>{const row=rows.get(id);if(row?.local&&row.request)row.request.readContext=value;},
+    timings:()=>timings.slice(-160),paintTimings:()=>Array.from(paintTimings.values(),value=>({...value})),reset};
 })();
