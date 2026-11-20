@@ -466,6 +466,8 @@ class PagedEditor:
     def reference(self, document_id, revision, target):
         with self.lock:
             self.guard(document_id,revision)
+            if not self.editable and isinstance(target, dict) and ('source_locator_id' in target or 'source_index' in target):
+                return self._readonly_reference(target)
             if isinstance(target, dict) and 'nodes' in target:
                 if revision != self.snapshot_revision or not self.draft_locator_binding or self.state()['recovery_available']:
                     raise GuardError('请先同步当前草稿并核对恢复状态')
@@ -502,6 +504,40 @@ class PagedEditor:
                       'source_host_locator_id':self.locator_map.get(item['id'])}
             self.references = {identifier:record}
             return {'ok':True, 'reference':deepcopy(record)}
+
+    def _readonly_reference(self, target):
+        if self.revision or self.snapshot_revision or self.state()['recovery_available']:
+            raise GuardError('当前只读版本无法核对原稿选区。')
+        book = Document(io.BytesIO(self.data))
+        nodes = list(book.element.body.iter(W + 'p'))
+        if set(target) == {'source_locator_id', 'start', 'end', 'expected'}:
+            locator = target['source_locator_id']
+            position = self.floating.locators.get(locator) if isinstance(locator, str) else None
+            if position is None or position >= len(book.paragraphs):
+                raise GuardError('原稿摘录的段落已失效，请重新选择。')
+            index = nodes.index(book.paragraphs[position]._p)
+        elif set(target) == {'source_index', 'paragraphs', 'start', 'end', 'expected'}:
+            index, texts = target['source_index'], target['paragraphs']
+            if (type(index) is not int or not 0 <= index < len(nodes) or not isinstance(texts, list)
+                    or len(texts) != len(nodes) or len(nodes) > 3000
+                    or any(Paragraph(node, book._body).text != text for node, text in zip(nodes, texts))):
+                raise GuardError('分页文字位置与原稿不一致，请从原稿摘录选取。')
+        else:
+            raise GuardError('只读选区格式无效。')
+        node = nodes[index]
+        old = utf16_slice(Paragraph(node, book._body).text, target['start'], target['end'])
+        if old != target['expected']:
+            raise GuardError('选区文字与原稿位置不一致，请重新选择。')
+        if not old.strip() or len(old) > 4000:
+            raise GuardError('请选择1—4000字的明确正文范围。')
+        from ..model_content import check_scope
+        check_scope(old)
+        record = {'id': uuid.uuid4().hex, 'kind': 'source_text', 'document_id': self.document_id,
+                  'source_version': self.source_version, 'epoch': self.floating.epoch, 'draft_revision': 0,
+                  'source_index': index, 'start': target['start'], 'end': target['end'], 'old': old,
+                  'context': old, 'text_sha256': sha(old.encode('utf8')), 'location': DocumentConversation._word_location(book, node)}
+        self.references = {record['id']: record}
+        return {'ok': True, 'reference': deepcopy(record)}
 
     def reference_locator(self, document_id, revision, locator_id, start, end):
         with self.lock:
@@ -552,7 +588,7 @@ class PagedEditor:
                     floating.access.for_instruction()
                 self.copy_error = None
                 reference = self.references.get(reference_id) if isinstance(reference_id,str) else None
-                self.pending_reference_id = reference_id if reference and reference['draft_revision']==self.revision else None
+                self.pending_reference_id = reference_id if reference and reference.get('kind') != 'source_text' and reference['draft_revision']==self.revision else None
                 if self.editable and not self.deferred and self.pending_reference_id is None and self.snapshot_revision == self.revision and not self.state()['recovery_available'] and re.search(r'末尾|文末|最后|结尾|第[一二三四五六七八九十0-9]+段', text):
                     try:
                         self.automatic_reference(document_id, self.revision, runtime.session_id, runtime.revision)

@@ -108,7 +108,8 @@
       node.assistant.dataset.state=row.status;
       if(terminal.has(row.status)){node.pending?.remove();node.pending=null;}
       const canRetry=publication?.reason!=='draft_advanced'&&!['number_conflict','stale_selection'].includes(row.failure_code)&&['failed','interrupted','uncertain'].includes(row.status);
-      const action=undo.available?'undo':undo.recoverable?'reconcile':canRetry?'retry':'';
+      const reselect=row.stage==='reference'&&row.status==='waiting'&&row.read_scope==='selection';
+      const action=undo.available?'undo':undo.recoverable?'reconcile':reselect?'reselect':canRetry?'retry':'';
       const actionKey=JSON.stringify([action,Boolean(undo.busy),canPreview?publication.id:null]);
       if(node.actionKey!==actionKey){
         node.actionKey=actionKey;node.actions?.remove();node.actions=null;
@@ -123,6 +124,9 @@
           if(action==='undo'){
             const icon=make('span','',button);icon.className='agent-icon agent-icon-undo';icon.setAttribute('aria-hidden','true');make('span','撤销本次修改',button);button.setAttribute('aria-label','撤销本次修改');button.dataset.undoTurn=row.id;
             button.onclick=async()=>{button.disabled=true;try{await handlers.undo?.(row.id);}finally{if(button.isConnected)button.disabled=false;}};
+          }else if(action==='reselect'){
+            button.textContent='用新选区回答';
+            button.onclick=async()=>{button.disabled=true;try{await handlers.reselect?.(row.id);}finally{if(button.isConnected)button.disabled=false;}};
           }else if(action==='reconcile'){
             button.textContent='核对撤销结果';button.dataset.undoTurn=row.id;
             button.onclick=async()=>{button.disabled=true;try{await handlers.undo?.(row.id);}finally{if(button.isConnected)button.disabled=false;}};
@@ -168,6 +172,13 @@
     }));
     setTimeout(()=>{const current=rows.get(row.id);if(current?.local&&current.status==='sending'){current.text='消息还在等待应用接收';render(current);}},1800);
   }
+  function acknowledge(id,row){
+    if(id!==row.id&&rows.get(id)?.local){
+      const node=nodes.get(id);node?.user.remove();node?.assistant.remove();
+      nodes.delete(id);rows.delete(id);paintTimings.delete(id);
+    }
+    merge(row);
+  }
   function failed(id,text,uncertain=false){const row=rows.get(id);if(!row||!row.local&&terminal.has(row.status))return;row.status=uncertain?'interrupted':'failed';row.text=text;render(row);}
   function reset(){for(const node of nodes.values()){node.user.remove();node.assistant.remove();}rows.clear();nodes.clear();paintTimings.clear();context=null;paged=null;controlId=null;const latest=document.getElementById('floating-latest');if(latest)latest.hidden=true;}
   function restore(state,editor){
@@ -187,7 +198,7 @@
   },true);
   document.addEventListener('visibilitychange',measureVisibleRows);
   setInterval(()=>{for(const row of rows.values())if(!terminal.has(row.status))render(row);},1000);
-  window.OfficeConversation={echo,merge,restore,failed,configure:value=>{handlers=value;},
+  window.OfficeConversation={echo,merge,acknowledge,restore,failed,configure:value=>{handlers=value;},
     undoMessage:id=>rows.get(id)?.undo?.message,
     undoError:(id,message)=>{const row=rows.get(id);if(row){row.undo={...(row.undo||{}),status:'blocked',available:false,busy:false,message};render(row);}},
     painted:()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),afterVisiblePaint,

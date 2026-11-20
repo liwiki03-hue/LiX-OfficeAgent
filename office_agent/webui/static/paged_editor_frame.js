@@ -242,6 +242,12 @@
     }else if(value.empty||!segment)throw Error('首版AI修改请选择一个段落内的明确文字范围');
     const row=rows().find(item=>item.id===segment.blockId);
     if (!row) throw Error('首版AI仅支持正文或普通表格内文字；请重新选择');
+    if(options.source===true){
+      const values=rows();
+      if(values.length>3000||values.reduce((size,item)=>size+item.text.length,0)>1000000)throw Error('请从原稿摘录选取');
+      return {source_index:values.findIndex(item=>item.id===row.id),paragraphs:values.map(item=>item.text),
+        start:segment.range.start,end:segment.range.end,expected:editor().state.doc.textBetween(active.from,active.to,'\n')};
+    }
     const styles=new Set(),fonts=new Set(),sizes=new Set(),marks=new Set();
     editor().state.doc.nodesBetween(editor().state.selection.from,Math.max(editor().state.selection.from,editor().state.selection.to),node=>{
       if(node.type.name==='paragraph')styles.add(node.attrs.paragraphProperties?.styleId||'Normal');

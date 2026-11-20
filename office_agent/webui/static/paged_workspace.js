@@ -125,8 +125,8 @@
     $('paged-restore').hidden=!state.recovery_available||state.dirty;
     $('paged-use-original').hidden=!state.recovery_available||state.dirty;
     $('paged-recovery-actions').hidden=!state.recovery_available||state.dirty;
-    $('paged-reference').disabled=!opened||!state.editable||state.recovery_available;
-    $('paged-table-reference').disabled=$('paged-reference').disabled;
+    $('paged-reference').disabled=!opened||state.recovery_available;
+    $('paged-table-reference').disabled=$('paged-reference').disabled||!state.editable;
     $('paged-pending').hidden=!state.pending_requirements;
     $('paged-pending').disabled=sending||applying||host?.busy||state.publishing||state.uncertain||!state.editable||!reference||reference.draft_revision!==adapter?.revision||state.pending_reason==='number_conflict';
     $('paged-pending').title=$('paged-pending').disabled?'请等待当前步骤完成，并引用最新草稿后处理':'使用当前引用处理已保存要求';
@@ -192,9 +192,42 @@
       }
     }finally{applying=false;}
   }
+  function selectSourceExcerpt(documentId){
+    const blocks=(host.view?.blocks||[]).filter(block=>block.locator_id&&!block.text_truncated&&block.text?.trim());
+    dialog('从原稿摘录引用',node=>{
+      if(blocks.length){
+        make('p','选择段落，再在文本框中选中要提问的文字。',node);
+        const picker=make('select','',node);picker.setAttribute('aria-label','原稿段落');
+        const area=make('textarea','',node);area.setAttribute('aria-label','原稿文字');area.readOnly=true;area.rows=5;
+        for(const block of blocks)make('option','正文第'+(block.paragraph_index+1)+'段 · '+block.text.slice(0,32),picker);
+        const show=()=>{area.value=blocks[picker.selectedIndex].text;};picker.onchange=show;show();
+        const message=make('p','',node);message.setAttribute('role','status');
+        button('引用所选文字',node,async()=>{
+          if(area.selectionStart===area.selectionEnd){message.textContent='请先在文本框中选中文字。';area.focus();return;}
+          try{
+            const target={source_locator_id:blocks[picker.selectedIndex].locator_id,start:area.selectionStart,end:area.selectionEnd,
+              expected:area.value.slice(area.selectionStart,area.selectionEnd)};
+            const result=await call('paged_reference',documentId,0,target);
+            showReference(result.reference);node.close();
+          }catch(error){message.textContent=error.message;}
+        });
+      }else make('p','当前摘录没有可核对的完整段落。请在分页正文的同一段内选中文字后引用。',node);
+      button('关闭',node,()=>node.close());
+    });
+  }
   async function capture(allowParagraph=false,table=false){
     if(!opened)throw Error('编辑器仍在打开');
     const feedbackVersion=errorGeneration;
+    if(!lastState.editable){
+      const documentId=host.document.id, mine=generation;
+      try{
+        const target=await adapter.request('selection',{source:true});
+        if(mine!==generation)return;
+        if(!Number.isInteger(target.source_index))throw Error('只读引用需要单个段落内的文字');
+        showReference((await call('paged_reference',documentId,0,target)).reference);
+      }catch(error){if(!error.stale&&mine===generation)selectSourceExcerpt(documentId);}
+      return;
+    }
     await sync();const target=await adapter.getSelectionReference(allowParagraph,table);
     const result=await call('paged_reference',host.document.id,adapter.revision,target);
     showReference(result.reference);
@@ -659,7 +692,7 @@
   }
   const requireAdapter=()=>{if(!opened||!adapter)throw Error('编辑器尚未打开');return adapter;};
   async function messageContext(text){
-    if(lastState&&!lastState.editable)return {revision:lastState.draft_revision,reference:null};
+    if(lastState&&!lastState.editable)return {revision:lastState.draft_revision,reference:reference?.kind==='source_text'?reference.id:null};
     const deadline=performance.now()+10000;
     while(adapter&&!opened&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));
     if(!opened||!adapter)throw Error('编辑器尚未就绪，原话保留。');

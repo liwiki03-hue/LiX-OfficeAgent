@@ -19,7 +19,10 @@ from .document_open import OPEN_FORMATS, read_local_view
 from .paged_editor import PagedEditor
 from .office_canvas import OfficeCanvas, OfficeCanvasApi
 from .document_access import DocumentAccess
-from .document_conversation import DocumentConversation, STALE_SELECTION, TURN_LIMIT, intent as conversation_intent
+from .document_conversation import (
+    DocumentConversation, STALE_SELECTION, TURN_LIMIT, edit_history_question,
+    intent as conversation_intent, requested_read_scope, scope_choice,
+)
 from .round_undo import RoundUndo
 
 
@@ -1220,7 +1223,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def conversation_undo_abort(self, turn_id, token, document_id):
         return self._floating_call(self._floating.round_undo.abort, turn_id, token, document_id)
 
-    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None):
+    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None, local_only=False, reply_to=None):
         def action():
             floating = self._floating
             floating.authenticated()
@@ -1228,26 +1231,41 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
                 raise ValueError('文档或来源版本已改变；消息没有进入其他文件')
             if context_id is not None and context_id != floating.conversation.binding:
                 raise ValueError('对话已切换，旧消息未发送')
-            local = conversation_intent(text) in {'status', 'stop'}
+            base_intent = conversation_intent(text)
+            local = base_intent in {'status', 'stop'}
             opening = bool(floating.open_request and floating.open_request.get('phase') == 'parsing')
             at_limit = len(floating.conversation.turns) >= TURN_LIMIT
             known = floating.conversation.turns.get(client_id) if isinstance(client_id, str) else None
             known_read = known is not None and known['intent'] == 'read'
-            if local or at_limit or known_read or opening and not floating.document.get('ready'):
+            selection_message = base_intent == 'read' and requested_read_scope(text) in {'selection', 'mixed'}
+            pending_scope = floating.conversation.turns.get(floating.conversation.pending_scope)
+            repeats_question = pending_scope and pending_scope['stage'] == 'reference' and pending_scope['question'] == text.strip()
+            resolving = bool(scope_choice(text) or repeats_question)
+            allow_reselect = selection_message or resolving
+            selection_prompt = selection_message and not (floating.paged.active() or floating.canvas.active() or resolving)
+            local_history = base_intent == 'read' and edit_history_question(text)
+            skip_reference = local or known_read or at_limit and not resolving
+            if local_only and not (skip_reference or selection_prompt or local_history):
+                return {'ok': False, 'reason': 'model_required', 'error': '请先在输入区选择有效的文档 Agent 模型；要求已保留。'}
+            if skip_reference or opening and not floating.document.get('ready'):
                 reference_value = None
             elif floating.paged.active():
-                floating.paged.guard(document_id, revision)
-                reference_value = floating.paged.references.get(reference) if isinstance(reference, str) else None
+                floating.paged.guard(document_id, None if allow_reselect else revision)
+                reference_value = floating.paged.references.get(reference) if isinstance(reference, str) and revision == floating.paged.revision else None
             elif floating.canvas.active():
-                floating.canvas.guard(document_id, revision)
+                floating.canvas.guard(document_id, floating.canvas.revision if allow_reselect else revision)
                 references = (floating.canvas.ai.read_reference, floating.canvas.ai.reference)
-                reference_value = next((item for item in references if item and (reference is None or item['id'] == reference)), None)
+                reference_value = next((item for item in references if item and revision == floating.canvas.revision and
+                                        (item['id'] == reference or reference is None and not allow_reselect)), None)
             else:
                 floating.check_source()
                 reference_value = None
-            if not local and not at_limit and not known_read and reference is not None and reference_value is None:
+            if reference_value and reference_value.get('draft_revision') != revision:
+                reference_value = None
+            stale = reference is not None and reference_value is None
+            if stale and not (skip_reference or allow_reselect):
                 raise ValueError(STALE_SELECTION)
-            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id)
+            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id, reply_to, stale)
             if turn['intent'] == 'stop' and not duplicate:
                 result = floating.stop()
                 stop_text = {'cancelling': '正在停止副本校验，草稿保留。', 'committing': '已停止后续派发，当前副本正在完成核验。'}.get(
@@ -1258,7 +1276,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
                 else:
                     floating.conversation.update(client_id, 'stopped', stop_text, status='complete')
             return {'ok': True, 'handled': turn['intent'] != 'edit', 'duplicate': duplicate,
-                    'turn': deepcopy(turn if turn.get('transient') else floating.conversation.turns[client_id]),
+                    'turn': deepcopy(turn if turn.get('transient') else floating.conversation.turns[turn['id']]),
                     'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
         return self._floating_call(action)
 
@@ -1272,6 +1290,8 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             row = floating.conversation.turns.get(client_id)
             if not row or row['document_id'] != document_id or row['status'] not in {'failed', 'interrupted', 'uncertain'}:
                 raise ValueError('此回合当前不能重试；没有重复派发')
+            if row['intent'] == 'clarify':
+                raise ValueError('请连同范围重新发送原问题。')
             if row.get('failure_code') == 'number_conflict':
                 raise ValueError('请先调整与数字顺序冲突的要求，再继续处理')
             if (row.get('publication') or {}).get('reason') == 'draft_advanced':

@@ -416,28 +416,39 @@
     if (submitting || !text || !snapshot?.document) return;
     if(restored&&(restored.document!==snapshot.document.id||restored.version!==snapshot.document.version)){feedback('文档已改变，旧消息保留；没有发送当前草稿或重复执行。');return;}
     const atLimit=snapshot.conversation?.at_limit;
-    if (!atLimit && snapshot.document.ready && !window.OfficePaged?.active() && !window.OfficeNative?.active() && !window.OfficeModelSelector?.readyForRequest()) { feedback('请先在输入区选择有效的文档 Agent 模型；要求已保留。'); return; }
+    const localOnly=snapshot.document.ready&&!window.OfficePaged?.active()&&!window.OfficeNative?.active()&&!window.OfficeModelSelector?.readyForRequest(false);
     if (!restored&&(!pending || pending.text !== text || pending.session !== snapshot.session_id || pending.document !== snapshot.document.id)) {
       const bytes = crypto.getRandomValues(new Uint8Array(16));
-      pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null, context:snapshot.conversation?.context_id||null};
+      pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null, context:snapshot.conversation?.context_id||null, replyTo:snapshot.conversation?.pending_scope||null};
     }
     const sending = restored||pending, ownEpoch=epoch; submitting = true; render(snapshot);
-    window.OfficeConversation?.echo(sending);
-    let result;
+    if(!localOnly)window.OfficeConversation?.echo(sending);
+    let result,receipt;
     try {
-      await window.OfficeConversation?.painted();
-      const readContext=sending.readContext||(atLimit?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null});
+      if(!localOnly)await window.OfficeConversation?.painted();
+      const readContext=sending.readContext||(atLimit&&!sending.replyTo?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null});
       sending.readContext=readContext;window.OfficeConversation?.messageContext(sending.id,readContext);
-      const receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,readContext.revision,readContext.reference,sending.context):null;
+      const options=sending.replyTo?[localOnly,sending.replyTo]:localOnly?[true]:[];
+      receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,readContext.revision,readContext.reference,sending.context,...options):null;
       if(ownEpoch!==epoch||snapshot?.document?.id!==sending.document)throw Error('对话已切换，旧消息未继续处理。');
+      if(localOnly&&!receipt)throw Error('请先在输入区选择有效的文档 Agent 模型；要求已保留。');
       if(receipt&&!receipt.ok)throw Error(receipt.error||'消息未受理；原话保留。');
-      if(receipt?.turn)window.OfficeConversation?.merge(receipt.turn);
+      if($('floating-status').dataset.feedbackKind==='model_required')feedback('');
+      if(localOnly)window.OfficeConversation?.echo(sending);
+      if(receipt?.turn)window.OfficeConversation?.acknowledge?.(sending.id,receipt.turn);
       if(receipt&&!receipt.handled)await window.OfficeConversation?.painted();
       const editText=receipt?.edit_text||sending.text;
       result=receipt?.handled?receipt:window.OfficeNative?.active() ? await window.OfficeNative.submit(sending.id,editText) : window.OfficePaged?.active() ? await window.OfficePaged.submit(sending.id,editText) : await call('floating_submit', sending.session, sending.id, editText, sending.open, sending.document, sending.version);
       if(result&&!result.ok)throw Error(result.error||'消息未受理；原话保留。');
       await refresh();
-    } catch (error) { if(ownEpoch===epoch&&snapshot?.document?.id===sending.document){feedback(error.message);if(window.OfficePaged?.active())window.OfficePaged.reportError(error.message);window.OfficeConversation?.failed(sending.id,error.message,!result);} }
+    } catch (error) {
+      if(ownEpoch===epoch&&snapshot?.document?.id===sending.document){
+        feedback(error.message);
+        if(receipt?.reason==='model_required')$('floating-status').dataset.feedbackKind=receipt.reason;
+        if(window.OfficePaged?.active())window.OfficePaged.reportError(error.message);
+        window.OfficeConversation?.failed(sending.id,error.message,!result);
+      }
+    }
     if (result?.ok && ownEpoch===epoch && snapshot?.document?.id===sending.document) { if (input.value.trim() === text) input.value = ''; if(pending?.id===sending.id)pending = null; }
     submitting = false; if (snapshot) render(snapshot);
   }
@@ -698,6 +709,12 @@
       if(!window.OfficePaged?.active()||typeof window.OfficePaged.undoRound!=='function')throw Error('当前编辑器没有可靠的回合恢复点');
       await window.OfficePaged.undoRound(id);await refresh();
     }catch(error){await refresh();window.OfficeConversation?.undoError(id,window.OfficeConversation?.undoMessage?.(id)||'撤销尚未完成，当前内容保留。请从历史记录核对结果。');}
+  },reselect:async id=>{
+    if(submitting||snapshot?.conversation?.pending_scope!==id)return;
+    const input=$('floating-input');
+    if(input.value){feedback('输入框已有草稿。请自行发送原问题或“用新选区回答”。');return;}
+    input.value='用新选区回答';
+    await submit();
   },retry:async(id,local)=>{
     if(local){const message=window.OfficeConversation?.message(id);if(!message){feedback('原消息回执正在核对，没有发送当前草稿。');await refresh();return;}await submit(message);return;}
     const result=await api().conversation_retry(id,snapshot.document.id,snapshot.document.version);

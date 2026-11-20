@@ -524,8 +524,11 @@
       return current?.valid && !selectionBlocked ? {valid:true, model:current.model_id, connection:current.connection_name, state:states[item?.model.states[mode]] || '未验证'} : {valid:false,reason:rowsForMode().length?'当前模型不可用，请检查连接':'尚未配置模型'};
     },
     refresh,
-    readyForRequest: () => {
-      if (!live() || pending || uncertain || selecting || selectionBlocked || !snapshot?.catalog.current[mode]?.valid) { status.textContent = '请先选择有效的已保存模型并核对配置状态；输入已保留。'; return false; }
+    readyForRequest: (notify = true) => {
+      if (!live() || pending || uncertain || selecting || selectionBlocked || !snapshot?.catalog.current[mode]?.valid) {
+        if (notify) status.textContent = '请先选择有效的已保存模型并核对配置状态；输入已保留。';
+        return false;
+      }
       return true;
     },
     requestClose: async () => {

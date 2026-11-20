@@ -54,6 +54,7 @@ def test_narrow_settings_navigation_and_window_expansion(floating_browser):
     page.locator('#settings-expand').click()
     page.locator('#settings-expand').evaluate('(n)=>n.click()')
     assert page.evaluate('window.windowActions') == ['maximize']
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
     page.evaluate('window.resolveWindowAction({ok:true,maximized:true})')
     page.wait_for_function('document.getElementById("settings-expand").getAttribute("aria-label")==="还原窗口"')
     page.locator('#settings-expand').click()

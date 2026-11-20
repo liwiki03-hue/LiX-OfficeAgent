@@ -179,6 +179,7 @@
     refresh();
   }
   async function refresh() {
+    if (locked) return;
     const mine = ++sequence;
     try {
       const state = await api().floating_window_state();
