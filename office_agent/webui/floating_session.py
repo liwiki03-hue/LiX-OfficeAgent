@@ -1223,7 +1223,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def conversation_undo_abort(self, turn_id, token, document_id):
         return self._floating_call(self._floating.round_undo.abort, turn_id, token, document_id)
 
-    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None, local_only=False, reply_to=None):
+    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None, local_only=False, reply_to=None, plugin_choice=None):
         def action():
             floating = self._floating
             floating.authenticated()
@@ -1265,7 +1265,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             stale = reference is not None and reference_value is None
             if stale and not (skip_reference or allow_reselect):
                 raise ValueError(STALE_SELECTION)
-            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id, reply_to, stale)
+            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id, reply_to, stale, plugin_choice)
             if turn['intent'] == 'stop' and not duplicate:
                 result = floating.stop()
                 stop_text = {'cancelling': '正在停止副本校验，草稿保留。', 'committing': '已停止后续派发，当前副本正在完成核验。'}.get(
@@ -1278,6 +1278,49 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             return {'ok': True, 'handled': turn['intent'] != 'edit', 'duplicate': duplicate,
                     'turn': deepcopy(turn if turn.get('transient') else floating.conversation.turns[turn['id']]),
                     'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
+        return self._floating_call(action)
+
+    def conversation_plugin_consent(self, client_id, document_id, version, context_id, token, approved):
+        def action():
+            floating = self._floating
+            conversation = floating.conversation
+            with floating.lock, conversation.lock:
+                floating.authenticated()
+                floating.check_source()
+                row = conversation.turns.get(client_id)
+                preview = conversation.plugin_previews.get(client_id)
+                if (type(approved) is not bool or not row or not preview or preview[0] != token
+                        or row['stage'] != 'plugin_consent' or row['status'] != 'waiting'
+                        or context_id != conversation.binding or not floating.document
+                        or (document_id, version) != (floating.document['id'], floating.document['version'])):
+                    raise ValueError('这次插件许可已结束。')
+                if not approved:
+                    conversation.plugin_previews.pop(client_id)
+                    conversation.update(client_id, 'stopped', '已取消，内容保留在本机。', status='stopped')
+                    return {'ok': True}
+                if conversation.plugin_bindings.get(client_id) != conversation._read_binding():
+                    conversation.plugin_previews.pop(client_id)
+                    conversation.update(client_id, 'failed', '草稿已改变，请重新发起查询。', status='failed')
+                    raise ValueError('内容已改变，本次没有发送。')
+                self._plugins.checked(row['plugin'])
+                if client_id in conversation.readers or len(conversation.readers) >= 2:
+                    raise ValueError('已有查询正在处理，请稍后重试。')
+                conversation.plugin_approvals[client_id] = conversation.plugin_previews.pop(client_id)[1]
+                saved = conversation.read_requests.get(client_id)
+                conversation._start_read(row, row['draft_revision'], saved[0] if saved else None)
+                return {'ok': True}
+        return self._floating_call(action)
+
+    def conversation_plugin_source(self, client_id, index):
+        def action():
+            import webbrowser
+            from .plugin_turns import usable_sources
+            self._floating.authenticated()
+            row = self._floating.conversation.turns.get(client_id) or {}
+            links = usable_sources(row.get('plugin_sources', []))
+            if type(index) is not int or not 0 <= index < len(links):
+                raise ValueError('找不到这次查询的来源。')
+            return {'ok': bool(webbrowser.open(links[index]['url']))}
         return self._floating_call(action)
 
     def conversation_retry(self, client_id, document_id, version):

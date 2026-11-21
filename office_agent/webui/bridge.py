@@ -34,6 +34,8 @@ from pathlib import Path
 from typing import Any
 
 from .. import app as _app
+from .plugin_api import PluginApi
+from .plugin_connections import PluginConnections
 from ..agent import OfficeAgent, configured_decision_limit, DEFAULT_DECISION_LIMIT
 from ..clarification import (classify_intent, clarification_card, resolve_answers, clarified_task,
                              image_request_count, ModelClarification)
@@ -1713,7 +1715,7 @@ class WebviewApp:
         return build_llm()
 
 
-class Api:
+class Api(PluginApi):
     """pywebview js_api 门面：只暴露前端需要的方法，其余保持不可达。"""
 
     def __init__(self, app: WebviewApp, *, auth=None, settings_root=None):
@@ -1743,6 +1745,8 @@ class Api:
         )
         from .model_connections import ModelConnections
         self._connections = ModelConnections(self._settings, self._app, lambda: self._auth.status().get('authenticated', False))
+        plugin_root = Path(settings_root) / '.lix-plugins' if settings_root is not None else self._memory.root.parent / 'plugins'
+        self._plugins = PluginConnections(plugin_root, self._settings._root)
         self._app._connections = self._connections
         from .conversations import Conversations
         self._connections.conversations = Conversations(self._memory.root.parent, self._memory_key)
@@ -2494,6 +2498,7 @@ class Api:
     def _clear_private_state(self):
         with self._lock:
             self._connections.invalidate()
+            self._plugins.cancel_all()
             self._app._professional_tools_source = None
             self._settings.invalidate()
             self._updates.invalidate()

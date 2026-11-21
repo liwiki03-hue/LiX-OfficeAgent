@@ -366,7 +366,7 @@
       if (mine !== epoch || !state?.ok) return;
       window.OfficeConversation?.connection(true);
       if(snapshot?.conversation?.context_id&&state.conversation?.context_id&&snapshot.conversation.context_id!==state.conversation.context_id){
-        $('floating-timeline').replaceChildren();window.OfficeConversation?.reset();pending=null;epoch++;
+        $('floating-timeline').replaceChildren();window.OfficeConversation?.reset();window.OfficePlugins?.clear();pending=null;epoch++;
       }
       if(snapshot?.epoch===state.epoch&&snapshot.access?.serial>state.access?.serial)state.access=snapshot.access;
       if (snapshot && snapshot.epoch !== state.epoch) { if(snapshot.conversation?.context_id!==state.conversation?.context_id){$('floating-timeline').replaceChildren();window.OfficeConversation?.reset();} adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();accessDialog?.close();feedback(''); }
@@ -374,7 +374,8 @@
       const availabilityChanged = snapshot?.document?.ready !== state.document?.ready;
       snapshot = state;
       window.OfficeConversation?.restore(state.conversation,state.paged);
-      if(switched)seenSkills.clear();
+      if(switched){seenSkills.clear();window.OfficePlugins?.clear();}
+      if((switched||availabilityChanged)&&state.document?.ready)window.OfficePlugins?.reload();
       if (state.gap) {
         feedback('进展记录已压缩，当前要求、计划与产物已从宿主快照恢复。');
         for (const message of state.messages) if (!seenMessages.has(message.id)) { if(!window.OfficeConversation?.has(message.client_id))addEntry(message.text, 'user'); seenMessages.add(message.id); }
@@ -421,6 +422,7 @@
       const bytes = crypto.getRandomValues(new Uint8Array(16));
       pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null, context:snapshot.conversation?.context_id||null, replyTo:snapshot.conversation?.pending_scope||null};
     }
+    if(!restored && !Object.hasOwn(pending,'plugin'))pending.plugin=window.OfficePlugins?.choice()||null;
     const sending = restored||pending, ownEpoch=epoch; submitting = true; render(snapshot);
     if(!localOnly)window.OfficeConversation?.echo(sending);
     let result,receipt;
@@ -428,11 +430,12 @@
       if(!localOnly)await window.OfficeConversation?.painted();
       const readContext=sending.readContext||(atLimit&&!sending.replyTo?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null});
       sending.readContext=readContext;window.OfficeConversation?.messageContext(sending.id,readContext);
-      const options=sending.replyTo?[localOnly,sending.replyTo]:localOnly?[true]:[];
+      const options=sending.plugin?[localOnly,sending.replyTo||null,sending.plugin]:sending.replyTo?[localOnly,sending.replyTo]:localOnly?[true]:[];
       receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,readContext.revision,readContext.reference,sending.context,...options):null;
       if(ownEpoch!==epoch||snapshot?.document?.id!==sending.document)throw Error('对话已切换，旧消息未继续处理。');
       if(localOnly&&!receipt)throw Error('请先在输入区选择有效的文档 Agent 模型；要求已保留。');
       if(receipt&&!receipt.ok)throw Error(receipt.error||'消息未受理；原话保留。');
+      if(receipt?.ok && sending.plugin)window.OfficePlugins?.clear();
       if($('floating-status').dataset.feedbackKind==='model_required')feedback('');
       if(localOnly)window.OfficeConversation?.echo(sending);
       if(receipt?.turn)window.OfficeConversation?.acknowledge?.(sending.id,receipt.turn);
@@ -629,6 +632,7 @@
     input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } };
     const footer = make('div', '', composer); footer.className = 'agent-composer-footer';
     make('div', '', footer, 'floating-models');
+    window.OfficePlugins?.attach(footer);
     button('自动存副本',footer,accessSettings,'floating-access');
     const actions = make('div', '', footer); actions.className = 'floating-actions';
     button('停止后续步骤', actions, () => {window.OfficePaged?.invalidate();return call('floating_stop');}, 'floating-stop');
@@ -697,7 +701,13 @@
     secondary(false);await refresh();return true;
   }
   window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput};
-  window.OfficeConversation?.configure({open:async id=>{
+  window.OfficeConversation?.configure({pluginConsent:async (id,token,approved)=>{
+    const doc=snapshot?.document;
+    if(!doc)return;
+    const result=await call('conversation_plugin_consent',id,doc.id,doc.version,snapshot.conversation?.context_id,token,approved);
+    if(!result?.ok)feedback(result?.error||'请刷新后重试。');
+    await refresh();
+  },pluginSource:async(id,index)=>{await call('conversation_plugin_source',id,index);},open:async id=>{
     let row=snapshot?.outputs.find(value=>value.id===id&&!value.undone);
     if(!row){const result=await api().conversation_output(id,snapshot.document.id,snapshot.document.version);if(!result?.ok){feedback(result?.error||'结果记录已改变，请核对当前文件与历史。');return;}row=result.output;}
     await openOutput(row);

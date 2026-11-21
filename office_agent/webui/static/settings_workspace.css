@@ -115,3 +115,18 @@
 }
 @media (forced-colors:active) { .settings-workspace .settings-group,.settings-workspace .skill-entry { border:1px solid CanvasText; } }
 @media (prefers-reduced-motion:reduce) { .settings-workspace * { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
+
+.plugin-toolbar,.plugin-actions,.plugin-dialog header,.plugin-row {display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
+.plugin-toolbar input,.plugin-row>div,.plugin-dialog header h3 {flex:1;min-width:0}
+.plugin-row {padding:.7rem 0;border-bottom:1px solid var(--border,#7776)}
+.plugin-row small,.plugin-dialog small,.conversation-plugin small,.conversation-plugin a {display:block;overflow-wrap:anywhere}
+.plugin-row strong::before {content:'◇';margin-inline-end:.45rem;color:var(--accent,#df812b)}
+.plugin-dialog {width:min(32rem,calc(100vw - 2rem));max-height:85vh;overflow:auto;box-sizing:border-box;background:var(--surface,var(--bg,#202020));color:inherit;border:1px solid var(--border,#7776);border-radius:.75rem;padding:1rem}
+.plugin-dialog input:not([type=checkbox]),.plugin-dialog select,.plugin-dialog textarea {width:100%;box-sizing:border-box}
+.plugin-dialog label,.plugin-dialog label>span {display:block}.plugin-dialog label,.plugin-dialog fieldset,.plugin-actions {margin:.5rem 0}
+.plugin-dialog label:has(input[type=checkbox]) {display:flex;align-items:center;gap:.4rem}.plugin-dialog label input[type=checkbox]{order:-1}
+.plugin-dialog::backdrop {background:#0007}
+#floating-plugin {max-width:7em;min-width:0;font-size:inherit}
+.conversation-plugin pre {white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:480px){.plugin-toolbar input{flex-basis:100%}#floating-plugin{max-width:5em}}
+

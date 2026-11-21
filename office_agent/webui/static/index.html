@@ -537,6 +537,7 @@
         <button class="settings-tab" id="tab-machine" type="button" aria-controls="settings-pane-machine">通用与外观</button>
         <button class="settings-tab active" id="tab-model" type="button" aria-controls="settings-pane-model" aria-current="true">模型与服务</button>
         <button class="settings-tab" id="tab-skills" type="button" aria-controls="settings-pane-skills">技能</button>
+        <button class="settings-tab" id="tab-plugins" type="button" aria-controls="settings-pane-plugins">插件</button>
         <button class="settings-tab" id="tab-rag" type="button" aria-controls="settings-pane-rag">文档检索</button>
         <button class="settings-tab" id="tab-account" type="button" aria-controls="settings-pane-account">数据与隐私</button>
         <button class="settings-tab" id="tab-updates" type="button" aria-controls="settings-pane-updates">关于与更新</button>
@@ -611,6 +612,14 @@
             <button id="settings-discard" class="btn secondary" type="button" disabled>放弃改动</button>
             <button id="settings-rollback" class="btn secondary" type="button" disabled>撤销本次配置改动…</button>
             <details><summary>存储、备份与生效说明</summary><p>配置只保存在本机的 .env 文件中，不会自动读取 settings.json。密钥不会回显；新密钥只发送给本机的设置接口。确认后才会替换配置，并保留含旧密钥的本地备份和不含密钥的记录；不会自动调用外部服务。任务停止后当前模型请求可能先返回；离开页面后迟到的界面结果不再处理，但这不代表没有任何写入。</p></details>
+          </div>
+        </section>
+        <section class="settings-pane" id="settings-pane-plugins" aria-labelledby="tab-plugins" hidden>
+          <div class="settings-form plugin-workspace">
+            <div class="plugin-toolbar"><input id="plugin-search" type="search" maxlength="100" aria-label="搜索公开插件目录" placeholder="搜索公开插件目录"><button id="plugin-manual" class="btn secondary" type="button">手动添加</button></div>
+            <p id="plugin-status" role="status" aria-live="polite"></p>
+            <div id="plugin-catalog"></div><button id="plugin-more" class="btn secondary" type="button" hidden>更多结果</button>
+            <section><h4>已添加</h4><div id="plugin-installed"></div></section>
           </div>
         </section>
         <section class="settings-pane" id="settings-pane-skills" aria-labelledby="tab-skills" hidden>
@@ -787,6 +796,7 @@
   <script src="workbench_ui.js"></script>
   <script src="system_settings.js"></script>
   <script src="settings_workspace.js"></script>
+  <script src="plugin_workspace.js"></script>
   <script src="skill_discovery.js"></script>
   <script src="editor_adapter_contract.js"></script>
   <script src="document_editor_adapter.js"></script>

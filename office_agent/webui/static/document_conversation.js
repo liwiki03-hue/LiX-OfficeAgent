@@ -79,7 +79,7 @@
     const validating=publication?.reason==='validating'&&editor?.publishing
       &&editor.publication_in_progress?.id===publication.id;
     const editingDuringValidation=validating&&editor.draft_revision>publication.draft_revision?editor.draft_revision:null;
-    const signature=JSON.stringify([row.sequence,row.status,row.text,row.local,undo,previewState,canPreview,validating,editingDuringValidation]);
+    const signature=JSON.stringify([row.sequence,row.status,row.text,row.local,undo,previewState,canPreview,validating,editingDuringValidation,row.plugin_preview,row.plugin_sources]);
     if(node.signature!==signature){
       node.signature=signature;
       if(row.local&&row.status!=='sending'){node.receipt??=make('small','',node.user);node.receipt.textContent=row.status==='failed'?'未受理':'等待核对回执';}
@@ -93,6 +93,7 @@
       if(!connected&&!row.local&&!terminal.has(row.status))text+='\n暂时没有新的进度，可以重新连接查看。';
       if(node.text.textContent!==text)node.text.textContent=text;
       node.text.classList.toggle('conversation-progress',showPreviewStatus);
+      window.OfficePlugins?.renderTurn(node,row,handlers);
       if(previewState){
         if(!node.preview){
           node.preview=make('div','',node.assistant);node.preview.className='conversation-preview';
@@ -107,7 +108,7 @@
       }else if(node.preview)node.preview.hidden=true;
       node.assistant.dataset.state=row.status;
       if(terminal.has(row.status)){node.pending?.remove();node.pending=null;}
-      const canRetry=publication?.reason!=='draft_advanced'&&!['number_conflict','stale_selection'].includes(row.failure_code)&&['failed','interrupted','uncertain'].includes(row.status);
+      const canRetry=!row.plugin&&publication?.reason!=='draft_advanced'&&!['number_conflict','stale_selection'].includes(row.failure_code)&&['failed','interrupted','uncertain'].includes(row.status);
       const reselect=row.stage==='reference'&&row.status==='waiting'&&row.read_scope==='selection';
       const action=undo.available?'undo':undo.recoverable?'reconcile':reselect?'reselect':canRetry?'retry':'';
       const actionKey=JSON.stringify([action,Boolean(undo.busy),canPreview?publication.id:null]);
@@ -153,7 +154,7 @@
     }
     const previous=rows.get(row.id);
     if(previous&&!previous.local&&previous.sequence>row.sequence)return;
-    if(previous&&!previous.local&&previous.sequence===row.sequence&&JSON.stringify(previous.undo)===JSON.stringify(row.undo)){render(previous);return;}
+    if(previous&&!previous.local&&previous.sequence===row.sequence&&JSON.stringify(previous.undo)===JSON.stringify(row.undo)&&previous.plugin_preview?.token===row.plugin_preview?.token){render(previous);return;}
     const pendingAt=previous?.sentAt;
     rows.set(row.id,{...row,local:false,sentAt:pendingAt,acknowledged:previous?.acknowledged});render(rows.get(row.id),true);
     const step=row.steps?.at(-1);if(step?.at&&step.at!==previous?.steps?.at(-1)?.at)timings.push({id:row.id,phase:'stage_visible:'+step.stage,elapsed_ms:Math.max(0,Date.now()-step.at*1000)});

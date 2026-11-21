@@ -8,6 +8,7 @@
     ['machine', '通用与外观'],
     ['model', '模型与服务'],
     ['skills', '技能'],
+    ['plugins', '插件'],
     ['rag', '文档检索'],
     ['account', '数据与隐私'],
     ['updates', '关于与更新']

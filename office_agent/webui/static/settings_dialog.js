@@ -5,6 +5,7 @@
   const TABS = [
     ['tab-model', 'settings-pane-model'],
     ['tab-skills', 'settings-pane-skills'],
+    ['tab-plugins', 'settings-pane-plugins'],
     ['tab-rag', 'settings-pane-rag'],
     ['tab-machine', 'settings-pane-machine'],
     ['tab-updates', 'settings-pane-updates'],

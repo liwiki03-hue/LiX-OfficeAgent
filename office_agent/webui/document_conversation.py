@@ -220,6 +220,9 @@ class DocumentConversation:
         self.answer_provenance = {}
         self.edit_traces = {}
         self.read_requests = {}
+        self.plugin_bindings = {}
+        self.plugin_previews = {}
+        self.plugin_approvals = {}
         self.pending_scope = None
         self.control_turn = None
 
@@ -241,6 +244,9 @@ class DocumentConversation:
             self.answer_provenance = {}
             self.edit_traces = {}
             self.read_requests = {}
+            self.plugin_bindings.clear()
+            self.plugin_previews.clear()
+            self.plugin_approvals.clear()
             self.pending_scope = None
             self.control_turn = None
 
@@ -250,12 +256,17 @@ class DocumentConversation:
             undo = getattr(self.floating,'round_undo',None)
             for row in rows:
                 row['undo'] = undo.public(row['id']) if undo else None
+                if row['stage'] == 'plugin_consent' and row['id'] in self.plugin_previews:
+                    token, query = self.plugin_previews[row['id']]
+                    row['plugin_preview'] = {'token': token, 'query': query}
             return {'context_id': self.binding, 'turns': rows, 'control_turn': deepcopy(self.control_turn), 'pending_scope': self.pending_scope,
                     'at_limit': len(rows) >= TURN_LIMIT, 'active_task': self.active_task, 'storage_error': self.storage_error}
 
     def stop(self):
         with self.lock:
             self.cancelled.update(self.readers)
+            self.plugin_previews.clear()
+            self.plugin_approvals.clear()
             for row in list(self.turns.values()):
                 if (row['intent'] == 'read' or row['id'] == self.pending_scope) and row['status'] not in TERMINAL:
                     self.update(row['id'], 'stopped', '已停止本地等待；远端请求是否结束需核对，原问题保留。', status='stopped')
@@ -291,6 +302,8 @@ class DocumentConversation:
 
     def _save_snapshot(self, target, context, turns, active_task=None):
         from .bridge import _reject_links
+        turns = [dict(row, plugin={k: row['plugin'][k] for k in ('id', 'name', 'tool') if k in row['plugin']})
+                 if row.get('plugin') else row for row in turns]
         payload = dict(schema=1, source_key=self.floating.source_key, context_id=context,
                        turns=turns, active_task=active_task)
         data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
@@ -405,6 +418,9 @@ class DocumentConversation:
         with self.lock:
             self.pending_scope = None
             self.read_requests.clear()
+            self.plugin_bindings.clear()
+            self.plugin_previews.clear()
+            self.plugin_approvals.clear()
             self.binding = saved['context_id']
             self.turns = {row['id']: row for row in saved['turns']}
             self.active_task = saved['active_task']
@@ -417,7 +433,7 @@ class DocumentConversation:
                     self.update(row['id'], 'interrupted', '工作文档已切换，旧版本的回答已停止接收。原问题保留，可按当前副本重试。', status='interrupted')
             self.persist()
 
-    def receive(self, client_id, text, document_id, revision=0, reference=None, context_id=None, reply_to=None, stale_reference=False):
+    def receive(self, client_id, text, document_id, revision=0, reference=None, context_id=None, reply_to=None, stale_reference=False, plugin_choice=None):
         floating = self.floating
         floating.authenticated()
         if (not isinstance(client_id, str) or not re.fullmatch(r'[A-Za-z0-9-]{1,100}', client_id)
@@ -461,6 +477,12 @@ class DocumentConversation:
                 raise ValueError('当前文档对话达到80轮，请点击「开始新对话」。')
             if overflow and self.control_turn and self.control_turn['id'] == client_id:
                 return deepcopy(self.control_turn), True
+            plugins = getattr(floating.api, '_plugins', None)
+            plugin = plugins.resolve(text, plugin_choice) if plugins and mode in {'read', 'clarify'} and not edit_history_question(text) else None
+            if plugin_choice and not plugin:
+                raise ValueError('本次插件仅用于独立查询，请在查询消息中选择工具。')
+            if plugin and not floating.document.get('ready'):
+                raise ValueError('请先完成文档读取，再发起插件查询。')
             if pending and not control:
                 self.pending_scope = None
                 self.update(pending['id'], 'stopped', '已开始处理新问题。', status='stopped')
@@ -475,6 +497,9 @@ class DocumentConversation:
                 self.control_turn = row
                 return deepcopy(row), False
             self.turns[client_id] = row
+            if plugin:
+                row['plugin'] = plugin
+                self.plugin_bindings[client_id] = self._read_binding()
             self.turn_metrics[client_id] = TurnMetrics()
             if mode == 'edit':
                 previous = next((item for item in reversed(list(self.turns.values())) if item['id'] != client_id), None)
@@ -533,7 +558,8 @@ class DocumentConversation:
             self.update(identifier, 'waiting', '已有两个问题正在处理，本条原话保留；稍后可重试。', status='failed')
         else:
             self.readers.add(identifier)
-            self.update(identifier, 'reading', '我会依据当前获准读取的内容回答，保持文档不变。')
+            opening = '正在准备查询 ' + row['plugin']['name'] + '…' if row.get('plugin') else '我会依据当前获准读取的内容回答，保持文档不变。'
+            self.update(identifier, 'reading', opening)
             threading.Thread(target=self._answer, args=(identifier, revision, deepcopy(reference), self.generation), daemon=True).start()
 
     def _resolve_scope(self, row, client_id, text, choice, reference):
@@ -561,6 +587,8 @@ class DocumentConversation:
         row.update(intent='read', read_scope=scope, scope_resolution=scope, draft_revision=binding[3],
                    scope_replies={**row.get('scope_replies', {}), client_id: text})
         self.pending_scope = None
+        if row.get('plugin'):
+            self.plugin_bindings[identifier] = binding
         self._start_read(row, binding[3], reference)
         return deepcopy(row)
 
@@ -573,6 +601,8 @@ class DocumentConversation:
     def retry_answer(self, row):
         with self.lock:
             identifier = row['id']
+            if row.get('plugin'):
+                raise ValueError('请重新发起本次插件查询，并核对要发送的内容。')
             if identifier in self.readers or len(self.readers) >= 2:
                 raise ValueError('原请求仍未释放或已有两个问题正在处理；暂未重复请求模型')
             if row['status'] not in {'failed', 'interrupted'}:
@@ -950,6 +980,10 @@ class DocumentConversation:
             if not current():
                 return
             row = self.turns[identifier]
+            if row.get('plugin'):
+                from .plugin_turns import answer_with_plugin
+                answer_with_plugin(self, row, reference, metrics, current)
+                return
             if edit_history_question(row['question']):
                 request = self.read_requests.get(identifier)
                 with metrics.span('context'):
