@@ -1223,7 +1223,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
     def conversation_undo_abort(self, turn_id, token, document_id):
         return self._floating_call(self._floating.round_undo.abort, turn_id, token, document_id)
 
-    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None, local_only=False, reply_to=None, plugin_choice=None):
+    def conversation_begin(self, client_id, text, document_id, version, revision=0, reference=None, context_id=None, local_only=False, reply_to=None, plugin_choice=None, displayed_recipient=None, resources=None):
         def action():
             floating = self._floating
             floating.authenticated()
@@ -1265,7 +1265,9 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             stale = reference is not None and reference_value is None
             if stale and not (skip_reference or allow_reselect):
                 raise ValueError(STALE_SELECTION)
-            turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id, reply_to, stale, plugin_choice)
+            with floating.lock:
+                turn, duplicate = floating.conversation.receive(client_id, text, document_id, revision, reference_value, context_id,
+                                                                 reply_to, stale, plugin_choice, displayed_recipient, resources)
             if turn['intent'] == 'stop' and not duplicate:
                 result = floating.stop()
                 stop_text = {'cancelling': '正在停止副本校验，草稿保留。', 'committing': '已停止后续派发，当前副本正在完成核验。'}.get(
@@ -1280,8 +1282,27 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
                     'edit_text': turn.get('effective_question', text), 'conversation': floating.conversation.state()}
         return self._floating_call(action)
 
+    def conversation_choose_file(self, document_id, version):
+        return self._floating_call(self._floating.conversation.scopes.choose_file, document_id, version)
+
+    def conversation_remove_file(self, token):
+        return self._floating_call(self._floating.conversation.scopes.remove_file, token)
+
+    def conversation_skill_choices(self, document_id, version):
+        def action():
+            from ..skills_backend import SkillsBackend, SkillsError
+            floating = self._floating
+            with floating.lock:
+                floating.conversation.scopes._file_owner(document_id, version)
+                try:
+                    return {'ok': True, 'items': SkillsBackend(floating.app.path.parent).turn_choices()}
+                except SkillsError:
+                    raise ValueError('无法读取当前工作区的技能，请检查技能设置。') from None
+        return self._floating_call(action)
+
     def conversation_plugin_consent(self, client_id, document_id, version, context_id, token, approved):
         def action():
+            from .turn_scope import record_decision
             floating = self._floating
             conversation = floating.conversation
             with floating.lock, conversation.lock:
@@ -1289,23 +1310,28 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
                 floating.check_source()
                 row = conversation.turns.get(client_id)
                 preview = conversation.plugin_previews.get(client_id)
-                if (type(approved) is not bool or not row or not preview or preview[0] != token
+                if (not (type(approved) is bool or approved in ('masked', 'show')) or not row or not preview or preview.token != token
                         or row['stage'] != 'plugin_consent' or row['status'] != 'waiting'
                         or context_id != conversation.binding or not floating.document
                         or (document_id, version) != (floating.document['id'], floating.document['version'])):
                     raise ValueError('这次插件许可已结束。')
-                if not approved:
+                if approved is False:
                     conversation.plugin_previews.pop(client_id)
-                    conversation.update(client_id, 'stopped', '已取消，内容保留在本机。', status='stopped')
+                    record_decision(client_id, 'plugin', 'cancel')
+                    conversation.update(client_id, 'stopped', '已取消，内容未发送。', status='stopped')
                     return {'ok': True}
-                if conversation.plugin_bindings.get(client_id) != conversation._read_binding():
+                try:
+                    preview.require_current(conversation, row)
+                except ValueError:
                     conversation.plugin_previews.pop(client_id)
-                    conversation.update(client_id, 'failed', '草稿已改变，请重新发起查询。', status='failed')
-                    raise ValueError('内容已改变，本次没有发送。')
-                self._plugins.checked(row['plugin'])
+                    conversation.update(client_id, 'failed', '选区、许可或接收方已改变，请重新发起查询。', status='failed')
+                    raise
+                if approved == 'show':
+                    return {'ok': True, 'query': preview.query}
                 if client_id in conversation.readers or len(conversation.readers) >= 2:
                     raise ValueError('已有查询正在处理，请稍后重试。')
-                conversation.plugin_approvals[client_id] = conversation.plugin_previews.pop(client_id)[1]
+                conversation.plugin_approvals[client_id] = (conversation.plugin_previews.pop(client_id), approved == 'masked')
+                record_decision(client_id, 'plugin', 'masked' if approved == 'masked' else 'allow')
                 saved = conversation.read_requests.get(client_id)
                 conversation._start_read(row, row['draft_revision'], saved[0] if saved else None)
                 return {'ok': True}
@@ -1323,7 +1349,10 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             return {'ok': bool(webbrowser.open(links[index]['url']))}
         return self._floating_call(action)
 
-    def conversation_retry(self, client_id, document_id, version):
+    def conversation_scope_decide(self, token, decision):
+        return self._floating_call(self._floating.conversation.scopes.decide, token, decision)
+
+    def conversation_retry(self, client_id, document_id, version, displayed_recipient=None):
         def action():
             floating = self._floating
             floating.authenticated()
@@ -1340,6 +1369,7 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             if (row.get('publication') or {}).get('reason') == 'draft_advanced':
                 raise ValueError('请预览或保存当前草稿，旧发布请求已失效')
             if row['intent'] == 'read':
+                floating.conversation.scopes.bind_recipient(displayed_recipient)
                 floating.conversation.retry_answer(row)
                 return {'ok': True}
             if floating.app.busy or floating.paged.preparing or floating.paged.publishing or floating.canvas.publishing:

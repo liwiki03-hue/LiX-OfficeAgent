@@ -255,8 +255,9 @@ def test_table_boundary_reuse_order_and_long_page(tmp_path, monkeypatch, case, s
         assert [(b['id'], b['text'], b['size']) for b in selected['blocks'] if b['type'] == 'table'] == [(b['id'], b['text'], b['size']) for b in before['blocks'] if b['type'] == 'table']
         for width in (1280, 520):
             page.set_viewport_size({'width': width, 'height': 820})
-            if width <= 850 and page.locator('#paged-toggle-ai').get_attribute('aria-expanded') == 'true':
-                page.get_by_role('button', name='AI 对话', exact=True).click()
+            collapse = page.get_by_role('button', name='收起对话侧栏', exact=True)
+            if width <= 850 and collapse.is_visible():
+                collapse.click()
             frame.locator('.superdoc-page').get_by_text(text, exact=True).first.click()
             button = frame.get_by_role('button', name=label, exact=True)
             button.wait_for(state='visible')

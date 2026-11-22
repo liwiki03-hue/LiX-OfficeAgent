@@ -32,24 +32,25 @@ def test_sidebar_closes_and_reopens_without_recreating_editor_or_losing_draft(pa
     original = source.read_bytes()
     frame_id = engine_frame(page)._impl_obj._guid
     page.locator('#floating-input').fill('压缩结论，保留温度与限定条件。')
-    toggle = page.get_by_role('button', name='AI 对话', exact=True)
+    reopen = page.get_by_role('button', name='展开对话侧栏', exact=True)
+    collapse = page.get_by_role('button', name='收起对话侧栏', exact=True)
     for width in [1280, 1024, 520, 360]:
         page.set_viewport_size({'width': width, 'height': 700})
-        if toggle.get_attribute('aria-expanded') == 'false':
-            toggle.click()
-        page.get_by_role('button', name='收起对话侧栏', exact=True).click()
-        assert toggle.get_attribute('aria-expanded') == 'false'
+        if reopen.is_visible():
+            reopen.click()
+        collapse.click()
+        assert reopen.get_attribute('aria-expanded') == 'false'
         assert not page.locator('#floating-conversation').is_visible()
-        assert toggle.evaluate('n=>n===document.activeElement')
+        assert reopen.evaluate('n=>n===document.activeElement')
         assert not page.locator('.paged-frame').evaluate('n=>n.inert')
-        toggle.click()
-        assert toggle.get_attribute('aria-expanded') == 'true'
+        reopen.click()
+        assert not reopen.is_visible() and collapse.get_attribute('aria-expanded') == 'true'
         assert page.locator('#floating-input').input_value() == '压缩结论，保留温度与限定条件。'
         assert engine_frame(page)._impl_obj._guid == frame_id
         page.locator('#simple-model-menu > summary').click()
         page.keyboard.press('Escape')
         assert page.locator('#floating-conversation').is_visible()
-        assert toggle.get_attribute('aria-expanded') == 'true'
+        assert collapse.get_attribute('aria-expanded') == 'true'
     assert page.get_by_role('button', name='保存副本', exact=True).is_disabled()
     assert source.read_bytes() == original and not api._floating.paged.proposals and errors == []
 

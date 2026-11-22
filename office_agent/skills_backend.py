@@ -156,7 +156,29 @@ class SkillsBackend:
         return SkillContext(self.prompt_catalog,self.prompt_load,on_load=getattr(self,'_on_load',None),task_load=self.prompt_for_task)
 
     def prompt_for_task(self, name, source, goal, budget):
-        body, origin = unpack(self._store.load(self._identifier(name,source))['body'])
+        return self._task_prompt(self._store.load(self._identifier(name,source))['body'], goal, budget)
+
+    def turn_choices(self):
+        return [{key: item[key] for key in ('id', 'name', 'description', 'sha256')}
+                for item in self._store.catalog(include_sha=True) if item['enabled']]
+
+    def turn_skill(self, ticket, question):
+        from .skill_context import MAX_BODY_CHARS
+        if not isinstance(ticket, dict) or set(ticket) != {'id', 'sha256'} or not isinstance(ticket['id'], str):
+            raise ValueError('请重新选择本轮技能。')
+        source, sep, name = ticket['id'].partition(':')
+        item = self._store.load(self._identifier(name, source))
+        if item['sha256'] != ticket['sha256']:
+            raise ValueError('技能内容已改变，请重新选择。')
+        material = self._task_prompt(item['body'], question, MAX_BODY_CHARS)
+        body = material['body'] if isinstance(material, dict) else material
+        if not body.strip() or len(body) > MAX_BODY_CHARS:
+            raise ValueError('所选技能内容超出本轮预算，请移除或选择其他技能。')
+        return {'name': item['name'], 'instructions': body}
+
+    @staticmethod
+    def _task_prompt(content, goal, budget):
+        body, origin = unpack(content)
         if origin and origin.get('provider')=='lix':
             return {'body':prompt_body(body,origin),'display_name':origin['display_name']}
         if origin and origin.get('reference_loading')=='task-matched':

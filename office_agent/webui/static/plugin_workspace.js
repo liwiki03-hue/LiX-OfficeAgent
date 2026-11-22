@@ -20,29 +20,19 @@
     if (!result?.ok) throw Error(result?.error || '操作未完成，请重试。');
     return result;
   }
-  let rows = [], picker, listGeneration = 0, catalogGeneration = 0, timer, cursor = '', term = '';
+  let rows = [], listGeneration = 0, catalogGeneration = 0, timer, cursor = '', term = '';
   const catalog = new Map();
-  function clear() { if (picker) picker.value = ''; }
-  function choice() { return picker?.selectedOptions[0]?.ticket || null; }
-  function updatePicker() {
-    if (!picker) return;
-    const previous = picker.value;
-    picker.replaceChildren(new Option('本次插件', ''));
-    for (const row of rows.filter(value => value.enabled)) {
-      for (const tool of row.allowed) {
-        const option = new Option(row.name + ' · ' + tool, row.id + ':' + tool);
-        option.ticket = {id: row.id, revision: row.revision, tool};
-        picker.add(option);
-      }
-    }
-    if ([...picker.options].some(opt => opt.value === previous)) picker.value = previous;
-    picker.hidden = picker.options.length === 1;
+  async function available() {
+    const result = await call('plugin_list');
+    return result.items.filter(row=>row.enabled).flatMap(row=>row.allowed.map(tool=>({
+      name:row.name+' · '+tool,ticket:{id:row.id,revision:row.revision,tool}
+    })));
   }
   async function refresh() {
     const mine = ++listGeneration;
     const result = await call('plugin_list');
     if (mine !== listGeneration) return;
-    rows = result.items; updatePicker();
+    rows = result.items;
     const list = $('plugin-installed');
     list.replaceChildren();
     if (!rows.length) make('p', '还没有添加插件。', list);
@@ -53,11 +43,6 @@
       make('small', row.state + ' · ' + (row.source || (row.transport === 'stdio' ? '本机程序' : '手动添加')), info);
       button('管理', line, event => detail(row, event.currentTarget)).dataset.pluginId=row.id;
     }
-  }
-  function attach(footer) {
-    picker = make('select', '', footer); picker.id = 'floating-plugin'; picker.title = '本次使用的插件';
-    picker.setAttribute('aria-label', '本次使用的插件'); updatePicker();
-    if (api()?.plugin_list) refresh().catch(() => {});
   }
   function field(parent, label, value, type = 'text', options) {
     const wrap = make('label', '', parent); make('span', label, wrap);
@@ -225,10 +210,13 @@
     finally{if(mine===catalogGeneration)$('plugin-more').disabled=false;}
   }
   function renderTurn(node,row,handlers) {
+    const signature=JSON.stringify([row.plugin,row.plugin_preview,row.plugin_sources,row.plugin_called,row.status]);
+    if(node.pluginSignature===signature)return;
+    node.pluginSignature=signature;
     node.pluginArea?.remove();node.pluginArea=null;
     if(!row.plugin)return;
     const recover=['failed','interrupted','uncertain'].includes(row.status);
-    if(!row.plugin_preview && !row.plugin_sources?.length && !recover)return;
+    if(!row.plugin_preview && !row.plugin_sources?.length && !row.plugin_called && !recover)return;
     const area=make('div','',node.assistant);area.className='conversation-plugin';node.pluginArea=area;
     if(recover){
       const note=make('small','',area);
@@ -238,27 +226,41 @@
         if(input.value.trim() && input.value.trim()!==row.question){
           note.textContent='输入区已有草稿，请先处理后再重提。';input.focus();return;
         }
-        try{await refresh();}catch(error){note.textContent=error.message;return;}
+        let entries;
+        try{entries=await available();}catch(error){note.textContent=error.message;return;}
         if(!area.isConnected)return;
-        const option=[...(picker?.options || [])].find(o=>o.ticket&&o.ticket.id===row.plugin.id&&o.ticket.tool===row.plugin.tool);
+        const option=entries.find(o=>o.ticket.id===row.plugin.id&&o.ticket.tool===row.plugin.tool);
         if(!option){note.textContent='请先在插件设置中核对并启用这个工具。';return;}
-        picker.value=option.value;input.value=row.question;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
+        window.OfficeFloating?.restorePlugin(option);input.value=row.question;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
         note.textContent='已填回问题，请核对后发送。';
       });
       button('插件设置',area,()=>{window.OfficeSettings?.show();window.OfficeSettings?.selectTab('tab-plugins');});
     }else if(row.plugin_preview){
+      const preview=row.plugin_preview;
       make('small',row.plugin.name+' · '+row.plugin.tool,area);make('small',row.plugin.destination,area);
-      make('pre',row.plugin_preview.query,area);
-      for(const approved of [true,false]){
-        button(approved?'允许本次发送':'取消',area,async()=>{
+      make('pre',preview.query,area);
+      if(preview.raw_available){
+        const details=make('details','',area);make('summary','在本机核对原文',details);
+        const original=make('pre','',details);
+        details.ontoggle=async()=>{
+          original.textContent='';
+          if(!details.open)return;
+          const result=await handlers.pluginConsent?.(row.id,preview.token,'show');
+          if(details.isConnected && details.open)original.textContent=result?.ok?result.query:'当前许可已失效。';
+        };
+      }
+      const choices=preview.raw_available?[[true,'仅允许这一次'],['masked','隐藏联系方式后继续']]:[[true,'允许本次发送']];
+      for(const [approved,label] of [...choices,[false,'取消']]){
+        button(label,area,async()=>{
           const buttons=[...area.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
-          try{await handlers.pluginConsent?.(row.id,row.plugin_preview.token,approved);}
+          try{await handlers.pluginConsent?.(row.id,preview.token,approved);}
           finally{buttons.forEach(b=>b.disabled=false);}
         });
       }
     }else{
       const details=make('details','',area);make('summary','来源 · '+row.plugin.name,details);
-      row.plugin_sources.forEach((source,index)=>{
+      if(row.plugin_called)make('small','已调用 · '+row.plugin.tool,details);
+      (row.plugin_sources||[]).forEach((source,index)=>{
         const link=make('a',source.title,details);link.href=source.url;link.title=source.url;
         link.onclick=event=>{event.preventDefault();handlers.pluginSource?.(row.id,index);};
       });
@@ -275,7 +277,6 @@
     else {catalogGeneration++;clearTimeout(timer);}
   });
   document.addEventListener('officesettings:closed',()=>{catalogGeneration++;clearTimeout(timer);});
-  window.addEventListener('pywebviewready',()=>{if(picker)refresh().catch(()=>{});});
-  window.OfficePlugins={attach,choice,clear,renderTurn,reload:()=>refresh().catch(()=>{})};
+  window.OfficePlugins={available,renderTurn};
 })();
 

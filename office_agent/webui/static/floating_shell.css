@@ -20,6 +20,11 @@
 #floating-conversation { display: flex; flex-direction: column; overflow: hidden; gap: 8px; }
 #floating-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 #floating-controls { display: grid; gap: 6px; flex-shrink: 0; min-width: 0; }
+#floating-current-task { position: relative; justify-self: end; }
+#floating-root:not([data-document='ready']) #floating-current-task { display: none; }
+#floating-root #floating-current-task > summary { min-height: 26px; padding: 3px 8px; border: 0; background: transparent; color: var(--muted); font-size: var(--fs-caption); }
+#floating-root #floating-current-task > summary:hover { background: var(--card-inner); color: var(--ink); }
+#floating-root #floating-current-task-menu { top: auto; bottom: calc(100% + 4px); width: min(220px, calc(100vw - 24px)); }
 #floating-task-details { font-size: var(--fs-caption); }
 #floating-task-details[open] { max-height: 140px; overflow: auto; }
 #floating-task-details > summary { min-height: 24px; padding: 2px 4px; border: 0; }
@@ -46,9 +51,28 @@
 #floating-models { display: flex; align-items: center; gap: 8px; }
 #floating-root #floating-access { flex: 0 0 auto; min-height: 30px; max-width: 100%; padding: 4px 8px; border-color: transparent; background: transparent; font-size: var(--fs-caption); white-space: nowrap; }
 #floating-root #floating-access[data-level="edit"], #floating-root #floating-access[data-level="save_copy"] { border-color: var(--border); background: var(--card); }
-#floating-root .agent-composer-footer { flex-wrap: wrap; }
-#floating-models { min-width: 0; flex: 1 1 140px; }
+#floating-root .agent-composer-footer { flex-wrap: nowrap; }
+#floating-models { min-width: 0; flex: 1 1 0; }
 #floating-root .agent-composer-footer > .floating-actions { margin-left: auto; }
+#floating-root #composer-context-add { flex: 0 0 30px; width: 30px; height: 30px; min-height: 30px; }
+.agent-icon-plus { --agent-icon: url('vendor/lucide/plus.svg'); }
+.composer-icon-paperclip { --agent-icon: url('vendor/lucide/paperclip.svg'); }
+.composer-icon-quote { --agent-icon: url('vendor/lucide/quote.svg'); }
+.composer-icon-skill { --agent-icon: url('vendor/lucide/file-text.svg'); }
+.composer-icon-plugin { --agent-icon: url('vendor/lucide/settings.svg'); }
+#composer-context-menu { position: fixed; inset: auto; margin: 0; padding: 5px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--surface-menu-radius); background: var(--card); box-shadow: var(--shadow-menu); color: var(--ink); font-size: var(--fs-body); }
+#composer-context-menu:popover-open { display: grid; gap: 4px; }
+#floating-root #composer-context-menu button { display: flex; width: 100%; gap: 8px; align-items: center; min-height: 32px; text-align: start; border: 0; background: transparent; white-space: normal; overflow-wrap: anywhere; }
+#floating-root #composer-context-menu button:hover, #floating-root #composer-context-menu button:focus-visible { background: var(--card-inner); }
+#composer-context-menu > input { min-width: 0; width: 100%; padding: 6px; color: var(--ink); background: var(--card-inner); border: 1px solid var(--border); border-radius: var(--radius-btn); }
+.composer-context-options { display: grid; color: var(--muted); }
+#composer-context-list, #composer-context-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+#composer-context-chips:has(#composer-context-list[hidden]):has(#composer-context-feedback[hidden]) { display: none; }
+#composer-context-feedback { color: var(--warn); font-size: var(--fs-caption); }
+.composer-context-chip { display: inline-flex; align-items: center; max-width: 100%; min-width: 0; padding-inline-start: 8px; border: 1px solid var(--border); border-radius: var(--radius-btn); color: var(--muted); font-size: var(--fs-caption); }
+.composer-context-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#floating-root .composer-context-chip > .agent-icon-button { flex: 0 0 24px; width: 24px; height: 24px; min-height: 24px; padding: 4px; border: 0; background: transparent; }
+#floating-root #canvas-close-ai { flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; padding: 5px; }
 .document-access-choices { display: grid; gap: 8px; margin: 16px 0; }
 .document-access-choices > label { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-btn); cursor: pointer; }
 .document-access-choices input { flex: 0 0 auto; margin: 4px 0 0; accent-color: var(--accent); }

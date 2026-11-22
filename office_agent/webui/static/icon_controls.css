@@ -30,7 +30,7 @@
 #floating-root #paged-save.agent-icon-button:not(:disabled) { background: var(--accent); color: var(--on-accent,white); }
 #floating-root #paged-save.agent-icon-button:disabled { border: 0; background: transparent; color: var(--muted); }
 #floating-root #paged-reference.agent-icon-button { flex-basis: 28px; width: 28px; height: 28px; min-height: 28px; padding: 5px; }
-#floating-root #paged-close-ai { flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; margin-left: auto; padding: 5px; }
+#floating-root #paged-close-ai { flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; padding: 5px; }
 #floating-root > header { min-height: 44px; padding: 6px 12px; flex-wrap: nowrap; gap: 6px; }
 #paged-top { height: 44px; flex-basis: 44px; padding: 6px 12px; }
 #paged-top > header { flex-wrap: nowrap; gap: 6px; }

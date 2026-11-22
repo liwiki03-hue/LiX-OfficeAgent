@@ -373,6 +373,7 @@
     instruction:value=>{instruction=value.revision;return {instruction};},
     paper:value=>{document.body.classList.toggle('paper-dark',value.dark);return {};},
     theme:value=>{document.body.dataset.theme=['light','dark'].includes(value.theme)?value.theme:'dark';return {};},
+    chatSidebar:({closed})=>{document.body.classList.toggle('chat-sidebar-closed',closed);return {};},
     zoom:value=>{value.fit?engine.setZoomMode('fit-width'):engine.setZoom(value.percent);return {};},
     find:value=>{if(!value.text||value.text.length>200)throw Error('请输入1—200字');const row=rows().find(item=>item.text.includes(value.text));if(!row)throw Error('当前正文未找到文字');locate(row.id);return state();},
     close:()=>{ready=false;engine?.destroy();engine=null;return {};}};

@@ -1,5 +1,11 @@
 # LiX
 
+## 0.7.16 · 2026-11-22
+
+在输入框左下角点「＋」，可添加一份 DOCX、XLSX 或 PPTX 参考文件、选择技能或指定插件工具。参考文件用于本轮只读问答，模型和插件按本次授权接收材料。「自动存副本」移至对话栏顶部，紧邻收起按钮。
+
+文件可与技能同轮使用，插件工具独立查询。Microsoft Learn 支持按当前网络设置连接。本次更新发布源码，Windows 下载仍对应 0.7.11 预览安装包。
+
 ## 0.7.15 · 2026-11-21
 
 在「设置 → 插件」查找或手动添加 MCP 服务，测试连接并启用所需的只读工具。Word 对话会显示本次插件查询的进度、答案和来源。发送选区前单独核对目的地和所选文字。
@@ -42,7 +48,7 @@ Word、Excel 和 PPT 的选区问答重试会核对原选区。询问修改意�
 
 本次 q-final-20261114 包含固定原版渲染器，其余环境首次准备仍需联网。安装器未签名，最终安装和完整首次准备尚未验收；前一诊断候选出现 uv 缓存访问拒绝。本机源码完整回归已通过，GitHub CI 以运行页面为准；旧预览的安装证据不代表本候选。
 
-项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。主分支提供 0.7.15 开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
+项目仓库：[liwiki03-hue/LiX-OfficeAgent](https://github.com/liwiki03-hue/LiX-OfficeAgent)。主分支提供 0.7.16 开发源码，具体导入范围见[源码复核](docs/SOURCE_IMPORT_REVIEW.md)。技能安装、参考与更新的使用方式见[工作区技能](docs/SKILLS.md)。
 
 LiX 是原 Office Agent 的正式名称，面向 Windows 的本机文档助手。已有配置、历史和文件安全链沿用；内部 Python 包名和旧启动入口保持兼容。
 

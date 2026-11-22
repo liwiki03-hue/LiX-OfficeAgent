@@ -134,10 +134,11 @@ class CanvasAI:
             if len(old) > 4000:
                 raise GuardError('目标文字超过4000字符，请缩小范围')
             from ..rag import SECRET
-            if SECRET.search(old):
+            if not for_read and SECRET.search(old):
                 raise GuardError('目标疑似包含凭据，请移除敏感内容后再生成建议')
             from ..model_content import check_scope
-            check_scope(old)
+            if not for_read:
+                check_scope(old)
             if not for_read:
                 for proposal in self.proposals.values():
                     if proposal['status'] == 'pending':
@@ -180,10 +181,11 @@ class CanvasAI:
             for row in region['cells']:
                 for value in row:
                     old = str(value.get('value', ''))
-                    if len(old) > 4000 or SECRET.search(old) or SECRET.search(value.get('formula') or ''):
+                    if len(old) > 4000 or not for_read and (SECRET.search(old) or SECRET.search(value.get('formula') or '')):
                         raise GuardError('选区包含超长文字或疑似凭据，请缩小或移除敏感内容')
                     from ..model_content import check_scope
-                    check_scope(old, value.get('formula') or '')
+                    if not for_read:
+                        check_scope(old, value.get('formula') or '')
                     protected = (item['name'], value['id']) in self.floating.protected_cells
                     numeric = value.get('type') == 'n'
                     editable = bool(value.get('editable') and not value.get('formula') and not value.get('merged') and not protected)

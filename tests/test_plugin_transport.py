@@ -309,6 +309,73 @@ def test_learn_rechecks_tools_before_starting_its_separate_search_budget(monkeyp
     assert calls == [('microsoft_docs_search', {'query': 'Excel XLOOKUP'})]
 
 
+def test_public_learn_uses_only_the_selected_anonymous_route(tmp_path, monkeypatch):
+    import asyncio
+    import socket
+    import httpx
+    import pytest
+    from office_agent import network
+    from office_agent.webui import plugin_transport as tr
+
+    proxy = 'http://127.0.0.1:18888'
+    host = 'learn.microsoft.com'
+    public_ip = '13.107.42.16'
+    pools, sent = [], []
+
+    def pool(**kwargs):
+        pools.append(kwargs['proxy'])
+        def handle(request):
+            sent.append((request.url.host, request.headers['host'], request.extensions['sni_hostname']))
+            return httpx.Response(200)
+        return httpx.MockTransport(handle)
+
+    monkeypatch.setattr(httpx, 'AsyncHTTPTransport', pool)
+    monkeypatch.setattr(network, 'getproxies', lambda: {'https': proxy})
+    monkeypatch.setattr(tr, 'proxy_bypass', lambda _: False)
+    for key in ('OFFICE_NETWORK_MODE', 'OFFICE_NETWORK_PROXY', 'NO_PROXY', 'no_proxy'):
+        monkeypatch.delenv(key, raising=False)
+
+    async def exercise():
+        address = public_ip
+        async def resolve(*args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 0, '', (address, 443))]
+
+        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
+        config = {'url': tr.LEARN, 'transport': 'http', 'auth': 'none', '_settings_root': tmp_path}
+        async def send(config, path=None, headers=None):
+            transport = tr._Transport(config, lambda: False, {tr.origin(config['url'])})
+            async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
+                await client.get(path or config['url'], headers=headers)
+
+        await send(config)
+        assert pools[-1] == proxy and sent[-1] == (host, host, host)
+        count = len(sent)
+        with pytest.raises(tr.PluginError, match='匿名'):
+            await send(config, headers={'Authorization': 'Bearer fixture'})
+        with pytest.raises(tr.PluginError, match='匿名'):
+            await send(config, path='https://learn.microsoft.com/other')
+        address = '127.0.0.1'
+        with pytest.raises(tr.PluginError, match='公网'):
+            await send(config)
+        assert len(sent) == count
+        address = public_ip
+        for other in (dict(config, auth='bearer'), dict(config, auth='oauth'), dict(config, private=True),
+                      dict(config, url='https://example.org/api/mcp')):
+            await send(other)
+            assert pools[-1] is None and sent[-1][0] == public_ip
+        monkeypatch.setattr(tr, 'proxy_bypass', lambda _: True)
+        await send(config)
+        assert pools[-1] is None and sent[-1] == (public_ip, host, host)
+        (tmp_path / '.env').write_text('OFFICE_NETWORK_MODE=manual\nOFFICE_NETWORK_PROXY=' + proxy, encoding='utf-8')
+        await send(config)
+        assert pools[-1] == proxy
+        (tmp_path / '.env').write_text('OFFICE_NETWORK_MODE=direct', encoding='utf-8')
+        await send(config)
+        assert pools[-1] is None and sent[-1] == (public_ip, host, host)
+
+    asyncio.run(exercise())
+
+
 if __name__ == '__main__':
     target = Path(sys.argv[1])
     target.write_text(str(os.getpid()))

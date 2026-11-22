@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const ask = message => window.OfficeConfirm?.ask(message) ?? Promise.resolve(false);
-  let snapshot = null, cursor = 0, polling = false, epoch = 0, submitting = false, pending = null;
+  let snapshot = null, cursor = 0, polling = false, epoch = 0, submitting = false, pending = null, composerContext;
   let operation = 0, feedbackOperation = 0;
   let accessDialog = null, autoAction = false;
   const automaticAttempts = new Set();
@@ -289,7 +289,10 @@
   function render(state) {
     const doc = state.document;
     const permission=$('floating-access');
-    if(permission){permission.textContent=accessLabels[state.access?.level]||accessLabels.save_copy;permission.disabled=!doc?.ready;permission.dataset.level=state.access?.level||'save_copy';permission.title='编辑方式：'+permission.textContent;permission.setAttribute('aria-label',permission.title);}
+    if(permission){permission.textContent=accessLabels[state.access?.level]||accessLabels.save_copy;permission.hidden=!doc?.ready;permission.dataset.level=state.access?.level||'save_copy';permission.title='编辑方式：'+permission.textContent;permission.setAttribute('aria-label',permission.title);}
+    if($('floating-current-task'))$('floating-current-task').hidden=!(state.busy||state.plans.length||state.messages.length||
+      state.paged?.pending_requirements||state.canvas?.pending_requirements||state.conversation?.turns?.some(row=>row.intent==='edit'));
+    composerContext?.update(state);
     $('floating-root').dataset.document = doc ? doc.ready ? 'ready' : 'awaiting' : 'none';
     $('floating-title').textContent = doc?.name || 'LiX · 文档助手';
     const phase = state.open_request?.phase;
@@ -302,7 +305,7 @@
     $('floating-send').disabled = submitting || !doc || (!doc.ready && phase !== 'parsing');
     $('floating-send').textContent = state.busy ? '追加要求' : phase === 'parsing' ? '保存要求，解析后处理' : '发送要求';
     $('floating-send').setAttribute('aria-label', $('floating-send').textContent);
-    $('floating-send').title = $('floating-send').textContent;
+    $('floating-send').title = '发送给当前文档模型。云端问答默认隐藏联系方式。';
     $('floating-stop').disabled = !state.busy && !opening;
     $('floating-resolve-protection').hidden = !state.needs_clarification;
     const stages = {rolled_back:'副本已撤销，原稿保留', verified:state.paged||state.canvas?'副本已验证，继续输入即可修改':'副本已验证；可明确选择版本继续', uncertain:'结果不确定；请核对产物和审计，不要重复执行', failed:'本轮未完成；要求与记录保留', changed:'来源已改变，请重新选择并读取', stopped:'已停止后续步骤；远端请求不保证已取消', needs_clarification:'请在文档视图勾选需要保护的位置，再继续生成方案'};
@@ -366,16 +369,15 @@
       if (mine !== epoch || !state?.ok) return;
       window.OfficeConversation?.connection(true);
       if(snapshot?.conversation?.context_id&&state.conversation?.context_id&&snapshot.conversation.context_id!==state.conversation.context_id){
-        $('floating-timeline').replaceChildren();window.OfficeConversation?.reset();window.OfficePlugins?.clear();pending=null;epoch++;
+        $('floating-timeline').replaceChildren();window.OfficeConversation?.reset();composerContext?.clear();pending=null;epoch++;
       }
       if(snapshot?.epoch===state.epoch&&snapshot.access?.serial>state.access?.serial)state.access=snapshot.access;
-      if (snapshot && snapshot.epoch !== state.epoch) { if(snapshot.conversation?.context_id!==state.conversation?.context_id){$('floating-timeline').replaceChildren();window.OfficeConversation?.reset();} adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();accessDialog?.close();feedback(''); }
+      if (snapshot && snapshot.epoch !== state.epoch) { if(snapshot.conversation?.context_id!==state.conversation?.context_id){$('floating-timeline').replaceChildren();window.OfficeConversation?.reset();} adopted.clear(); seenMessages.clear(); seenSkills.clear(); automaticAttempts.clear();composerContext?.clear();accessDialog?.close();feedback(''); }
       const switched = !snapshot || snapshot.document?.id !== state.document?.id || snapshot.document?.version !== state.document?.version;
       const availabilityChanged = snapshot?.document?.ready !== state.document?.ready;
       snapshot = state;
       window.OfficeConversation?.restore(state.conversation,state.paged);
-      if(switched){seenSkills.clear();window.OfficePlugins?.clear();}
-      if((switched||availabilityChanged)&&state.document?.ready)window.OfficePlugins?.reload();
+      if(switched){seenSkills.clear();composerContext?.clear();}
       if (state.gap) {
         feedback('进展记录已压缩，当前要求、计划与产物已从宿主快照恢复。');
         for (const message of state.messages) if (!seenMessages.has(message.id)) { if(!window.OfficeConversation?.has(message.client_id))addEntry(message.text, 'user'); seenMessages.add(message.id); }
@@ -418,11 +420,13 @@
     if(restored&&(restored.document!==snapshot.document.id||restored.version!==snapshot.document.version)){feedback('文档已改变，旧消息保留；没有发送当前草稿或重复执行。');return;}
     const atLimit=snapshot.conversation?.at_limit;
     const localOnly=snapshot.document.ready&&!window.OfficePaged?.active()&&!window.OfficeNative?.active()&&!window.OfficeModelSelector?.readyForRequest(false);
-    if (!restored&&(!pending || pending.text !== text || pending.session !== snapshot.session_id || pending.document !== snapshot.document.id)) {
+    const choices=composerContext?.choices()||{plugin:null,resources:{}}, choiceKey=JSON.stringify(choices);
+    if (!restored&&(!pending || pending.text !== text || pending.session !== snapshot.session_id || pending.document !== snapshot.document.id||pending.choiceKey!==choiceKey)) {
       const bytes = crypto.getRandomValues(new Uint8Array(16));
       pending = {id: Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''), text, session: snapshot.session_id, document:snapshot.document.id, version:snapshot.document.version, open:snapshot.document.open_request_id || null, context:snapshot.conversation?.context_id||null, replyTo:snapshot.conversation?.pending_scope||null};
+      Object.assign(pending,choices,{choiceKey});
     }
-    if(!restored && !Object.hasOwn(pending,'plugin'))pending.plugin=window.OfficePlugins?.choice()||null;
+    if(!restored && !Object.hasOwn(pending,'recipient'))pending.recipient=window.OfficeModelSelector?.documentRecipient?.()||false;
     const sending = restored||pending, ownEpoch=epoch; submitting = true; render(snapshot);
     if(!localOnly)window.OfficeConversation?.echo(sending);
     let result,receipt;
@@ -430,12 +434,17 @@
       if(!localOnly)await window.OfficeConversation?.painted();
       const readContext=sending.readContext||(atLimit&&!sending.replyTo?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null});
       sending.readContext=readContext;window.OfficeConversation?.messageContext(sending.id,readContext);
-      const options=sending.plugin?[localOnly,sending.replyTo||null,sending.plugin]:sending.replyTo?[localOnly,sending.replyTo]:localOnly?[true]:[];
+      const options=[localOnly,sending.replyTo||null,sending.plugin||null,sending.recipient||false,sending.resources||null];
       receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,readContext.revision,readContext.reference,sending.context,...options):null;
       if(ownEpoch!==epoch||snapshot?.document?.id!==sending.document)throw Error('对话已切换，旧消息未继续处理。');
       if(localOnly&&!receipt)throw Error('请先在输入区选择有效的文档 Agent 模型；要求已保留。');
-      if(receipt&&!receipt.ok)throw Error(receipt.error||'消息未受理；原话保留。');
-      if(receipt?.ok && sending.plugin)window.OfficePlugins?.clear();
+      if(receipt&&!receipt.ok){
+        delete sending.readContext;
+        if(pending?.id===sending.id)delete pending.readContext;
+        window.OfficeConversation?.messageContext(sending.id,null);
+        throw Error(receipt.error||'消息未受理；原话保留。');
+      }
+      if(receipt?.ok)composerContext?.consume(sending,receipt.turn);
       if($('floating-status').dataset.feedbackKind==='model_required')feedback('');
       if(localOnly)window.OfficeConversation?.echo(sending);
       if(receipt?.turn)window.OfficeConversation?.acknowledge?.(sending.id,receipt.turn);
@@ -446,10 +455,11 @@
       await refresh();
     } catch (error) {
       if(ownEpoch===epoch&&snapshot?.document?.id===sending.document){
+        if(!receipt?.ok)composerContext?.rejected(error.message,sending);
         feedback(error.message);
         if(receipt?.reason==='model_required')$('floating-status').dataset.feedbackKind=receipt.reason;
         if(window.OfficePaged?.active())window.OfficePaged.reportError(error.message);
-        window.OfficeConversation?.failed(sending.id,error.message,!result);
+        window.OfficeConversation?.failed(sending.id,error.message,!result&&receipt?.ok!==false);
       }
     }
     if (result?.ok && ownEpoch===epoch && snapshot?.document?.id===sending.document) { if (input.value.trim() === text) input.value = ''; if(pending?.id===sending.id)pending = null; }
@@ -527,15 +537,10 @@
     window.OfficeAgentElements.iconButton(menuDetails.querySelector('summary'), 'ellipsis', '更多');
     window.OfficeWindowChrome?.attach(header, collapse);
     const menu = make('div', '', menuDetails); menu.className = 'floating-menu';
-    const group = name => { const folded=['当前任务','工具与记录'].includes(name),section = make(folded?'details':'section', '', menu); section.setAttribute('aria-label', name); if(folded)make('summary',name,section);return section; };
+    const group = name => { const folded=name==='工具与记录',section = make(folded?'details':'section', '', menu); section.setAttribute('aria-label', name); if(folded)make('summary',name,section);return section; };
     const documentActions = group('文档');
     button('文档审阅', documentActions, () => {menuDetails.open=false;call('floating_present', 'review');});
     button('结构文本',documentActions,()=>{menuDetails.open=false;if(window.OfficePaged?.active())window.OfficePaged.previewStructure(snapshot.view,'原稿 · 只读有界结构文本');else{showView(snapshot.view);root.dataset.tab='document';}}).title='查看当前有界结构文本';
-    button('紧凑对话', documentActions, () => {menuDetails.open=false;call('floating_present', 'compact');});
-    const taskActions = group('当前任务');
-    button('重新生成方案', taskActions, () => { menuDetails.open = false; call('floating_start_again', false); });
-    button('继续排队要求', taskActions, () => { menuDetails.open = false; call('floating_start_again', false); });
-    button('新一轮要求…', taskActions, async () => { menuDetails.open = false; if (await ask('开始新一轮会使旧计划和批准失效；不删除已生成副本。是否继续？')) {window.OfficePaged?.invalidate();call('floating_start_again', true);} });
     const tools = group('工具与记录');
     button('历史记录', tools, () => { menuDetails.open = false; secondary(true, true); });
     button('复用历史要求', tools, () => { menuDetails.open = false; restoreDrafts(); }).title='恢复本文件历史要求到草稿，不自动发送';
@@ -612,6 +617,7 @@
         if(result?.ok&&snapshot?.document?.id===owner.id)$('floating-input').focus();
       }finally{nextConversation.disabled=submitting;}
     },'floating-new-conversation');nextConversation.hidden=true;
+    button('自动存副本',conversationHeader,accessSettings,'floating-access').hidden=true;
     const scroll = make('div', '', conversation, 'floating-scroll');
     const timeline = make('div', '', scroll, 'floating-timeline'); timeline.setAttribute('aria-label', '要求与处理进展');
     const latest = button('回到最新', conversation, () => { scroll.scrollTop = scroll.scrollHeight; latest.hidden = true; }, 'floating-latest');
@@ -626,19 +632,28 @@
     const resolveProtection = button('按已勾选保护位置继续', root, () => call('floating_resolve_protection'), 'floating-resolve-protection'); resolveProtection.hidden = true;
     make('p', '正文局部文字修改默认保护数字、单位、公式和引文的字面值；不代表事实核验。', taskDetails).className = 'floating-note';
     make('p', '本机任务要求保存在当前文档父目录的 .office_agent 中。历史恢复只填草稿，不恢复批准。', taskDetails).className = 'floating-note';
-    const composer = make('form', '', root, 'floating-composer'); composer.onsubmit = event => { event.preventDefault(); submit(); };
+    const composer = make('form', '', root, 'floating-composer'); composer.onsubmit = event => { event.preventDefault();if(!$('composer-context-menu')?.matches(':popover-open'))submit(); };
     const label = make('label', '提问或说明修改要求（运行中可追加）', composer); label.htmlFor = 'floating-input'; label.className = 'agent-visually-hidden';
     const input = make('textarea', '', composer, 'floating-input'); input.rows = 2; input.maxLength = 4000; input.placeholder = '提问或说明修改要求…';
     input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } };
     const footer = make('div', '', composer); footer.className = 'agent-composer-footer';
+    composerContext=window.OfficeComposerContext.mount({composer,footer,input,state:()=>snapshot,api,button,make,
+      reference:()=>window.OfficePaged?.active()?window.OfficePaged.referenceSelection:window.OfficeNative?.active()?window.OfficeNative.referenceSelection:null});
     make('div', '', footer, 'floating-models');
-    window.OfficePlugins?.attach(footer);
-    button('自动存副本',footer,accessSettings,'floating-access');
     const actions = make('div', '', footer); actions.className = 'floating-actions';
     button('停止后续步骤', actions, () => {window.OfficePaged?.invalidate();return call('floating_stop');}, 'floating-stop');
     button('发送要求', actions, submit, 'floating-send').className = 'floating-primary-button';
     const controls = make('div', '', conversation, 'floating-controls');
     for (const id of ['floating-progress','floating-resolve-protection','floating-task-details','floating-status','floating-composer']) controls.append($(id));
+    const currentTask = make('details', '', null, 'floating-current-task');
+    const taskSummary = make('summary', '当前任务', currentTask);
+    const taskActions = make('div', '', currentTask, 'floating-current-task-menu');taskActions.className='floating-menu';
+    const closeTaskMenu = () => {currentTask.open=false;taskSummary.focus();};
+    button('重新生成方案', taskActions, () => {closeTaskMenu();call('floating_start_again', false);});
+    button('继续排队要求', taskActions, () => {closeTaskMenu();call('floating_start_again', false);});
+    button('新一轮要求…', taskActions, async () => {closeTaskMenu();if (await ask('开始新一轮会使旧计划和批准失效；不删除已生成副本。是否继续？')) {window.OfficePaged?.invalidate();call('floating_start_again', true);}});
+    controls.insertBefore(currentTask, composer);
+    document.addEventListener('pointerdown', event => {if(currentTask.open&&!currentTask.contains(event.target))currentTask.open=false;});
     const contextMenu = make('div', '', taskDetails); contextMenu.className = 'agent-context-body';
     for (const child of [...taskDetails.children]) if (child.tagName !== 'SUMMARY' && child !== contextMenu) contextMenu.append(child);
     taskDetails.querySelector('summary').setAttribute('aria-label', '保护与任务版本');
@@ -668,7 +683,7 @@
       const opened = [...root.querySelectorAll('details[open]')].reverse()[0];
       if (opened) { event.preventDefault(); event.stopPropagation(); opened.open = false; opened.querySelector('summary')?.focus(); }
     });
-    const selector = '#floating-task-details, #simple-model-menu, #floating-root > header > details, #paged-top > header > details';
+    const selector = '#floating-current-task, #floating-task-details, #simple-model-menu, #floating-root > header > details, #paged-top > header > details';
     root.addEventListener('click', event => {
       const node = event.target.closest('summary')?.parentElement;
       if (!node?.matches(selector) || node.open) return;
@@ -700,11 +715,13 @@
     if(!result?.ok)throw Error(result?.error||'副本未打开，请核对当前文件');
     secondary(false);await refresh();return true;
   }
-  window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput};
+  window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput,
+    restorePlugin:entry=>composerContext?.restorePlugin(entry)};
   window.OfficeConversation?.configure({pluginConsent:async (id,token,approved)=>{
     const doc=snapshot?.document;
     if(!doc)return;
     const result=await call('conversation_plugin_consent',id,doc.id,doc.version,snapshot.conversation?.context_id,token,approved);
+    if(approved==='show'&&result?.ok)return result;
     if(!result?.ok)feedback(result?.error||'请刷新后重试。');
     await refresh();
   },pluginSource:async(id,index)=>{await call('conversation_plugin_source',id,index);},open:async id=>{
@@ -725,9 +742,11 @@
     if(input.value){feedback('输入框已有草稿。请自行发送原问题或“用新选区回答”。');return;}
     input.value='用新选区回答';
     await submit();
+  },restoreResources:row=>{
+    if(!composerContext?.restoreResources(row))feedback('输入框已有草稿，请先处理草稿，再重新选择原问题的材料。');
   },retry:async(id,local)=>{
     if(local){const message=window.OfficeConversation?.message(id);if(!message){feedback('原消息回执正在核对，没有发送当前草稿。');await refresh();return;}await submit(message);return;}
-    const result=await api().conversation_retry(id,snapshot.document.id,snapshot.document.version);
+    const result=await api().conversation_retry(id,snapshot.document.id,snapshot.document.version,window.OfficeModelSelector?.documentRecipient?.()||false);
     if(!result?.ok){feedback(result?.error||'恢复未完成，已有内容保留。');return;}
     if(result.output_id)await call('floating_select_output',result.output_id,true,result.access_id);
     await refresh();
@@ -736,6 +755,6 @@
   window.addEventListener('pywebviewready', connect);
   window.addEventListener('officeworkspace:view',event=>{if(event.detail?.screen==='history'){ensureOutputRecords();if(snapshot)renderOutputs(snapshot);}});
   window.addEventListener('officeauth:authenticated', connect);
-  window.addEventListener('officeauth:unauthenticated', () => { epoch++; snapshot = null; cursor = 0; pending = null; adopted.clear(); seenMessages.clear(); seenSkills.clear(); if (timer) clearInterval(timer); timer = null; });
+  window.addEventListener('officeauth:unauthenticated', () => { epoch++; composerContext?.clear(); snapshot = null; cursor = 0; pending = null; adopted.clear(); seenMessages.clear(); seenSkills.clear(); if (timer) clearInterval(timer); timer = null; });
   if (window.pywebview?.api) connect();
 })();

@@ -126,7 +126,6 @@
 .plugin-dialog label,.plugin-dialog label>span {display:block}.plugin-dialog label,.plugin-dialog fieldset,.plugin-actions {margin:.5rem 0}
 .plugin-dialog label:has(input[type=checkbox]) {display:flex;align-items:center;gap:.4rem}.plugin-dialog label input[type=checkbox]{order:-1}
 .plugin-dialog::backdrop {background:#0007}
-#floating-plugin {max-width:7em;min-width:0;font-size:inherit}
 .conversation-plugin pre {white-space:pre-wrap;overflow-wrap:anywhere}
-@media(max-width:480px){.plugin-toolbar input{flex-basis:100%}#floating-plugin{max-width:5em}}
+@media(max-width:480px){.plugin-toolbar input{flex-basis:100%}}
 

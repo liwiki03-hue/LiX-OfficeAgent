@@ -1,4 +1,8 @@
+import asyncio
 import json
+import os
+from pathlib import Path
+import re
 import threading
 import secrets
 import time
@@ -12,6 +16,8 @@ from ..visible_answer import LeadingThoughtFilter, visible_answer
 
 
 CHAT_REPLY_TOKENS = 512
+_LOCAL_SHOW_SLOTS = threading.BoundedSemaphore(2)
+_LOCAL_OLLAMA = 'http://127.0.0.1:11434'
 
 
 class ChatBudgetError(SettingsError):
@@ -25,11 +31,91 @@ def _http_client():
     return httpx2.Client(follow_redirects=False, trust_env=False, timeout=60)
 
 
+def _ollama_listener():
+    if os.name != 'nt':
+        return None
+    import ctypes
+    import socket
+    import struct
+    import win32api
+    import win32process
+
+    length = ctypes.c_uint32()
+    table = ctypes.windll.iphlpapi.GetExtendedTcpTable
+    if table(None, ctypes.byref(length), 0, socket.AF_INET, 3, 0) != 122 or not 4 <= length.value <= 1024 * 1024:
+        return None
+    buffer = ctypes.create_string_buffer(length.value)
+    if table(buffer, ctypes.byref(length), 0, socket.AF_INET, 3, 0):
+        return None
+    rows = struct.unpack_from('=I', buffer)[0]
+    if rows * 24 + 4 > len(buffer):
+        return None
+    pids = set()
+    for _, address, port, _, _, pid in struct.iter_unpack('=6I', buffer.raw[4:4 + rows * 24]):
+        if socket.ntohs(port & 0xffff) == 11434 and socket.inet_ntoa(struct.pack('=I', address)) in ('0.0.0.0', '127.0.0.1'):
+            pids.add(pid)
+    if len(pids) != 1:
+        return None
+    pid = pids.pop()
+    process = win32api.OpenProcess(0x1000, False, pid)
+    try:
+        program = Path(win32process.GetModuleFileNameEx(process, 0))
+    finally:
+        process.Close()
+    return pid if any(program == Path(root, suffix, 'ollama.exe') for root, suffix in (
+        (os.getenv('LOCALAPPDATA'), 'Programs/Ollama'), (os.getenv('ProgramFiles'), 'Ollama')) if root) else None
+
+
+async def _local_model_show(model):
+    import httpx
+
+    async with httpx.AsyncClient(trust_env=False, follow_redirects=False, timeout=1.5) as client:
+        async with client.stream('POST', _LOCAL_OLLAMA + '/api/show', json={'model': model},
+                                 headers={'Accept-Encoding': 'identity'}) as response:
+            if (response.status_code != 200 or response.headers.get('content-type', '').split(';')[0] != 'application/json'
+                    or response.headers.get('content-encoding', 'identity') != 'identity'):
+                return None
+            raw = bytearray()
+            async for chunk in response.aiter_raw():
+                if len(raw) + len(chunk) > 256 * 1024:
+                    return None
+                raw.extend(chunk)
+            return json.loads(raw)
+
+
+def _local_gguf(metadata):
+    if not isinstance(metadata, dict) or any(metadata.get(key) for key in ('remote_model', 'remote_host', 'cloud', 'remote')):
+        return False
+    details, info = metadata.get('details'), metadata.get('model_info')
+    if (not isinstance(details, dict) or details.get('format') != 'gguf' or not isinstance(info, dict)
+            or not info.get('general.architecture') or type(info.get('general.parameter_count')) is not int
+            or info['general.parameter_count'] <= 0):
+        return False
+    modelfile = metadata.get('modelfile')
+    if not isinstance(modelfile, str):
+        return False
+    sources = re.findall(r'^FROM[ \t]+(.+)$', modelfile, re.MULTILINE)
+    if len(sources) != 1:
+        return False
+    blob = Path(sources[0].strip().strip('"'))
+    root = Path(os.environ.get('OLLAMA_MODELS') or Path.home() / '.ollama' / 'models')
+    if (not root.is_absolute() or root.as_posix().startswith('//') or '..' in root.parts or
+            blob.parent != root / 'blobs' or not re.fullmatch(r'sha256-[0-9a-f]{64}', blob.name)):
+        return False
+    from ..rag_sources import _ordinary
+    for parent in reversed(blob.parents):
+        _ordinary(parent.lstat(), directory=True)
+    _ordinary(blob.lstat())
+    with blob.open('rb') as stream:
+        return stream.read(4) == b'GGUF'
+
+
 class ModelConnections:
     def __init__(self, settings, app, authenticated):
         self.settings, self.app, self.authenticated = settings, app, authenticated
         self.lock = settings._lock
         self.state = ConnectionState()
+        self.document_selection_serial = 0
         self.chat_epoch = 0
         self.chat_messages = []
         self.managed = False
@@ -107,6 +193,8 @@ class ModelConnections:
                     else:
                         self.state.selected[cap] = previous
                     raise
+                if cap == 'agent' and previous != self.state.selected.get(cap):
+                    self.document_selection_serial += 1
                 self.state.mode = cap
                 return {'ok': True, 'selection': route.public(), 'next_request_only': bool(self.app.busy)}
             except SettingsError as exc:
@@ -124,6 +212,29 @@ class ModelConnections:
     def capture(self, capability):
         with self.lock:
             return self.state.resolve(self._catalog(), capability)
+
+    def confirmed_local_inference(self, route):
+        if (getattr(route, 'protocol', '') != 'ollama' or getattr(route, 'api_key', None) != ''
+                or getattr(route, 'base_url', '') not in (_LOCAL_OLLAMA, _LOCAL_OLLAMA + '/')):
+            return False
+        model = getattr(route, 'model_id', '')
+        if (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][\w.-]*(?:/[\w.-]+)?(?::[\w.-]+)?', model, re.ASCII)
+                or len(model) > 128 or 'cloud' in model.casefold() or not _LOCAL_SHOW_SLOTS.acquire(blocking=False)):
+            return False
+        try:
+            process = _ollama_listener()
+            if not process:
+                return False
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                metadata = asyncio.run(asyncio.wait_for(_local_model_show(model), timeout=2))
+                return _local_gguf(metadata) and _ollama_listener() == process
+            return False
+        except Exception:
+            return False
+        finally:
+            _LOCAL_SHOW_SLOTS.release()
 
     def active(self):
         with self.lock:

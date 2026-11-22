@@ -517,6 +517,11 @@
   window.addEventListener('officemodels:request-finished', () => refresh());
   window.addEventListener('officemodels:host-ready', () => refresh());
   window.OfficeModelSelector = {
+    documentRecipient: () => {
+      const selected=snapshot?.catalog.current.agent;
+      if(mode!=='agent'||!selected?.valid||selectionBlocked||selecting||uncertain)return false;
+      return {connection_id:selected.connection_id,model_id:selected.model_id,revision:selected.revision};
+    },
     mode: () => mode,
     selection: () => {
       const current = snapshot?.catalog.current[mode];

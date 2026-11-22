@@ -490,8 +490,6 @@ class PagedEditor:
                 raise GuardError('该选区包含多种直接格式。首版AI文字建议请分成单一格式范围；手工跨格式编辑仍可用')
             if len(selected)>4000 or not selected.strip():
                 raise GuardError('请选择1—4000字的明确正文范围')
-            from ..model_content import check_scope
-            check_scope(selected)
             identifier = uuid.uuid4().hex
             locator = self.draft_locators[item['id']]
             book = Document(io.BytesIO(self.data))
@@ -530,8 +528,6 @@ class PagedEditor:
             raise GuardError('选区文字与原稿位置不一致，请重新选择。')
         if not old.strip() or len(old) > 4000:
             raise GuardError('请选择1—4000字的明确正文范围。')
-        from ..model_content import check_scope
-        check_scope(old)
         record = {'id': uuid.uuid4().hex, 'kind': 'source_text', 'document_id': self.document_id,
                   'source_version': self.source_version, 'epoch': self.floating.epoch, 'draft_revision': 0,
                   'source_index': index, 'start': target['start'], 'end': target['end'], 'old': old,
@@ -720,6 +716,11 @@ class PagedEditor:
             self._notice('draft_model_error', {'text':'本轮调用预算已用尽；要求和草稿保留，请核对后明确开始新一轮。'}, for_edit(self.floating, self.floating.conversation.active_task))
             return False
         reference = self.references[self.pending_reference_id]
+        from ..model_content import check_scope
+        from .turn_scope import field_names
+        check_scope(reference['old'], reference['context'])
+        if field_names(reference['context']):
+            raise GuardError('此选区含个人字段，请缩小改稿范围。可在文档问答中核对本次发送范围。')
         try:
             route = self.floating.api._connections.capture('agent')
         except (SettingsError,OSError):

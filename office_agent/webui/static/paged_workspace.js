@@ -32,23 +32,25 @@
     try{const result=await call(name,...args);renderState(lastState);return result;}
     catch(error){if(mine===generation&&publicationProgress?.id===id)publicationProgress=null;throw error;}
   }
-  function layout(){
+  function layout(focusReopen=false){
     const root=$('floating-root');if(!root)return;
     const closed=root.classList.contains('paged-ai-closed'), outline=root.classList.contains('paged-outline-open');
-    if($('paged-toggle-ai')){
-      window.OfficeAgentElements.iconButton($('paged-toggle-ai'),closed?'panel-right-open':'panel-right-close','AI 对话',closed?'展开对话侧栏':'收起对话侧栏');
-      $('paged-toggle-ai').setAttribute('aria-expanded',String(!closed));
-    }
+    const reopen=$('paged-toggle-ai');
+    if(reopen)reopen.hidden=!closed;
     $('paged-toggle-outline')?.setAttribute('aria-expanded',String(outline));
-    if(adapter)adapter.frame.inert=matchMedia('(max-width:850px)').matches&&(!closed||outline);
+    if(adapter){
+      adapter.frame.inert=matchMedia('(max-width:850px)').matches&&(!closed||outline);
+      adapter.request('chatSidebar',{closed}).catch(()=>{});
+    }
+    if(focusReopen)reopen?.focus();
   }
-  function setSidebar(closed,returnFocus=false){
+  function setSidebar(closed,focusReopen=false){
     const root=$('floating-root');if(!root?.classList.contains('paged-active'))return;
     root.classList.toggle('paged-ai-closed',closed);
     if(matchMedia('(max-width:850px)').matches&&!closed)root.classList.remove('paged-outline-open');
     localStorage.setItem('office-agent.paged-ai-closed',String(closed));
-    layout();
-    if(returnFocus)$('paged-toggle-ai')?.focus();
+    layout(focusReopen);
+    if(!closed)$('paged-close-ai')?.focus();
   }
   function dialog(title,build,returnFocus=document.activeElement){
     const previous=returnFocus,node=make('dialog','',document.body);node.className='paged-dialog';
@@ -500,12 +502,17 @@
     button('使用原稿',recovery,async()=>{const result=await call('paged_use_original',host.document.id);lastState=result;renderState(result);await adapter.request('enable',{editable:result.editable});notice('使用已准入原稿开始编辑；旧恢复草稿不代表已交付副本。');},'paged-use-original').hidden=true;
     tool('保存副本','save',bar,save,'paged-save').classList.add('paged-primary');
     tool('创建可编辑副本','file',bar,editableCopy,'paged-editable-copy').hidden=true;
-    tool('AI 对话','panel-right-close',bar,()=>setSidebar(!root.classList.contains('paged-ai-closed')),'paged-toggle-ai').setAttribute('aria-controls','floating-conversation');
     const work=make('div','',root,'paged-work');
     const outline=make('aside','',work,'paged-outline');outline.setAttribute('aria-label','文档大纲');make('h2','大纲',outline);make('nav','',outline,'paged-outline-items');
     const middle=make('section','',work,'paged-editor-main');middle.setAttribute('aria-label','分页文档编辑');
+    const reopen=tool('展开对话侧栏','panel-right-open',work,()=>setSidebar(false),'paged-toggle-ai');
+    reopen.setAttribute('aria-controls','floating-conversation');
+    reopen.setAttribute('aria-expanded','false');
+    reopen.hidden=true;
     work.append($('floating-conversation'));
-    tool('收起对话侧栏','panel-right-close',$('floating-conversation-heading'),()=>setSidebar(true,true),'paged-close-ai').setAttribute('aria-controls','floating-conversation');
+    const collapse=tool('收起对话侧栏','panel-right-close',$('floating-conversation-heading'),()=>setSidebar(true,true),'paged-close-ai');
+    collapse.setAttribute('aria-controls','floating-conversation');
+    collapse.setAttribute('aria-expanded','true');
     $('floating-conversation').append($('floating-controls'));
     const referenceBar=make('div','',$('floating-controls'),'paged-reference-bar');
     tool('引用选区','quote',referenceBar,()=>capture(),'paged-reference');
@@ -565,7 +572,7 @@
   }
   async function restore(){
     const result=await call('paged_restore',host.document.id);adapter.closeDocument();opened=false;
-    adapter=new DocumentEditorAdapter($('paged-editor-main'),frameEvent);await adapter.openDocument(result);opened=true;await sync();await adapter.request('enable',{editable:result.editable});notice('已恢复本机草稿；未恢复模型请求、写入或撤销批准。');
+    adapter=new DocumentEditorAdapter($('paged-editor-main'),frameEvent);await adapter.openDocument(result);opened=true;await sync();await adapter.request('enable',{editable:result.editable});layout();notice('已恢复本机草稿；未恢复模型请求、写入或撤销批准。');
   }
   async function undoRound(turnId){
     if(undoing||applying||sending||saving||!opened)throw Error('当前操作尚未完成，请稍后核对撤销');
@@ -701,7 +708,8 @@
   }
   window.OfficePaged={active,update,submit,beforeSwitch,close,previewStructure,previewLatestDraft,messageContext,reportError:notice,presentationSource:async()=>{if(!opened||applying)throw Error('请等待当前草稿就绪');if(lastState.editable)await sync();return {document_id:host.document.id,draft_revision:adapter.revision};},invalidate:()=>{instructionEpoch++;instruction=-1;if(adapter)adapter.request('instruction',{revision:-1}).catch(()=>{});},capabilities:()=>requireAdapter().capabilities(),contract:()=>requireAdapter().contract(),selection:()=>requireAdapter().getSelection(),snapshot:()=>requireAdapter().getSnapshot(),subscribeChanges:handler=>requireAdapter().subscribeChanges(handler),tableCommand:command=>requireAdapter().applyTableCommand(command),undo:()=>requireAdapter().undo(),redo:()=>requireAdapter().redo(),history:()=>requireAdapter().history(),applyOperations,idMap,referenceLocator};
   window.OfficePaged.undoRound=undoRound;
-  window.addEventListener('resize',layout);
+  window.OfficePaged.referenceSelection=()=>capture();
+  window.addEventListener('resize',()=>layout());
   new MutationObserver(()=>{if(active()&&opened)adapter.request('theme',{theme:document.documentElement.dataset.theme||'dark'}).catch(()=>{});}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   document.addEventListener('keydown',event=>{
     if(event.key==='Escape'&&!event.isComposing&&!event.defaultPrevented&&!document.querySelector('dialog[open],#floating-root details[open]')&&active()&&matchMedia('(max-width:850px)').matches){

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_document_conversation import Answers, RetryAnswers, send
+from tests.test_document_conversation import Answers, FixedAnswer, RetryAnswers, send
 from tests.test_floating_browser import open_floating_menu
 from tests.test_paged_inbox_browser import select_reference
 from tests.test_model_connections import connection, payload, save, select
@@ -53,6 +53,131 @@ def configure(page, api, monkeypatch):
     monkeypatch.setattr(api._connections, 'build_model', answers.build_model)
     page.evaluate('window.OfficeModelSelector.refresh()')
     return answers
+
+
+def test_composer_context_reads_chosen_file_and_skill_after_sending(paged_browser, monkeypatch):
+    from openpyxl import Workbook
+    from playwright.sync_api import expect
+
+    page, api, source, errors = paged_browser
+    configure(page, api, monkeypatch)
+    original = source.read_bytes()
+    book = Workbook()
+    book.active.title = '报价'
+    book.active['A1'] = '补充材料的实验温度为 25 ℃。'
+    extra = source.parent / '补充报价.xlsx'
+    book.save(extra)
+    extra_before = extra.read_bytes()
+    skill = source.parent / 'skills' / 'compare-format' / 'SKILL.md'
+    skill.parent.mkdir(parents=True)
+    skill.write_text('---\nname: 比较格式\ndescription: 分别列出两份材料。\n---\n先给出主文档，再给出参考件【证据格式】。\n', 'utf-8')
+    picks = iter(([str(extra)], None))
+    monkeypatch.setattr(api._app.window, 'create_file_dialog', lambda *args, **kwargs: next(picks))
+    fixed = FixedAnswer({'content': '主文档的实验温度是 120 ℃，参考文件是 25 ℃。'})
+    monkeypatch.setattr(api._connections, 'build_model', fixed.build_model)
+
+    page.set_viewport_size({'width': 936, 'height': 760})
+    header = page.locator('#floating-conversation-heading')
+    expect(header.locator('#floating-access + #paged-close-ai')).to_be_visible()
+    access_box = header.locator('#floating-access').bounding_box()
+    collapse_box = header.locator('#paged-close-ai').bounding_box()
+    assert 0 < collapse_box['x'] - (access_box['x'] + access_box['width']) <= 12
+    input = page.locator('#floating-input')
+    input.fill('比较两份材料中的温度')
+    input.evaluate('input=>input.setSelectionRange(2,5)')
+    plus = page.locator('#composer-context-add')
+    plus.focus()
+    plus.press('Enter')
+    expect(page.get_by_role('menuitem', name='引用文件…', exact=True)).to_be_focused()
+    page.keyboard.press('Escape')
+    expect(plus).to_be_focused()
+    plus.click()
+    page.get_by_role('menuitem', name='引用文件…', exact=True).click()
+    expect(page.get_by_role('button', name='移除参考：补充报价.xlsx', exact=True)).to_be_visible()
+    expect(input).to_be_focused()
+    assert input.evaluate('input=>[input.selectionStart,input.selectionEnd]') == [2, 5]
+    plus.click()
+    page.get_by_role('menuitem', name='替换参考文件…', exact=True).click()
+    expect(input).to_be_focused()
+    expect(page.get_by_role('button', name='移除参考：补充报价.xlsx', exact=True)).to_be_visible()
+    expect(page.locator('#composer-context-feedback')).to_be_hidden()
+    page.set_viewport_size({'width': 1500, 'height': 800})
+    plus.click()
+    page.get_by_role('menuitem', name='技能', exact=True).click()
+    search = page.get_by_role('searchbox', name='查找名称')
+    search.fill('比较')
+    page.get_by_role('button', name='比较格式', exact=True).click()
+    expect(input).to_be_focused()
+    assert not fixed.calls and not api._floating.conversation.turns and not api._floating.conversation.scopes.attachments
+
+    page.locator('#floating-send').click()
+    allow = page.get_by_role('button', name='仅允许这一次', exact=True)
+    expect(allow).to_be_visible()
+    assert not fixed.calls
+    allow.click()
+    reply = page.locator('.conversation-turn[data-state="complete"]')
+    expect(reply).to_contain_text('主文档的实验温度是 120 ℃')
+    expect(reply).to_contain_text('参考文件 补充报价.xlsx')
+    expect(reply).to_contain_text('分页验收.docx')
+    assert len(fixed.calls) == 1
+    assert all(value in fixed.calls[0] for value in ['25 ℃', '120 ℃', '报价', 'A1', '【证据格式】'])
+    expect(page.locator('#composer-context-list')).to_be_hidden()
+    assert source.read_bytes() == original and extra.read_bytes() == extra_before and not api._floating.outputs and not errors
+
+    fixed.response = {'content': '主文档的实验温度是 120 ℃。'}
+    input.fill('主文档记录的实验温度是多少？')
+    page.locator('#floating-send').click()
+    expect(reply).to_have_count(2)
+    expect(reply.first).to_contain_text('参考文件是 25 ℃')
+    expect(reply.last).to_contain_text('主文档的实验温度是 120 ℃。')
+    assert len(fixed.calls) == 2 and '25 ℃' not in fixed.calls[1] and '补充报价.xlsx' not in fixed.calls[1]
+    assert source.read_bytes() == original and extra.read_bytes() == extra_before and not api._floating.outputs and not errors
+
+
+def test_composer_plugin_is_locally_listed_and_only_called_after_permission(paged_browser, monkeypatch):
+    from playwright.sync_api import expect
+    from office_agent.webui import plugin_transport
+
+    page, api, source, errors = paged_browser
+    configure(page, api, monkeypatch)
+    configured, _ = api._plugins.save({'name': '测试检索', 'url': 'https://example.org/mcp'})
+    descriptor = {'name': 'search_docs', 'usable': True, 'signature': 'fixture'}
+    monkeypatch.setattr(plugin_transport, 'probe', lambda *args, **kwargs: [descriptor])
+    probe = api._plugins.probe(configured['id'], configured['revision'])
+    linked = api._plugins.change(configured['id'], probe['revision'], 'enable', ['search_docs'])
+    calls = []
+
+    def record(config, tool, query, *, cancelled):
+        config['_before_dispatch']()
+        calls.append((tool['name'], query))
+        return {'text': 'XLOOKUP 示例语法', 'sources': [{'title': '语法来源', 'url': 'https://example.org/lookup'}]}
+
+    monkeypatch.setattr(plugin_transport, 'query', record)
+    model = FixedAnswer({'content': 'XLOOKUP 的语法来自当次检索。'})
+    monkeypatch.setattr(api._connections, 'build_model', model.build_model)
+    question = '查询 XLOOKUP 的公开用法'
+    input = page.locator('#floating-input')
+    input.fill(question)
+    input.dispatch_event('keydown', {'key': 'Enter', 'isComposing': True, 'keyCode': 229})
+    assert not api._floating.conversation.turns
+    page.locator('#composer-context-add').click()
+    page.get_by_role('menuitem', name='插件', exact=True).click()
+    page.get_by_role('searchbox', name='查找名称').fill('search_docs')
+    page.get_by_role('button', name='测试检索 · search_docs', exact=True).click()
+    expect(page.get_by_role('button', name='移除插件：测试检索 · search_docs', exact=True)).to_be_visible()
+    assert not calls and not model.calls
+    page.locator('#floating-send').click()
+    allow = page.get_by_role('button', name='允许本次发送', exact=True)
+    expect(allow).to_be_visible()
+    assert not calls and not model.calls
+    allow.click()
+    turn = page.locator('.conversation-turn[data-state="complete"]')
+    expect(turn).to_contain_text('XLOOKUP 的语法')
+    expect(turn.get_by_text('来源 · 测试检索')).to_be_visible()
+    assert calls == [('search_docs', question)] and len(model.calls) == 1
+    assert next(iter(api._floating.conversation.turns.values()))['plugin']['revision'] == linked['revision']
+    expect(page.locator('#composer-context-list')).to_be_hidden()
+    assert not api._floating.outputs and not errors
 
 
 def verify_answer(page, api, source, errors, answers, question):

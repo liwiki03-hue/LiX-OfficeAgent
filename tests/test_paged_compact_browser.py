@@ -42,9 +42,8 @@ def test_save_state_is_unique_at_bottom_without_extra_header_or_losing_draft(pag
                 box = control.bounding_box()
                 assert box and 0 <= box['x'] < box['x'] + box['width'] <= width
                 assert 0 <= box['y'] < box['y'] + box['height'] <= height
-            toggle = page.get_by_role('button', name='AI 对话', exact=True)
-            toggle.click()
-            toggle.click()
+            page.get_by_role('button', name='收起对话侧栏', exact=True).click()
+            page.get_by_role('button', name='展开对话侧栏', exact=True).click()
             assert page.locator('#floating-input').input_value() == '请保留数字和单位，稍后继续。'
             assert engine_frame(page)._impl_obj._guid == frame_id
     assert page.locator('#paged-state-announcement').inner_text() == announcement

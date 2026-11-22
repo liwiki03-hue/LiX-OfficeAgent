@@ -79,7 +79,7 @@
     const validating=publication?.reason==='validating'&&editor?.publishing
       &&editor.publication_in_progress?.id===publication.id;
     const editingDuringValidation=validating&&editor.draft_revision>publication.draft_revision?editor.draft_revision:null;
-    const signature=JSON.stringify([row.sequence,row.status,row.text,row.local,undo,previewState,canPreview,validating,editingDuringValidation,row.plugin_preview,row.plugin_sources]);
+    const signature=JSON.stringify([row.sequence,row.status,row.text,row.local,undo,previewState,canPreview,validating,editingDuringValidation,row.plugin_preview,row.plugin_sources,row.scope_preview]);
     if(node.signature!==signature){
       node.signature=signature;
       if(row.local&&row.status!=='sending'){node.receipt??=make('small','',node.user);node.receipt.textContent=row.status==='failed'?'未受理':'等待核对回执';}
@@ -94,6 +94,58 @@
       if(node.text.textContent!==text)node.text.textContent=text;
       node.text.classList.toggle('conversation-progress',showPreviewStatus);
       window.OfficePlugins?.renderTurn(node,row,handlers);
+      const summaryKey=JSON.stringify([row.resources,row.skill_loaded,row.references?.find(item=>item.scope==='本轮所选参考文件')?.location]);
+      if(row.resources&&node.summaryKey!==summaryKey){
+        node.summaryKey=summaryKey;
+        if(!node.resources){
+          node.resources=make('details','',node.assistant);
+          node.resources.className='conversation-source-details';
+          make('summary','本轮材料',node.resources);
+          node.resourceList=make('ul','',node.resources);
+        }
+        node.resourceList.replaceChildren();
+        if(row.resources.file){
+          const named=row.references?.find(item=>item.scope==='本轮所选参考文件');
+          make('li',named?'已读 · '+named.location:'已选 · '+row.resources.file,node.resourceList);
+        }
+        if(row.resources.skill)make('li',(row.skill_loaded?'已读取技能 · ':'已选技能 · ')+row.resources.skill,node.resourceList);
+      }
+      if(node.scopeToken!==row.scope_preview?.token){
+        node.scopeBox?.remove();
+        node.scopeToken=row.scope_preview?.token;
+        const spec=row.scope_preview;
+        if(spec){
+          const box=make('div','',node.assistant);node.scopeBox=box;box.className='conversation-actions';
+          const decide=async choice=>{
+            const host=window.OfficeAuth?.wrapApi(window.pywebview?.api);
+            return host?.conversation_scope_decide(spec.token,choice);
+          };
+          if(spec.action!=='file'){
+            const details=make('details','',box);make('summary','在本机查看待发送内容',details);
+            const preview=make('pre','',details);preview.style.whiteSpace='pre-wrap';preview.style.overflowWrap='anywhere';
+            details.ontoggle=async()=>{
+              if(!details.open){preview.textContent='';return;}
+              const result=await decide('preview').catch(()=>null);
+              if(details.open&&details.isConnected)preview.textContent=result?.preview||'预览已失效。';
+            };
+          }
+          const actions=spec.action==='file'?[['choose','选择并允许读取文件']]:[['allow','仅允许这一次']];
+          if(spec.raw)actions.push(['masked','隐藏联系方式后继续']);
+          actions.push(['cancel','取消']);
+          const status=make('span','',box);status.setAttribute('role','status');
+          for(const [choice,title] of actions){
+            const button=make('button',title,box);button.type='button';
+            button.onclick=async()=>{
+              const buttons=box.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+              try{
+                const result=await decide(choice);
+                if(!result?.ok)status.textContent=result?.error||'决定未完成，请核对当前回合。';
+              }catch(_){status.textContent='尚未收到回执，请先核对当前回合。';}
+              finally{buttons.forEach(b=>b.disabled=false);}
+            };
+          }
+        }
+      }
       if(previewState){
         if(!node.preview){
           node.preview=make('div','',node.assistant);node.preview.className='conversation-preview';
@@ -108,8 +160,8 @@
       }else if(node.preview)node.preview.hidden=true;
       node.assistant.dataset.state=row.status;
       if(terminal.has(row.status)){node.pending?.remove();node.pending=null;}
-      const canRetry=!row.plugin&&publication?.reason!=='draft_advanced'&&!['number_conflict','stale_selection'].includes(row.failure_code)&&['failed','interrupted','uncertain'].includes(row.status);
-      const reselect=row.stage==='reference'&&row.status==='waiting'&&row.read_scope==='selection';
+      const canRetry=!row.plugin&&!row.scope_dispatched&&publication?.reason!=='draft_advanced'&&!['number_conflict','stale_selection'].includes(row.failure_code)&&['failed','interrupted','uncertain'].includes(row.status);
+      const reselect=row.stage==='reference'&&(row.status==='waiting'||row.failure_code==='scope_reselect')&&row.read_scope==='selection';
       const action=undo.available?'undo':undo.recoverable?'reconcile':reselect?'reselect':canRetry?'retry':'';
       const actionKey=JSON.stringify([action,Boolean(undo.busy),canPreview?publication.id:null]);
       if(node.actionKey!==actionKey){
@@ -132,8 +184,11 @@
             button.textContent='核对撤销结果';button.dataset.undoTurn=row.id;
             button.onclick=async()=>{button.disabled=true;try{await handlers.undo?.(row.id);}finally{if(button.isConnected)button.disabled=false;}};
           }else{
-            button.textContent=row.status==='uncertain'?'核对已有结果':'从此处恢复';button.dataset.retryTurn=row.id;
-            button.onclick=async()=>{button.disabled=true;try{await handlers.retry?.(row.id,row.local);}finally{if(button.isConnected)button.disabled=false;}};
+            button.textContent=row.resources?.file?'重新选择参考文件':row.resources?.skill?'重新选择技能':row.status==='uncertain'?'核对已有结果':'从此处恢复';button.dataset.retryTurn=row.id;
+            button.onclick=async()=>{button.disabled=true;try{
+              if(row.resources)handlers.restoreResources?.(row);
+              else await handlers.retry?.(row.id,row.local);
+            }finally{if(button.isConnected)button.disabled=false;}};
           }
           }
         }
@@ -154,7 +209,7 @@
     }
     const previous=rows.get(row.id);
     if(previous&&!previous.local&&previous.sequence>row.sequence)return;
-    if(previous&&!previous.local&&previous.sequence===row.sequence&&JSON.stringify(previous.undo)===JSON.stringify(row.undo)&&previous.plugin_preview?.token===row.plugin_preview?.token){render(previous);return;}
+    if(previous&&!previous.local&&previous.sequence===row.sequence&&JSON.stringify(previous.undo)===JSON.stringify(row.undo)&&previous.plugin_preview?.token===row.plugin_preview?.token&&previous.scope_preview?.token===row.scope_preview?.token){render(previous);return;}
     const pendingAt=previous?.sentAt;
     rows.set(row.id,{...row,local:false,sentAt:pendingAt,acknowledged:previous?.acknowledged});render(rows.get(row.id),true);
     const step=row.steps?.at(-1);if(step?.at&&step.at!==previous?.steps?.at(-1)?.at)timings.push({id:row.id,phase:'stage_visible:'+step.stage,elapsed_ms:Math.max(0,Date.now()-step.at*1000)});

@@ -50,8 +50,6 @@ def reference(editor, target):
     old = '\n'.join(row['old'] for row in selected)
     if not old.strip() or len(old) > 4000:
         raise GuardError('表格引用限1—4000字，请缩小范围')
-    from ..model_content import check_scope
-    check_scope(old)
     return {'id': uuid.uuid4().hex, 'kind': 'table', 'document_id': editor.document_id, 'source_version': editor.source_version,
             'session_epoch': editor.floating.epoch, 'draft_revision': editor.revision, 'table_id': 'table-' + str(tables.index(table)),
             'cells': selected, 'old': old, 'context': old, 'text_sha256': sha(old.encode('utf8')), 'coordinate': 'UTF-16 code units',

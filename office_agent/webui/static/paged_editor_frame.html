@@ -10,12 +10,14 @@
   <title>本机分页文档</title>
 </head>
 <body>
-  <div id="format-bar" aria-label="文档格式工具栏">
-    <label>样式 <select id="paragraph-style" aria-label="段落样式"></select></label>
-    <div id="engine-toolbar"></div>
-    <label>段后 <select id="paragraph-after" aria-label="段后间距"><option value="0">0 磅</option><option value="6">6 磅</option><option value="12">12 磅</option></select></label>
-    <button id="paragraph-layout" type="button" aria-label="段落布局" title="段落布局：间距与缩进"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h12M8 10h12M8 15h12M8 20h12M2 8l3 3-3 3"/></svg></button>
-    <span id="selection-format" role="status"></span>
+  <div id="format-bar">
+    <div id="format-controls" aria-label="文档格式工具栏">
+      <label>样式 <select id="paragraph-style" aria-label="段落样式"></select></label>
+      <div id="engine-toolbar"></div>
+      <label>段后 <select id="paragraph-after" aria-label="段后间距"><option value="0">0 磅</option><option value="6">6 磅</option><option value="12">12 磅</option></select></label>
+      <button id="paragraph-layout" type="button" aria-label="段落布局" title="段落布局：间距与缩进"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h12M8 10h12M8 15h12M8 20h12M2 8l3 3-3 3"/></svg></button>
+      <span id="selection-format" role="status"></span>
+    </div>
   </div>
   <div id="table-body-actions" role="toolbar" aria-label="表格与正文" hidden>
     <span>表格</span>

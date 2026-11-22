@@ -169,7 +169,7 @@ class PluginConnections:
         return ''
 
     def runtime(self, row):
-        return dict(row, _profile_dir=self.profile, _resolve_secret=self.secret)
+        return dict(row, _profile_dir=self.profile, _settings_root=self.settings_root, _resolve_secret=self.secret)
 
     def _disconnect(self, row):
         from . import plugin_transport

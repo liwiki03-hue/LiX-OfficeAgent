@@ -26,7 +26,8 @@ pre, code, .tool-output { font-family: var(--font-mono); font-size: var(--fs-cap
 #floating-document { margin: 0; padding: 24px; border-radius: 0; background: var(--bg); }
 #floating-conversation { border-left: 1px solid var(--border); padding: 20px; gap: 0; background: var(--bg); }
 #floating-conversation-heading { display: flex; align-items: center; gap: 8px; padding: 0 0 20px; font-size: var(--fs-body); }
-#floating-conversation-heading > button:last-child { margin-inline-start: auto; }
+#floating-conversation-heading > #floating-access { margin-inline-start: auto; }
+#floating-conversation-heading > strong { flex: 0 0 auto; }
 #floating-latest:not([hidden]) { display: inline-flex; align-items: center; gap: 4px; }
 .agent-icon-chevron-down { --agent-icon: url('vendor/lucide/chevron-down.svg'); }
 .floating-history-turn > h4 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -47,6 +48,7 @@ pre, code, .tool-output { font-family: var(--font-mono); font-size: var(--fs-cap
 #floating-models #simple-model-menu { min-width: 0; }
 #floating-models #simple-model-menu > summary { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 6px; min-height: 32px; border: 0; background: transparent; border-radius: 6px; font-size: var(--fs-caption); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #floating-models #simple-model-menu > summary::after { content: ''; flex: 0 0 12px; width: 12px; height: 12px; background: currentColor; mask: url('vendor/lucide/chevron-down.svg') center / contain no-repeat; }
+#floating-models #simple-model-menu > summary > span { overflow: hidden; text-overflow: ellipsis; }
 #floating-models #simple-model-state { font-size: var(--fs-caption); max-width: 104px; line-height: 1.4; flex-shrink: 0; }
 #floating-models .simple-menu-body { width: min(360px,calc(100vw - 32px)); max-height: min(480px,65dvh); border-radius: 12px; box-shadow: 0 12px 36px #0002; }
 #floating-composer .floating-actions { flex-wrap: nowrap; gap: 6px; margin-left: auto; }

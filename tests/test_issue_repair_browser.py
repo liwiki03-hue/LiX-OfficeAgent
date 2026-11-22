@@ -33,7 +33,7 @@ def test_compact_menu_bounds_and_idle_poll_budget(floating_browser, monkeypatch)
     for width, height in [(360, 520), (420, 800), (520, 820)]:
         page.set_viewport_size({'width': width, 'height': height})
         page.locator('#floating-root header > details > summary').click()
-        menu = page.locator('.floating-menu')
+        menu = page.locator('#floating-root > header .floating-menu')
         box = menu.bounding_box(); composer = page.locator('#floating-input').bounding_box()
         assert box and box['x'] >= 0 and box['x'] + box['width'] <= width and box['y'] + box['height'] <= min(height, composer['y'])
         assert page.locator('#floating-send').bounding_box()['y'] < height

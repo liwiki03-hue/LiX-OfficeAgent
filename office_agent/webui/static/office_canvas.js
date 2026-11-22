@@ -766,6 +766,11 @@
     surface.oncopy=event=>{if(view?.kind!=='xlsx'||!selected||busy)return;event.preventDefault();guarded(copyRange).catch(error=>notice(error.message));};
     make('nav','',main,'canvas-items').setAttribute('aria-label','工作表或幻灯片');
     work.append($('floating-conversation'));$('floating-conversation').append($('floating-controls'));
+    const collapse=button('收起对话侧栏',$('floating-conversation-heading'),()=>{
+      root.classList.remove('office-ai-open');
+      const toggle=$('canvas-toggle-ai');toggle.setAttribute('aria-expanded','false');toggle.focus();
+    },'canvas-close-ai','panel-right-close');
+    collapse.setAttribute('aria-controls','floating-conversation');
     const aiPanel=make('section','',$('floating-scroll'),'canvas-ai-panel');aiPanel.setAttribute('aria-label','当前草稿修改建议');
     make('p','交互编辑后请保存副本，再选择该副本交给Agent继续。当前版本不把手工草稿自动发送给模型。',$('floating-controls'),'canvas-ai-note').hidden=true;
     const footer=make('footer','',root,'canvas-footer');make('span','正在打开',footer,'canvas-state').setAttribute('role','status');
@@ -788,7 +793,7 @@
     for(const node of document.querySelectorAll('dialog[data-canvas-document]'))node.close();
     const root=$('floating-root');if(!root?.classList.contains('office-active'))return;
     $('floating-body')?.append($('floating-conversation'));(matchMedia('(max-width:899px)').matches?root:$('floating-conversation'))?.append($('floating-controls'));
-    for(const id of ['canvas-toolbar','canvas-work','canvas-footer','canvas-feedback','canvas-ai-note','canvas-ai-panel'])$(id)?.remove();
+    for(const id of ['canvas-toolbar','canvas-work','canvas-footer','canvas-feedback','canvas-ai-note','canvas-ai-panel','canvas-close-ai'])$(id)?.remove();
     root.classList.remove('office-active','office-ai-open');
   }
   async function update(next) {
@@ -812,7 +817,10 @@
     if(!/^(?:进度|到哪|停止|停一下)/.test(text)&&selected)await referenceAI(false);
     return {revision:state.draft_revision,reference:(state?.ai?.read_reference||state?.ai?.reference)?.id||null};
   }
-  window.OfficeNative={active,update,beforeSwitch,close,submit,messageContext};
+  window.OfficeNative={active,update,beforeSwitch,close,submit,messageContext,referenceSelection:()=>{
+    if(!selected)throw Error('请先从主文档选中单元格、范围或幻灯片文字。');
+    return referenceAI();
+  }};
   window.addEventListener('officeauth:unauthenticated',close);
   window.addEventListener('beforeunload',event=>{if(active()&&(state?.dirty||pendingField)){event.preventDefault();event.returnValue='';}});
 })();

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 from urllib.parse import parse_qsl, urlsplit
+from urllib.request import proxy_bypass
 
 import httpx
 from mcp import ClientSession, StdioServerParameters
@@ -22,6 +23,7 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 from ..mcp_reads import McpReadRegistry
+from ..network import options as network_options
 from . import plugin_oauth
 from .plugin_oauth import PluginError, disconnect
 
@@ -104,9 +106,19 @@ class _LimitedStream(httpx.AsyncByteStream):
 class _Transport(httpx.AsyncBaseTransport):
     def __init__(self, config, cancelled, origins):
         self.config = config
-        self.pools = {target: httpx.AsyncHTTPTransport(trust_env=False, retries=1, limits=httpx.Limits(max_connections=4,
-                      max_keepalive_connections=2)) for target in origins}
         self.endpoint = origin(config['url'])
+        self.proxy = None
+        if (config['url'].rstrip('/') == LEARN and config.get('auth', 'none') == 'none'
+                and not config.get('private')):
+            try:
+                network = network_options(config.get('_settings_root'), default='auto')
+                if network.mode != 'auto' or not proxy_bypass(self.endpoint[1]):
+                    self.proxy = network.route(LEARN)
+            except (ValueError, OSError):
+                raise PluginError('请核对 Microsoft Learn 的网络代理设置。') from None
+        self.pools = {target: httpx.AsyncHTTPTransport(proxy=self.proxy if target == self.endpoint else None,
+                      trust_env=False, retries=1, limits=httpx.Limits(max_connections=4,
+                      max_keepalive_connections=2)) for target in origins}
         self.origins = origins
         self.allow_private = config.get('private') is True and config.get('source', '') in ('', None, 'manual')
         self.cancelled = cancelled
@@ -126,7 +138,11 @@ class _Transport(httpx.AsyncBaseTransport):
             if not addresses or (not self.allow_private or target != self.endpoint) and any(not ip.is_global or ip.is_multicast for ip in addresses):
                 raise PluginError('目录服务只能连接公网地址。私有端点请手动添加并确认。')
             pinned = next((ip for ip in addresses if ip.version == 4), addresses[0])
-            url = request.url.copy_with(host=str(pinned))
+            through_proxy = self.proxy is not None and target == self.endpoint
+            if through_proxy and (str(request.url).rstrip('/') != LEARN
+                                  or any(key in request.headers for key in ('Authorization', 'X-Api-Key'))):
+                raise PluginError('该代理连接仅用于匿名查询 Microsoft Learn。')
+            url = request.url if through_proxy else request.url.copy_with(host=str(pinned))
             for key in ('Authorization', 'X-Api-Key'):
                 if request.headers.get(key):
                     if target != self.endpoint:

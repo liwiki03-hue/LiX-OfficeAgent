@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from docx import Document
+from playwright.sync_api import expect
 import pytest
 
 from office_agent.webui.bridge import WebviewApp
@@ -78,6 +79,49 @@ def paged_browser(tmp_path,monkeypatch):
 
 def engine_frame(page):
     return next(frame for frame in page.frames if frame.url.endswith('paged_editor_frame.html'))
+
+
+def test_chat_reopens_from_format_toolbar_and_task_actions_live_by_input(paged_browser):
+    page, api, _, errors = paged_browser
+    frame = engine_frame(page)
+    reopen = page.locator('#paged-toggle-ai')
+    collapse = page.get_by_role('button', name='收起对话侧栏', exact=True)
+    more = page.locator('#paged-top summary').filter(has_text='更多')
+    expect(collapse).to_be_visible()
+    expect(reopen).to_be_hidden()
+    more.click()
+    expect(page.locator('#paged-top .floating-menu').get_by_text('紧凑对话', exact=True)).to_have_count(0)
+    expect(page.locator('#paged-top .floating-menu').get_by_text('当前任务', exact=True)).to_have_count(0)
+    more.press('Escape')
+    expect(page.locator('#floating-current-task')).to_be_hidden()
+    floating = api._floating
+    receipt = api.conversation_begin('queued-work', '先记下在文末添加一句总结，稍后处理。', floating.document['id'],
+                                     floating.document['version'], floating.paged.revision)
+    assert receipt['ok'] and receipt['turn']['intent'] == 'edit'
+
+    for width in (1138, 520):
+        page.set_viewport_size({'width': width, 'height': 760})
+        task = page.locator('#floating-current-task > summary')
+        task.click()
+        actions = page.locator('#floating-current-task-menu')
+        for name in ('重新生成方案', '继续排队要求', '新一轮要求…'):
+            expect(actions.get_by_role('button', name=name, exact=True)).to_be_visible()
+        assert actions.bounding_box()['y'] < page.locator('#floating-input').bounding_box()['y']
+        task.press('Escape')
+        expect(actions).to_be_hidden()
+        collapse.click()
+        expect(reopen).to_be_focused()
+        expect(frame.locator('body')).to_have_class('chat-sidebar-closed')
+        toolbar = frame.locator('#format-bar').bounding_box()
+        formatting = frame.locator('#format-controls').bounding_box()
+        control = reopen.bounding_box()
+        assert toolbar['y'] <= control['y'] < control['y'] + control['height'] <= toolbar['y'] + toolbar['height']
+        assert formatting['x'] + formatting['width'] <= control['x'] < width - control['width']
+        assert width - control['x'] - control['width'] <= 16
+        reopen.press('Enter')
+        expect(collapse).to_be_focused()
+        expect(reopen).to_be_hidden()
+    assert not errors
 
 
 def test_real_engine_typing_undo_format_snapshot_and_source_unchanged(paged_browser):
@@ -172,7 +216,8 @@ def test_fluid_type_sidebar_selection_and_instance_survive_resize(paged_browser)
             expected=max(14,min(16.5,11.37+.00321*width))
             assert values['font']==pytest.approx(expected,abs=.02)
             assert values['bottom']<=820 and not values['overflow']
-    page.get_by_role('button',name='AI 对话',exact=True).click();page.get_by_role('button',name='AI 对话',exact=True).click()
+    page.get_by_role('button', name='收起对话侧栏', exact=True).click()
+    page.get_by_role('button', name='展开对话侧栏', exact=True).click()
     assert engine_frame(page)._impl_obj._guid==frame_id
     assert page.locator('#floating-input').input_value()=='这条要求尚未发送，保留草稿。'
     assert len(api._floating.paged.manifest)>0 and errors==[]
@@ -182,7 +227,7 @@ def test_fluid_type_sidebar_selection_and_instance_survive_resize(paged_browser)
     assert rectangle and rectangle['y']>=0 and rectangle['y']+rectangle['height']<=440
     page.locator('#floating-input').press('Escape')
     assert page.locator('.paged-frame').evaluate('node=>!node.inert')
-    page.get_by_role('button',name='AI 对话',exact=True).click()
+    page.get_by_role('button', name='展开对话侧栏', exact=True).click()
     assert page.locator('#floating-input').input_value()=='这条要求尚未发送，保留草稿。'
 
 

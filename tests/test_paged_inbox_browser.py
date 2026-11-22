@@ -11,7 +11,6 @@ import pytest
 
 from office_agent.writes import digest
 from tests.test_paged_browser import engine_frame, paged_browser as base_paged_browser
-from tests.test_floating_browser import open_floating_menu
 
 
 @pytest.fixture
@@ -27,7 +26,7 @@ def paged_browser(tmp_path, monkeypatch):
 
 
 def start_round(page):
-    open_floating_menu(page, '当前任务')
+    page.locator('#floating-current-task > summary').click()
     page.get_by_role('button', name='新一轮要求…', exact=True).click()
     dialog = page.get_by_role('dialog', name='LiX', exact=True)
     if dialog.count():

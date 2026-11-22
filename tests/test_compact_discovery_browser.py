@@ -28,15 +28,19 @@ def test_compact_menu_history_and_public_search(floating_browser):
     page.evaluate("document.querySelectorAll('img[src]').forEach(n=>{n.src=new URL(n.getAttribute('src'),document.baseURI).href;})")
     page.evaluate("document.getElementById('floating-input').value='保留数字，精简说明'")
     summary = page.locator('#floating-root > header > details > summary')
+    menu = page.locator('#floating-root > header .floating-menu')
     page.set_viewport_size({'width':520, 'height':800})
     summary.click()
-    assert page.locator('.floating-menu > section, .floating-menu > details').count() == 4
-    assert page.locator('.floating-menu button').count() == 13
-    assert page.locator('.floating-menu button').first.bounding_box()['height'] <= 40
+    assert menu.locator(':scope > section, :scope > details').count() == 3
+    assert menu.get_by_text('紧凑对话', exact=True).count() == 0
+    assert menu.get_by_text('当前任务', exact=True).count() == 0
+    menu_actions = menu.locator('button').count()
+    assert menu_actions == 9
+    assert menu.locator('button').first.bounding_box()['height'] <= 40
     page.screenshot(path=str(OUT / 'menu-520.png'))
     summary.focus()
     page.keyboard.press('ArrowDown')
-    assert page.locator('.floating-menu button').first.evaluate('(n)=>n===document.activeElement')
+    assert menu.locator('button').first.evaluate('(n)=>n===document.activeElement')
     page.keyboard.press('Escape')
     assert summary.evaluate('(n)=>n===document.activeElement&&!n.parentElement.open')
     page.set_viewport_size({'width':1120, 'height':800})
@@ -84,4 +88,4 @@ def test_compact_menu_history_and_public_search(floating_browser):
     assert not [name for name in calls if name in {'confirm_skill_change','floating_submit','confirm_image_generation'}]
     (OUT / 'BROWSER.json').write_text(json.dumps({'queries':queries,'page_errors':errors,'native':False,
         'real_remote':False,'fixture':'controlled skills.sh response through real host service',
-        'menu_actions':13,'duplicate_requests':0,'writes':0}, ensure_ascii=False, indent=2), 'utf-8')
+        'menu_actions':menu_actions,'duplicate_requests':0,'writes':0}, ensure_ascii=False, indent=2), 'utf-8')

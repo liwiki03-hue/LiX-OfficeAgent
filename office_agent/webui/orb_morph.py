@@ -93,7 +93,7 @@ class MorphVisual:
             if self.expanded:
                 self.hide_actions(focus=True)
             else:
-                self.owner.present('compact')
+                self.owner.restore()
         elif event.KeyCode == keys.Escape and self.expanded:
             event.Handled = event.SuppressKeyPress = True
             self.hide_actions(focus=True)
@@ -181,7 +181,7 @@ class MorphVisual:
     def _create_actions(self):
         from System.Windows.Forms import AccessibleRole, FormBorderStyle, FormStartPosition
         actions = [('选择文档', 'folder-open', self.owner.choose),
-                   ('返回工作区', 'message-square', lambda: self.owner.present('compact')),
+                   ('返回工作区', 'message-square', self.owner.restore),
                    ('历史记录', 'history', self.owner.recent), ('设置', 'settings', self.owner.settings)]
         descriptions = ('选择文档：打开本地文件选择窗口', '返回工作区：打开助手对话与文档工作区',
                         '历史记录：查看最近文档与历史任务', '设置：管理模型接口与应用偏好')

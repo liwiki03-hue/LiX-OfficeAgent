@@ -307,7 +307,7 @@ class SkillsStore:
         return sorted(entries)
 
     @_public
-    def catalog(self):
+    def catalog(self, *, include_sha=False):
         self._check()
         enabled, _ = self._state()
         result = []
@@ -322,9 +322,12 @@ class SkillsStore:
                 if not path.exists():
                     _read(path, True)  # still rejects dangling links/reparse parents
                     continue
-                metadata, _ = _parse(_read(path).data)
+                file = _read(path)
+                metadata, _ = _parse(file.data)
                 identifier = source + ":" + directory.name
                 result.append({"id": identifier, **metadata, "source": source, "enabled": enabled.get(identifier, True)})
+                if include_sha:
+                    result[-1]['sha256'] = file.stamp[-1]
                 if len(result) > MAX_SKILLS:
                     raise SkillsError("skills_capacity")
         self._check()
