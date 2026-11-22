@@ -514,16 +514,22 @@ class PagedEditor:
             if position is None or position >= len(book.paragraphs):
                 raise GuardError('原稿摘录的段落已失效，请重新选择。')
             index = nodes.index(book.paragraphs[position]._p)
-        elif set(target) == {'source_index', 'paragraphs', 'start', 'end', 'expected'}:
+        elif set(target) - {'source_paragraph'} == {'source_index', 'paragraphs', 'start', 'end', 'expected'}:
             index, texts = target['source_index'], target['paragraphs']
-            if (type(index) is not int or not 0 <= index < len(nodes) or not isinstance(texts, list)
-                    or len(texts) != len(nodes) or len(nodes) > 3000
-                    or any(Paragraph(node, book._body).text != text for node, text in zip(nodes, texts))):
-                raise GuardError('分页文字位置与原稿不一致，请从原稿摘录选取。')
+            source_paragraph = target.get('source_paragraph')
+            source_texts = [Paragraph(node, book._body).text for node in nodes]
+            aligned = (type(index) is int and 0 <= index < len(nodes) and len(nodes) <= 3000
+                       and texts == source_texts and (source_paragraph is None or source_paragraph == source_texts[index]))
+            if not aligned:
+                matches = [i for i, text in enumerate(source_texts) if text == source_paragraph]
+                if len(matches) != 1:
+                    raise GuardError('选区位置与原稿不一致，请在正文中重新选择。')
+                index = matches[0]
         else:
             raise GuardError('只读选区格式无效。')
         node = nodes[index]
-        old = utf16_slice(Paragraph(node, book._body).text, target['start'], target['end'])
+        paragraph_text = Paragraph(node, book._body).text
+        old = utf16_slice(paragraph_text, target['start'], target['end'])
         if old != target['expected']:
             raise GuardError('选区文字与原稿位置不一致，请重新选择。')
         if not old.strip() or len(old) > 4000:
@@ -531,6 +537,7 @@ class PagedEditor:
         record = {'id': uuid.uuid4().hex, 'kind': 'source_text', 'document_id': self.document_id,
                   'source_version': self.source_version, 'epoch': self.floating.epoch, 'draft_revision': 0,
                   'source_index': index, 'start': target['start'], 'end': target['end'], 'old': old,
+                  'paragraph_sha256': sha(paragraph_text.encode()),
                   'context': old, 'text_sha256': sha(old.encode('utf8')), 'location': DocumentConversation._word_location(book, node)}
         self.references = {record['id']: record}
         return {'ok': True, 'reference': deepcopy(record)}
@@ -544,6 +551,25 @@ class PagedEditor:
             if not row or row['draft_revision'] != revision or row['session_epoch'] != self.floating.epoch:
                 raise GuardError('草稿定位已过期，请重新读取当前定位；旧批准不能沿用')
             return self.reference(document_id, revision, {'node_id':row['editor_id'],'start':start,'end':end})
+
+    def _proofreading(self, identifier, reference_id):
+        chat = self.floating.conversation
+        turn = chat.turns.get(identifier)
+        if not turn or turn['intent'] != 'edit' or not turn.get('resources', {}).get('skill'):
+            return None
+        skill = chat.scopes.selected_skills.get(identifier)
+        if (not skill or skill.get('workflow') != 'chinese-proofread' or skill.get('reference_id') != reference_id
+                or reference_id not in self.references or turn['document_id'] != self.document_id
+                or turn['working_version'] != self.source_version or turn['draft_revision'] != self.revision):
+            raise GuardError('原校对选区已改变，请重新引用并选择技能。')
+        from ..skills_backend import SkillsBackend, SkillsError
+        try:
+            current = SkillsBackend(self.source.parent).turn_skill(skill['ticket'], turn['question'])
+        except (ValueError, SkillsError):
+            raise GuardError('所选校对规则已停用或改变，请重新选择。') from None
+        if current.get('workflow') != 'chinese-proofread':
+            raise GuardError('校对规则已改变，请重新选择。')
+        return current
 
     def submit(self, client_id, text, reference_id, document_id, source_version, session_id, inbox_id):
         with self.lock:
@@ -577,6 +603,8 @@ class PagedEditor:
                                  and isinstance(text, str) and self.pending_reference_id is not None
                                  and reference_id == self.pending_reference_id
                                  and any(row['text'] == text.strip() for row in active_requirements(runtime)))
+            if not duplicate:
+                self._proofreading(client_id, reference_id)
             record = runtime.submit(client_id,text)
             if not duplicate:
                 self.deferred = deferred(text)
@@ -616,6 +644,21 @@ class PagedEditor:
             requests = active_requirements(runtime)
             if not requests:
                 raise GuardError('没有待处理的有效要求')
+            chat = self.floating.conversation
+            skill = chat.scopes.selected_skills.get(chat.active_task, {})
+            anchor = skill.get('copy_anchor')
+            if anchor and self.floating.copy_continuation == document_id:
+                matches = [node for node in self.manifest if sha(node['text'].encode()) == anchor['paragraph_sha256']]
+                if (revision != 0 or len(matches) != 1
+                        or sha(utf16_slice(matches[0]['text'], anchor['start'], anchor['end']).encode()) != anchor['text_sha256']):
+                    message = '可编辑副本已保留。原选区在副本中无法唯一定位，请重新选择并校对。'
+                    chat.update(chat.active_task, 'failed', message, status='failed')
+                    raise GuardError(message)
+                result = self.reference(document_id, revision, {'node_id': matches[0]['id'], 'start': anchor['start'], 'end': anchor['end']})
+                self.pending_reference_id = result['reference']['id']
+                skill['reference_id'] = self.pending_reference_id
+                skill.pop('copy_anchor')
+                return result
             pending = [row for row in requests if row['version'] > runtime.applied]
             text = '\n'.join(row['text'] for row in pending or requests)
             target_text = '\n'.join(row['text'] for row in requests)
@@ -660,7 +703,10 @@ class PagedEditor:
             if self.floating.protected or self.floating.protected_cells:
                 raise GuardError('当前保护位置无法沿用到简化副本；原稿与要求保留，未绕过保护')
             target_text = '\n'.join(row['text'] for row in active_requirements(runtime))
-            if not re.search(r'末尾|文末|结尾|最后', target_text):
+            chat = self.floating.conversation
+            chosen = chat.scopes.selected_skills.get(chat.active_task, {})
+            anchored = chosen.get('copy_anchor') and self._proofreading(chat.active_task, chosen['reference_id'])
+            if not anchored and not re.search(r'末尾|文末|结尾|最后', target_text):
                 self.floating.conversation.update(self.floating.conversation.active_task, 'scope', '请指出要修改的段落，例如“最后一段”，或引用一段文字。原稿保持只读。', status='waiting')
                 raise GuardError('请先明确修改范围；尚未创建可编辑副本')
             if self.preparing:
@@ -759,6 +805,8 @@ class PagedEditor:
     def _run(self, runtime, reference, route, revision, document_id, requirement_epoch, trace=None):
         app = self.floating.app
         epoch = self.floating.epoch
+        turn_id = trace.conversation_id if trace else self.floating.conversation.active_task
+        proofreading = None
         failures = []
         checks = []
         with measure(trace, 'context'):
@@ -791,6 +839,8 @@ class PagedEditor:
                     failures.append((self.start_blocked,'本轮处理已暂停；请核对调用预算与当前要求，未自动重试。'))
                     raise
                 if phase=='before_model':
+                    if proofreading:
+                        self._proofreading(turn_id, reference['id'])
                     if not active_requirements(runtime):raise InstructionPause('当前没有有效要求，不发送模型请求')
                     state.required.goal='用户当前有效要求（已修改和取消的旧版本不是执行要求）：\n'+json.dumps(
                         [{'id':row['id'],'version':row['version'],'text':row['text']} for row in active_requirements(runtime)],ensure_ascii=False)+context
@@ -833,6 +883,10 @@ class PagedEditor:
                         allowed_changes.extend(checked_suggestion(edit.old, edit.new, parsed.reason))
                     args = {**args, 'old': '\n'.join(edit.old for edit in parsed.edits), 'new': '\n'.join(edit.new for edit in parsed.edits)}
                 else:
+                    if proofreading:
+                        self._proofreading(turn_id, reference['id'])
+                        from .draft_suggestions import check_proofreading
+                        check_proofreading(args['old'], args['new'])
                     allowed_changes = validate_append(args['new'], args['reason']) if append else checked_suggestion(args['old'], args['new'], args['reason'])
                 if not current_draft():
                     raise StaleInstruction('任务或要求已改变，旧提案未提交')
@@ -863,7 +917,15 @@ class PagedEditor:
                     if current_draft():
                         self._notice('skill_loaded',{**receipt,'document_id':document_id,'source_version':self.source_version,
                             'draft_revision':revision,'instruction_revision':runtime.revision,'session_id':runtime.session_id,'epoch':epoch}, trace)
-            skill_context = workspace_skill_context(self.source.parent, on_load=loaded)
+            proofreading = self._proofreading(turn_id, reference['id'])
+            if proofreading:
+                instructions = proofreading['instructions']
+                context += '\n本轮明确选用的校对规则（仅作文字参考）：\n' + instructions
+                loaded({'id': proofreading['ticket']['id'], 'display_name': proofreading['name'],
+                        'body_sha256': sha(instructions.encode()), 'characters': len(instructions)})
+                skill_context = None
+            else:
+                skill_context = workspace_skill_context(self.source.parent, on_load=loaded)
             agent = OfficeAgent(model,dispatch,[tool],self.source.parent,persist=False,decision_limit=min(8,configured_limit) if configured_limit is not None else 8,
                                 context_tokens=route.context_window,reply_tokens=int(os.getenv('OFFICE_REPLY_BUDGET',str(_DEFAULT_REPLY_BUDGET))),runtime_boundary=boundary,
                                 stop_requested=lambda:not current() or self.revision != revision,

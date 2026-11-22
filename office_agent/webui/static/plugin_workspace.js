@@ -2,6 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const api = () => window.pywebview?.api;
+  const openAlex = 'https://mcp.openalex.org/mcp';
   const status = text => { $('plugin-status').textContent = text; };
   const make = (tag, text, parent) => {
     const element = document.createElement(tag);
@@ -189,7 +190,7 @@
       const info=make('div','',line);
       make('strong',item.name,info);make('small',item.description,info);
       make('small',item.source+' · '+(item.url?'远程 HTTPS':'需本地安装')+' · '+item.version,info);
-      if(item.url)button('添加',line,event=>detail({name:item.name,url:item.url,source:item.source},event.currentTarget,item));
+      if(item.url)button('添加',line,event=>detail({name:item.name,url:item.url,source:item.source,auth:item.url===openAlex?'oauth':'none'},event.currentTarget,item));
       else for(const pkg of item.packages)make('small',[pkg.name,pkg.version,pkg.registry,pkg.runtime].filter(Boolean).join(' · '),info);
     }
     $('plugin-more').hidden=!cursor;
@@ -271,6 +272,10 @@
   });
   $('plugin-search').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();search();}});
   $('plugin-more').onclick=()=>search(true);
+  $('plugin-openalex').onclick=event=>{
+    const existing=rows.find(row=>row.url===openAlex&&row.auth==='oauth');
+    detail(existing||{name:'OpenAlex',url:openAlex,auth:'oauth'},event.currentTarget);
+  };
   $('plugin-manual').onclick=event=>detail(null,event.currentTarget);
   document.addEventListener('officesettings:tab',event=>{
     if(event.detail.tab==='tab-plugins')refresh().catch(e=>status(e.message));

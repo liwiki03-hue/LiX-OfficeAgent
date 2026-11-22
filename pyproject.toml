@@ -1,6 +1,6 @@
 [project]
 name = "agent-quickstart"
-version = "0.7.16"
+version = "0.7.17"
 description = "LiX Windows 桌面文档编辑助手"
 license = "AGPL-3.0-only"
 requires-python = ">=3.10"

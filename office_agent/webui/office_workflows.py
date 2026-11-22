@@ -9,6 +9,15 @@ WORKFLOW = 'report-polish'
 VERSION = '1.0.0'
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = 'office_agent/assets/skills/report-polish/SKILL.md'
+NAMES = {
+    WORKFLOW: '技术报告润色',
+    'chinese-proofread': '中文技术校对',
+    'citation-check': '参考文献核对',
+}
+UPSTREAM = {
+    'chinese-proofread': 'https://github.com/Fenng/Tech-Doc-Style-Chinese/blob/b119d01c9bb7cd132b3c62fafdff34227c4410d1/SKILL.md',
+    'citation-check': 'https://github.com/K-Dense-AI/scientific-agent-skills/blob/ec59a29a03d5c40f73ab40878df04860bc00e876/skills/citation-management/SKILL.md',
+}
 
 
 def read_asset(name, limit):
@@ -30,34 +39,59 @@ def read_asset(name, limit):
 
 
 def candidate():
-    original = read_asset(SOURCE,32768)
+    return workflow_package(WORKFLOW)
+
+
+def workflow_package(workflow):
+    display = NAMES[workflow]
+    source = f'office_agent/assets/skills/{workflow}/SKILL.md'
+    original = read_asset(source,32768)
     license_data = read_asset('LICENSE',45000)
     metadata,body = parse_public(original)
-    if metadata['name']!='lix-report-polish' or metadata.get('license')!='AGPL-3.0-only' or b'GNU AFFERO GENERAL PUBLIC LICENSE' not in license_data:
+    if metadata['name']!='lix-'+workflow or metadata.get('license')!='AGPL-3.0-only' or b'GNU AFFERO GENERAL PUBLIC LICENSE' not in license_data:
         raise ValueError('workflow_asset_invalid')
+    if workflow in UPSTREAM:
+        license_data += b'\n' + read_asset(f'office_agent/assets/skills/{workflow}/LICENSE.upstream.txt', 6000)
     source_sha = hashlib.sha256(original).hexdigest()
-    origin = {'provider':'lix','workflow_id':WORKFLOW,'version':VERSION,'display_name':'技术报告润色','repository':'LiX','path':SOURCE,
+    origin = {'provider':'lix','workflow_id':workflow,'version':VERSION,'display_name':display,'repository':'LiX','path':source,
               'source_sha256':source_sha,'original_body_sha256':hashlib.sha256(body.encode()).hexdigest(),
-              'license':'AGPL-3.0-only','url':'LiX 内置工作流 / '+WORKFLOW+' / '+VERSION,
+              'license':'AGPL-3.0-only','url':'LiX 内置工作流 / '+workflow+' / '+VERSION,
               'scope':'text-reference-only','original_description':metadata['description'],
               'manifest':{'SKILL.md':source_sha,'@license/LICENSE':hashlib.sha256(license_data).hexdigest()},
               'declarations':{'license':'AGPL-3.0-only','supported_host':'明确选区的文档建议；保存沿原事务'}}
+    if workflow in UPSTREAM:
+        origin['url'] = UPSTREAM[workflow]
+        origin['declarations']['upstream_license'] = 'MIT'
+        origin['declarations']['supported_host'] = 'Word 当前文字选区' if workflow == 'chinese-proofread' else 'Crossref 只读题录核对'
     content = pack(metadata,body,origin,original,license_data.decode('utf-8'))
-    return {'name':metadata['name'],'description':metadata['description'],'display':{'display_name':'技术报告润色'},
+    return {'name':metadata['name'],'description':metadata['description'],'display':{'display_name':display},
             'origin':origin,'body':body,'license_text':license_data.decode('utf-8'),'manifest':origin['manifest'],
             'compatible':True,'blockers':[],'resources':{},'progressive_available':False,'icon_status':'category',
-            'slug':'lix-report-polish','compatibility_note':'LiX原创文字工作流；只提供参考，不新增工具或自动修改文件。',
+            'slug':metadata['name'],'compatibility_note':origin['declarations']['supported_host'],
             '_content':content}
 
 
+def reviewed_workflow(ticket):
+    for key in UPSTREAM:
+        if ticket['id'] == 'user:lix-' + key:
+            expected = hashlib.sha256(workflow_package(key)['_content'].encode()).hexdigest()
+            if ticket['sha256'] == expected:
+                return key
+    return None
+
+
 def catalog(query=''):
-    package = candidate()
-    package_sha = hashlib.sha256(package['_content'].encode()).hexdigest()
-    item = {'candidate_id':hashlib.sha256(('lix:'+WORKFLOW+'@'+VERSION+':'+package_sha).encode()).hexdigest()[:32],
-            'name':package['name'],'display_name':'技术报告润色','description':package['description'],
-            'source':'LiX','provider':'lix','skill_id':WORKFLOW,'path':SOURCE,'version':VERSION,
-            'source_sha256':package['origin']['source_sha256'],'package_sha256':package_sha,'license':'AGPL-3.0-only',
-            'url':package['origin']['url'],'category':'writing','compatibility':'host_workflow',
-            'reason':'LiX提供；用于明确选区的受约束润色，安装与写入分别确认。'}
-    matches = not query or query.casefold() in (' '.join(str(value) for value in item.values())).casefold()
-    return {'ok':True,'provider':'LiX 工作流','query':query,'items':[item] if matches else [],'network_requests':0}
+    items = []
+    for workflow, display in NAMES.items():
+        package = candidate() if workflow == WORKFLOW else workflow_package(workflow)
+        package_sha = hashlib.sha256(package['_content'].encode()).hexdigest()
+        origin = package['origin']
+        item = {'candidate_id':hashlib.sha256(('lix:'+workflow+'@'+VERSION+':'+package_sha).encode()).hexdigest()[:32],
+                'name':package['name'],'display_name':display,'description':package['description'],
+                'source':'LiX','provider':'lix','skill_id':workflow,'path':origin['path'],'version':VERSION,
+                'source_sha256':origin['source_sha256'],'package_sha256':package_sha,'license':'AGPL-3.0-only',
+                'url':origin['url'],'category':'writing','compatibility':'host_workflow',
+                'reason':package['compatibility_note']}
+        if not query or query.casefold() in ' '.join(str(value) for value in item.values()).casefold():
+            items.append(item)
+    return {'ok':True,'provider':'LiX 工作流','query':query,'items':items,'network_requests':0}

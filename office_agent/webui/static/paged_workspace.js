@@ -194,44 +194,24 @@
       }
     }finally{applying=false;}
   }
-  function selectSourceExcerpt(documentId){
-    const blocks=(host.view?.blocks||[]).filter(block=>block.locator_id&&!block.text_truncated&&block.text?.trim());
-    dialog('从原稿摘录引用',node=>{
-      if(blocks.length){
-        make('p','选择段落，再在文本框中选中要提问的文字。',node);
-        const picker=make('select','',node);picker.setAttribute('aria-label','原稿段落');
-        const area=make('textarea','',node);area.setAttribute('aria-label','原稿文字');area.readOnly=true;area.rows=5;
-        for(const block of blocks)make('option','正文第'+(block.paragraph_index+1)+'段 · '+block.text.slice(0,32),picker);
-        const show=()=>{area.value=blocks[picker.selectedIndex].text;};picker.onchange=show;show();
-        const message=make('p','',node);message.setAttribute('role','status');
-        button('引用所选文字',node,async()=>{
-          if(area.selectionStart===area.selectionEnd){message.textContent='请先在文本框中选中文字。';area.focus();return;}
-          try{
-            const target={source_locator_id:blocks[picker.selectedIndex].locator_id,start:area.selectionStart,end:area.selectionEnd,
-              expected:area.value.slice(area.selectionStart,area.selectionEnd)};
-            const result=await call('paged_reference',documentId,0,target);
-            showReference(result.reference);node.close();
-          }catch(error){message.textContent=error.message;}
-        });
-      }else make('p','当前摘录没有可核对的完整段落。请在分页正文的同一段内选中文字后引用。',node);
-      button('关闭',node,()=>node.close());
-    });
-  }
   async function capture(allowParagraph=false,table=false){
     if(!opened)throw Error('编辑器仍在打开');
     const feedbackVersion=errorGeneration;
     if(!lastState.editable){
       const documentId=host.document.id, mine=generation;
-      try{
-        const target=await adapter.request('selection',{source:true});
-        if(mine!==generation)return;
-        if(!Number.isInteger(target.source_index))throw Error('只读引用需要单个段落内的文字');
-        showReference((await call('paged_reference',documentId,0,target)).reference);
-      }catch(error){if(!error.stale&&mine===generation)selectSourceExcerpt(documentId);}
+      const target=await adapter.request('selection',{source:true});
+      if(mine!==generation)return;
+      showReference((await call('paged_reference',documentId,0,target)).reference);
+      if(feedbackVersion===errorGeneration)notice('');
       return;
     }
-    await sync();const target=await adapter.getSelectionReference(allowParagraph,table);
-    const result=await call('paged_reference',host.document.id,adapter.revision,target);
+    const mine=generation, current=adapter, documentId=host.document.id, revision=current.revision;
+    const target=await current.getSelectionReference(allowParagraph,table);
+    if(mine!==generation)return;
+    await sync();
+    if(mine!==generation)return;
+    if(revision!==current.revision)throw Error('草稿已更新，请在正文中重新选择。');
+    const result=await call('paged_reference',documentId,revision,target);
     showReference(result.reference);
     if(feedbackVersion===errorGeneration)notice('');
   }
@@ -515,7 +495,11 @@
     collapse.setAttribute('aria-expanded','true');
     $('floating-conversation').append($('floating-controls'));
     const referenceBar=make('div','',$('floating-controls'),'paged-reference-bar');
-    tool('引用选区','quote',referenceBar,()=>capture(),'paged-reference');
+    const referenceButton=tool('引用选区','quote',referenceBar,async()=>{
+      await capture();
+      $('floating-input').focus({preventScroll:true});
+    },'paged-reference');
+    referenceButton.addEventListener('mousedown',event=>{if(event.button===0)event.preventDefault();});
     const chip=make('div','',referenceBar,'paged-reference-chip');chip.hidden=true;
     const referenceDetail=make('details','',chip,'paged-reference-detail');
     make('summary','',referenceDetail,'paged-reference-state');
@@ -698,7 +682,8 @@
     });
   }
   const requireAdapter=()=>{if(!opened||!adapter)throw Error('编辑器尚未打开');return adapter;};
-  async function messageContext(text){
+  async function messageContext(text,chosenSkill){
+    if(chosenSkill==='user:lix-chinese-proofread'&&lastState?.editable&&!reference&&!referenceDismissed)await capture();
     if(lastState&&!lastState.editable)return {revision:lastState.draft_revision,reference:reference?.kind==='source_text'?reference.id:null};
     const deadline=performance.now()+10000;
     while(adapter&&!opened&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));

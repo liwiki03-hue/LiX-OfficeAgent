@@ -151,7 +151,7 @@ def edited_text_excerpt(before, after, limit):
 
 
 EDIT_REQUEST = re.compile(
-    r'改成|改为|替换|换进去|删(?:除|掉)|添(?:加|上)|增(?:加|补|添)|补充|追加|插入|重写|改写|润色|压(?:缩|成)|扩写|缩写|精简|修改|改一下|直接改(?:吧|。|$)|保存(?:为|副本)|'
+    r'改得(?:更|再)?(?:简洁|简短|清晰|通顺)|改简洁|改成|改为|替换|换进去|删(?:除|掉)|添(?:加|上)|增(?:加|补|添)|补充|追加|插入|重写|改写|润色|压(?:缩|成)|扩写|缩写|精简|修改|改一下|直接改(?:吧|。|$)|保存(?:为|副本)|'
     r'\b(?:replace|rewrite|append|insert|delete|edit)\b', re.I
 )
 NEGATED_EDIT = re.compile(
@@ -181,7 +181,7 @@ def intent(text, editing=False):
         value = '，'.join(clause for clause in clauses if clause and not NEGATED_EDIT.search(clause) and not edit_history_question(clause))
         if not EDIT_REQUEST.search(value):
             return 'read'
-    if re.search(r'直接在(?:这里|聊天|对话)(?:里)?回答|只(?:需|要)?(?:解释|回答|分析|点评)|(?:不(?:用|要|需)|无需)(?:修改|改动|编辑|写入)(?:文档|文件|原文|内容|[，。；!?？]|$)|给我.{0,8}(?:种|个).{0,8}(?:写法|版本|候选)', value):
+    if re.search(r'直接在(?:这里|聊天|对话)(?:里)?回答|只(?:需|要)?(?:解释|回答|分析|点评|给(?:出)?(?:建议|意见))|(?:不(?:用|要|需)|无需)(?:修改|改动|编辑|写入)(?:文档|文件|原文|内容|[，。；!?？]|$)|给我.{0,8}(?:种|个).{0,8}(?:写法|版本|候选)', value):
         return 'read'
     if re.search(r'^(?:如何|怎么)|解释|讲解|是什么|什么意思|表示什么|总结了什么|为什么|依据在哪|有什么关系', value):
         return 'read'
@@ -495,8 +495,6 @@ class DocumentConversation:
             self.binding = self.binding or uuid.uuid4().hex
             task = self.turns.get(self.active_task)
             mode = intent(text, bool(task and task['status'] not in TERMINAL))
-            if resources and mode == 'edit':
-                raise ValueError('先移除本轮参考文件或技能再修改主文档；也可以先发送一条只读问题。')
             denied = unsupported_reason(text)
             if denied or EXTRA_FILE.search(text) or wants_raw(text) and requested_read_scope(text) == 'selection':
                 mode = 'read'
@@ -527,6 +525,10 @@ class DocumentConversation:
             if plugin and not floating.document.get('ready'):
                 raise ValueError('请先完成文档读取，再发起插件查询。')
             selected_file, selected_skill = self._check_resources(resources, mode, plugin, denied, reference, stale_reference, text)
+            if selected_skill and selected_skill.get('workflow') == 'chinese-proofread':
+                if mode == 'edit' and task and task['status'] not in TERMINAL:
+                    raise ValueError('请等当前修改结束，再对新选区校对。')
+                requested = 'selection'
             if pending and not control:
                 self.pending_scope = None
                 self.update(pending['id'], 'stopped', '已开始处理新问题。', status='stopped')
@@ -610,7 +612,7 @@ class DocumentConversation:
             return None, None
         if denied:
             raise ValueError(denied)
-        if mode != 'read' or edit_history_question(question):
+        if mode not in {'read', 'edit'} or edit_history_question(question):
             raise ValueError('引用文件和显式技能用于本轮问答。请先提问，或移除选择后再修改主文档。')
         if plugin:
             raise ValueError('插件查询暂不支持同时使用所选文件或技能。请移除其中一项后发送。')
@@ -620,6 +622,8 @@ class DocumentConversation:
             raise ValueError(STALE_SELECTION)
         floating = self.floating
         selected_file, selected_skill = None, None
+        if mode == 'edit' and (set(resources) != {'skill'} or not floating.paged.active()):
+            raise ValueError('先移除本轮参考文件或技能再修改主文档；也可以先发送一条只读问题。')
         if 'file' in resources:
             if floating.canvas.active() and not reference:
                 raise ValueError('请先引用主文档中的单元格、范围或幻灯片文字，再比较参考文件。')
@@ -630,6 +634,20 @@ class DocumentConversation:
                 selected_skill = SkillsBackend(floating.app.path.parent).turn_skill(resources['skill'], question)
             except SkillsError:
                 raise ValueError('该技能已停用、移除或不可读取，请重新选择。') from None
+        workflow = (selected_skill or {}).get('workflow')
+        if mode == 'edit' and workflow != 'chinese-proofread':
+            raise ValueError('先移除本轮参考文件或技能再修改主文档；也可以先发送一条只读问题。')
+        if workflow == 'chinese-proofread':
+            if (not floating.paged.active() or not reference or reference.get('kind') in {'append', 'table'}
+                    or not self.scopes.selection_valid(reference) or reference['draft_revision'] != floating.paged.revision):
+                raise ValueError('请先在 Word 中选中并引用一段文字，再使用中文技术校对。')
+            if mode == 'edit':
+                selected_skill['reference_id'] = reference['id']
+                if reference.get('kind') == 'source_text':
+                    selected_skill['copy_anchor'] = {key: reference[key] for key in
+                                                    ('paragraph_sha256', 'text_sha256', 'start', 'end')}
+        if workflow == 'citation-check' and (selected_file or not floating.paged.active()):
+            raise ValueError('请在 Word 中单独选择参考文献核对，输入 DOI 或题录。')
         return selected_file, selected_skill
 
     def _start_read(self, row, revision, reference):
@@ -1085,6 +1103,11 @@ class DocumentConversation:
                 from .plugin_turns import answer_with_plugin
                 answer_with_plugin(self, row, reference, metrics, current)
                 return
+            from .citation_turn import answer_with_citation, prior_citation
+            turn_skill = self.scopes.selected_skills.get(identifier) or {}
+            if turn_skill.get('workflow') == 'citation-check' or (not row.get('resources') and prior_citation(self, row)):
+                answer_with_citation(self, row, reference, metrics, current)
+                return
             if edit_history_question(row['question']):
                 request = self.read_requests.get(identifier)
                 with metrics.span('context'):
@@ -1101,7 +1124,7 @@ class DocumentConversation:
                 only_selection = resolution == 'selection' or not resolution and requested_read_scope(row['question']) == 'selection' and not selected_table
                 material, references, evidence = self._material(row['question'], reference, with_sources=True,
                                                                read_binding=request[1] if request else None,
-                                                               force_selection=bool(only_selection))
+                                                               force_selection=bool(only_selection or turn_skill.get('workflow') == 'chinese-proofread'))
                 with self.lock:
                     selected = self.scopes.selected_files.get(identifier)
                     attachment = self.scopes.attachments.get(identifier)
@@ -1236,7 +1259,7 @@ class DocumentConversation:
                 except ValueError:return
                 skills=row.get('skills',[])
                 if receipt not in skills:
-                    self.update(identifier,row['stage'],row['text'],status=row['status'],skills=[*skills,receipt][-16:])
+                    self.update(identifier,row['stage'],row['text'],status=row['status'],skills=[*skills,receipt][-16:],skill_loaded=True)
             elif kind == 'draft_publishing':
                 self.update(identifier, 'publishing', '正在创建工作副本。' if payload.get('kind') == 'paged_editable_copy' else '正在保存修改后的副本并验证。',
                             publication=payload.get('publication'))

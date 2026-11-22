@@ -39,7 +39,14 @@ class SkillsBackend:
         return source + ':' + name
 
     def catalog(self):
-        return self._store.catalog()
+        from .webui.office_workflows import NAMES, reviewed_workflow
+        rows = self._store.catalog(include_sha=True)
+        for row in rows:
+            workflow = reviewed_workflow(row)
+            if workflow:
+                row['display_name'] = NAMES[workflow]
+            row.pop('sha256')
+        return rows
 
     def read(self, name, source):
         result = self._store.read(self._identifier(name, source))
@@ -159,8 +166,16 @@ class SkillsBackend:
         return self._task_prompt(self._store.load(self._identifier(name,source))['body'], goal, budget)
 
     def turn_choices(self):
-        return [{key: item[key] for key in ('id', 'name', 'description', 'sha256')}
-                for item in self._store.catalog(include_sha=True) if item['enabled']]
+        from .webui.office_workflows import NAMES, reviewed_workflow
+        choices = []
+        for item in self._store.catalog(include_sha=True):
+            if item['enabled']:
+                choice = {key: item[key] for key in ('id', 'name', 'description', 'sha256')}
+                workflow = reviewed_workflow(choice)
+                if workflow:
+                    choice['name'] = NAMES[workflow]
+                choices.append(choice)
+        return choices
 
     def turn_skill(self, ticket, question):
         from .skill_context import MAX_BODY_CHARS
@@ -174,6 +189,10 @@ class SkillsBackend:
         body = material['body'] if isinstance(material, dict) else material
         if not body.strip() or len(body) > MAX_BODY_CHARS:
             raise ValueError('所选技能内容超出本轮预算，请移除或选择其他技能。')
+        from .webui.office_workflows import NAMES, reviewed_workflow
+        workflow = reviewed_workflow(ticket)
+        if workflow:
+            return {'name': NAMES[workflow], 'instructions': body, 'workflow': workflow, 'ticket': dict(ticket)}
         return {'name': item['name'], 'instructions': body}
 
     @staticmethod

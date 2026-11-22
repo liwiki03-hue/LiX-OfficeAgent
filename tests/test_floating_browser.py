@@ -134,6 +134,23 @@ def test_candidate_chooser_read_and_reparented_model_controls(floating_browser, 
     page.screenshot(path=str(folder/f'candidate-{width}-{theme}.png'))
 
 
+def test_resize_keeps_focused_draft_and_insertion_point(floating_browser):
+    page, _, _, calls, errors = floating_browser
+    page.set_viewport_size({'width': 420, 'height': 640})
+    page.wait_for_function("document.getElementById('floating-controls').parentElement.id === 'floating-root'")
+    draft = page.locator('#floating-input')
+    draft.fill('保留草稿')
+    draft.evaluate('node => node.setSelectionRange(2, 2)')
+    page.evaluate("window.dispatchEvent(new Event('resize'))")
+    assert draft.evaluate('node => node === document.activeElement')
+    page.set_viewport_size({'width': 1120, 'height': 760})
+    page.wait_for_function("document.getElementById('floating-controls').parentElement.id === 'floating-conversation'")
+    assert draft.evaluate('node => node === document.activeElement && node.selectionStart === 2')
+    page.keyboard.insert_text('未发送')
+    assert draft.input_value() == '保留未发送草稿'
+    assert 'floating_submit' not in calls and errors == []
+
+
 def test_secondary_image_plan_and_chat_events_share_the_single_event_consumer(floating_browser):
     page, api, path, calls, errors = floating_browser
     from tests.test_model_connections import select

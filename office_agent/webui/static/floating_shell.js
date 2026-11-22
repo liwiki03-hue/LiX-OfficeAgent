@@ -395,6 +395,7 @@
         else if (['draft_answer','canvas_ai_answer'].includes(event.type)&&!state.conversation?.turns?.length) addEntry(event.payload.text);
         else if (event.type === 'draft_copy_continued'&&!state.conversation?.turns?.length) feedback(event.payload.text);
         else if (event.type === 'skill_loaded') showSkillRead(event.payload,state);
+        else if (event.type === 'composer_file_dropped') composerContext?.finishDrop(event.payload);
         else if (['draft_model_error','draft_switch_requested'].includes(event.type)) feedback(event.payload.text);
         else if (event.type === 'draft_publish_failed'&&!event.payload.publication?.preview_latest_draft) feedback(event.payload.text);
         else if (event.type === 'draft_published'&&!event.payload.publication?.preview_latest_draft&&!state.conversation?.turns?.length) addEntry((event.payload.receipt.kind==='paged_editable_copy'?'简化文字副本已生成：':'草稿 '+event.payload.draft_revision+' 的副本已验证：')+String(event.payload.receipt.output).split(/[\\/]/).pop());
@@ -417,6 +418,7 @@
     const restored=recovery&&typeof recovery.id==='string'&&typeof recovery.text==='string'?recovery:null;
     const input = $('floating-input'), text = restored?restored.text:input.value.trim();
     if (submitting || !text || !snapshot?.document) return;
+    if(composerContext?.waitingForFile()&&!restored)return;
     if(restored&&(restored.document!==snapshot.document.id||restored.version!==snapshot.document.version)){feedback('文档已改变，旧消息保留；没有发送当前草稿或重复执行。');return;}
     const atLimit=snapshot.conversation?.at_limit;
     const localOnly=snapshot.document.ready&&!window.OfficePaged?.active()&&!window.OfficeNative?.active()&&!window.OfficeModelSelector?.readyForRequest(false);
@@ -432,7 +434,7 @@
     let result,receipt;
     try {
       if(!localOnly)await window.OfficeConversation?.painted();
-      const readContext=sending.readContext||(atLimit&&!sending.replyTo?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text):{revision:0,reference:null});
+      const readContext=sending.readContext||(atLimit&&!sending.replyTo?{revision:0,reference:null}:window.OfficeNative?.active()?await window.OfficeNative.messageContext(sending.text):window.OfficePaged?.active()?await window.OfficePaged.messageContext(sending.text,sending.resources?.skill?.id):{revision:0,reference:null});
       sending.readContext=readContext;window.OfficeConversation?.messageContext(sending.id,readContext);
       const options=[localOnly,sending.replyTo||null,sending.plugin||null,sending.recipient||false,sending.resources||null];
       receipt=typeof api().conversation_begin==='function'?await api().conversation_begin(sending.id,sending.text,sending.document,sending.version,readContext.revision,readContext.reference,sending.context,...options):null;
@@ -606,6 +608,8 @@
     })();
     make('section', '', body, 'floating-document').setAttribute('aria-label', '文档结构文本');
     const conversation = make('section', '', body, 'floating-conversation');
+    const dropHint=make('div','',root,'floating-file-drop-hint');dropHint.hidden=true;
+    bindFileDrop(document);
     const conversationHeader = make('div', '', conversation, 'floating-conversation-heading');
     make('span', '', conversationHeader).className = 'agent-icon agent-icon-chat';
     make('strong', '对话', conversationHeader);
@@ -659,7 +663,15 @@
     taskDetails.querySelector('summary').setAttribute('aria-label', '保护与任务版本');
     taskDetails.querySelector('summary').title = '保护与任务版本';
     footer.prepend(taskDetails);
-    const fit = () => (root.classList.contains('paged-active') || root.classList.contains('office-active') ? conversation : matchMedia('(max-width:899px)').matches ? root : conversation).append(controls);
+    const narrowLayout = matchMedia('(max-width:899px)');
+    const fit = () => {
+      const editorActive = root.classList.contains('paged-active') || root.classList.contains('office-active');
+      const parent = !editorActive && narrowLayout.matches ? root : conversation;
+      if (controls.parentElement === parent) return;
+      const focusedControl = controls.contains(document.activeElement) ? document.activeElement : null;
+      parent.append(controls);
+      focusedControl?.focus({preventScroll: true});
+    };
     window.addEventListener('resize', fit); fit();
     const back = button('', $('workspace'), () => secondary(false), 'floating-return');
     back.hidden = true;
@@ -715,7 +727,39 @@
     if(!result?.ok)throw Error(result?.error||'副本未打开，请核对当前文件');
     secondary(false);await refresh();return true;
   }
-  window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput,
+  function bindFileDrop(surface) {
+    const isFileDrag=event=>typeof window.chrome?.webview?.postMessageWithAdditionalObjects==='function'
+      &&event.isTrusted&&Array.from(event.dataTransfer?.types||[]).includes('Files');
+    const isReference=target=>!!target.closest?.('#floating-conversation, #composer-context-menu');
+    const hint=$('floating-file-drop-hint');
+    const reset=()=>{hint.hidden=true;$('floating-conversation').removeAttribute('data-file-drop');};
+    const transfer=(message,files)=>{
+      const nodeId='lix-native-file-drop';
+      window.chrome.webview.postMessageWithAdditionalObjects(['pywebviewEventHandler',JSON.stringify({nodeId,event:{type:'drop'},...message}),nodeId],files);
+    };
+    const hover=event=>{
+      if(!isFileDrag(event))return;
+      event.preventDefault();event.stopPropagation();
+      event.dataTransfer.dropEffect='copy';
+      const reference=isReference(event.target);
+      $('floating-conversation').toggleAttribute('data-file-drop',reference);
+      hint.textContent=reference?'松开以引用文件':'松开以打开文档';
+      hint.hidden=false;
+    };
+    surface.addEventListener('dragenter',hover,true);
+    surface.addEventListener('dragover',hover,true);
+    surface.addEventListener('dragleave',event=>{if(!event.relatedTarget)reset();},true);
+    surface.addEventListener('drop',event=>{
+      if(!isFileDrag(event))return;
+      event.preventDefault();event.stopPropagation();reset();
+      const files=Array.from(event.dataTransfer.files);
+      if(isReference(event.target)){composerContext.dropFile(files,transfer);return;}
+      if(files.length!==1){feedback('一次只能拖入一份 Office 文档。');return;}
+      try{transfer({route:'open'},files);}
+      catch(_){feedback('无法打开拖入的文件，请重新拖放或选择文档。');}
+    },true);
+  }
+  window.OfficeFloating = {active: false, history: () => secondary(true, true), refresh, openHistoryOutput, bindFileDrop,
     restorePlugin:entry=>composerContext?.restorePlugin(entry)};
   window.OfficeConversation?.configure({pluginConsent:async (id,token,approved)=>{
     const doc=snapshot?.document;

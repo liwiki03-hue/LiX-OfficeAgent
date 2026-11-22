@@ -110,8 +110,8 @@ class SkillDiscovery:
         try:
             local = next((item for item in self.workflows()['items'] if item['candidate_id']==candidate_id),None) if github_url is None else None
             if local:
-                from .office_workflows import candidate
-                result = candidate()
+                from .office_workflows import workflow_package
+                result = workflow_package(local['skill_id'])
                 if hashlib.sha256(result['_content'].encode()).hexdigest()!=local['package_sha256']:
                     raise ValueError('workflow_asset_invalid')
                 return self._remember(result)

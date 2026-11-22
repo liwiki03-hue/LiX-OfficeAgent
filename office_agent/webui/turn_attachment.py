@@ -52,7 +52,11 @@ def choose(floating):
         return None
     if not isinstance(result, (list, tuple)) or len(result) != 1 or not isinstance(result[0], str):
         raise ValueError('本轮只能选择一个参考文件。')
-    return _selected(Path(result[0]))
+    return select_dropped(result[0])
+
+
+def select_dropped(path):
+    return _selected(Path(path))
 
 
 def recheck(selected):

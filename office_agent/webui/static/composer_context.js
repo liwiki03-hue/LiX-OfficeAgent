@@ -2,7 +2,7 @@
   'use strict';
   function mount({composer, footer, input, state, api, button, make, reference}) {
     const selected = {};
-    let returnPoint, generation = 0, serial = 0, picking = false, page = 'root';
+    let returnPoint, generation = 0, serial = 0, picking = false, page = 'root', pendingDrop;
     const chips = make('div', '', null, 'composer-context-chips');
     composer.prepend(chips);
     const error = make('div', '', chips, 'composer-context-feedback');
@@ -50,10 +50,13 @@
       chipList.hidden=!chipList.childElementCount;
     }
     function update(data) {
-      add.disabled=!data?.document?.ready||picking;
+      add.disabled=!data?.document?.ready||picking||!!pendingDrop;
       if(!data?.document?.ready)close(false);
     }
     function clear() {
+      if(pendingDrop)clearTimeout(pendingDrop.timer);
+      pendingDrop=null;
+      update(state());
       if(selected.file)api()?.conversation_remove_file(selected.file.token).catch(()=>{});
       for(const kind of Object.keys(selected))delete selected[kind];
       close(false);noteFile('');paint();
@@ -112,6 +115,35 @@
         picking=false;update(state());
         if(owner()===before&&generation===expectedGeneration)resume(point);
       }
+    }
+    function dropFile(files, transfer) {
+      const doc=state()?.document;
+      if(!doc?.ready){noteFile('先打开一份主文档，再拖入参考文件。');return;}
+      if(picking||pendingDrop){noteFile('正在接收参考文件，请稍等。');return;}
+      if(files.length!==1){noteFile('一次只能拖入一份参考文件。');return;}
+      const request=crypto.randomUUID();
+      const point=remember();
+      close(false);
+      noteFile('正在添加参考文件…');
+      pendingDrop={request, owner:owner(), point, timer:setTimeout(()=>{
+        pendingDrop=null;update(state());noteFile('未收到参考文件，请重试。',true);
+      },10000)};
+      update(state());
+      try{transfer({route:'reference',request,owner:[state().epoch,doc.id,doc.version]},files);}
+      catch(_){finishDrop({request,ok:false,error:'无法接收拖放文件，请重新选择。'});}
+    }
+    function finishDrop(result) {
+      if(pendingDrop?.request!==result.request||pendingDrop.owner!==owner()){
+        if(result.file)api()?.conversation_remove_file(result.file.token).catch(()=>{});
+        return;
+      }
+      const point=pendingDrop.point;
+      clearTimeout(pendingDrop.timer);
+      pendingDrop=null;update(state());
+      if(result.ok){selected.file=result.file;noteFile('');paint();}
+      else noteFile(result.error||'无法添加参考文件。',true);
+      const active=document.activeElement;
+      if(active===document.body||composer.contains(active))resume(point);
     }
     function choose(kind,entry) {
       selected[kind]={...entry,serial:++serial};close(false);noteFile('');paint();resume();
@@ -173,7 +205,7 @@
     const observer=new ResizeObserver(position);observer.observe(add);
     paint();
     return {
-      update,clear,
+      update,clear,dropFile,finishDrop,waitingForFile:()=>!!pendingDrop,
       choices(){
         const {file,skill,plugin}=selected;
         return {resources:{...(file?{file:file.token}:{}),...(skill?{skill:{id:skill.id,sha256:skill.sha256}}:{})},

@@ -24,7 +24,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 from ..mcp_reads import McpReadRegistry
 from ..network import options as network_options
-from . import plugin_oauth
+from . import openalex_search, plugin_oauth
 from .plugin_oauth import PluginError, disconnect
 
 
@@ -154,10 +154,15 @@ class _Transport(httpx.AsyncBaseTransport):
             if response.is_redirect or response.headers.get('content-encoding', 'identity').lower() != 'identity':
                 await response.aclose()
                 raise PluginError('连接发生重定向或返回不支持的编码，请核对最终服务地址。')
+            if response.status_code == 429 and self.config['url'].rstrip('/') == openalex_search.URL:
+                await response.aclose()
+                raise openalex_search.SearchRejected('OpenAlex 请求受限，请稍后重试或检查账户额度。')
             if response.status_code in {401, 403} and not self.login and request.method != 'DELETE':
                 await response.aclose()
                 if response.status_code == 401 and self.config.get('auth') == 'oauth':
                     plugin_oauth.invalidate(self.config, request.headers.get('Authorization', '').removeprefix('Bearer '))
+                if self.config['url'].rstrip('/') == openalex_search.URL:
+                    raise openalex_search.SearchRejected('OpenAlex 已拒绝授权，请在插件设置中重新登录。')
                 raise PluginError('服务拒绝访问，请核对凭据或重新登录。')
             response.stream = _LimitedStream(response.stream)
             return response
@@ -177,6 +182,10 @@ def _descriptor(raw, config):
         sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
     result = dict(name=name, description=str(raw.get('description') or '')[:240], signature=signature,
                   usable=False, reason='只支持经审核的单字段只读检索工具。', query_key=None)
+    if config.get('transport') == 'http' and config.get('url', '').rstrip('/') == openalex_search.URL:
+        if openalex_search.supported(raw):
+            return dict(result, usable=True, reason='', query_key='query', minimum=1, maximum=2000)
+        return dict(result, reason='OpenAlex 仅启用已核对结构的 search_works。')
     properties = schema.get('properties') or {}
     official = config.get('transport') == 'http' and config.get('url', '').rstrip('/') == LEARN
     if type(properties) is not dict or len(properties) != 1:
@@ -408,6 +417,8 @@ async def _session(config, cancelled, login):
             session = await stack.enter_async_context(ClientSession(reader, writer, read_timeout_seconds=timedelta(seconds=125 if login else 18)))
             initialized = await session.initialize()
             protocol = initialized.protocolVersion
+            if config.get('url', '').rstrip('/') == openalex_search.URL:
+                config['_server'] = {'name': initialized.serverInfo.name[:160], 'version': initialized.serverInfo.version[:80]}
             yield session, secrets, storage, transport
     except Exception as error:
         if transport and transport.error:
@@ -449,6 +460,9 @@ def _run(config, tool, text, cancelled, login=False):
             if transport:
                 transport.stage = '读取工具清单'
             rows = await _discover(session, config)
+            if config.get('_server') and config.get('url', '').rstrip('/') == openalex_search.URL:
+                for row in rows:
+                    row['server'] = config['_server']
             if transport:
                 secrets.update(transport.secrets)
             if cancelled():
@@ -469,6 +483,8 @@ def _run(config, tool, text, cancelled, login=False):
                 raise PluginError('查询范围包含路径、凭据或不受支持的内容，请仅提供查询词。')
             if cancelled():
                 raise PluginError('本轮已取消。')
+            openalex = config['transport'] == 'http' and config.get('url', '').rstrip('/') == openalex_search.URL
+            arguments = openalex_search.arguments(text) if openalex else {row['query_key']: text}
             if transport:
                 transport.stage = '查询资料'
             before_dispatch = config.get('_before_dispatch')
@@ -483,9 +499,15 @@ def _run(config, tool, text, cancelled, login=False):
                     raise PluginError('核对 Microsoft Learn 工具清单超时，请重试。')
                 request_deadline = now + query_seconds
                 query_started = True
-            result = await session.call_tool(row['name'], {row['query_key']: text})
+            result = await session.call_tool(row['name'], arguments)
             if cancelled():
                 raise PluginError('本轮已取消。')
+            if openalex:
+                records = openalex_search.output(result, arguments['limit'])
+                records['text'] = _redact(records['text'], secrets)
+                for source in records['sources']:
+                    source['title'] = _redact(source['title'], secrets)
+                return verified(records)
             return verified(_output(result, secrets, str(config.get('url') or '').rstrip('/') == LEARN))
 
     async def run():

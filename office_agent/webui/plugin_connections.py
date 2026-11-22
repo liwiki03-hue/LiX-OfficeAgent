@@ -257,8 +257,10 @@ class PluginConnections:
         return row
 
     def resolve(self, text, choice):
-        public_learn = bool(LEARN_REQUEST.match(text.strip().removeprefix('请').removeprefix('帮我')))
-        if not choice and not public_learn:
+        request = text.strip().removeprefix('请').removeprefix('帮我')
+        public_learn = LEARN_REQUEST.match(request)
+        public_openalex = re.match(r'(?:使用|用)\s*OpenAlex\s*(?:查找|查询|检索|搜索|查|找)', request, re.I)
+        if not choice and not (public_learn or public_openalex):
             return None
         if choice:
             if not isinstance(choice, dict) or set(choice) != {'id', 'tool', 'revision'}:
@@ -267,10 +269,14 @@ class PluginConnections:
                 row = self.get(db, choice['id'], choice['revision'])
             tool = choice['tool']
         else:
-            candidates = [r for r in self.list() if r.get('url') == LEARN_URL and r['enabled'] and 'microsoft_docs_search' in r['allowed']]
+            endpoint, tool, label = LEARN_URL, 'microsoft_docs_search', 'Microsoft Learn 文档搜索'
+            if public_openalex:
+                from .openalex_search import URL, TOOL
+                endpoint, tool, label = URL, TOOL, 'OpenAlex 文献搜索'
+            candidates = [r for r in self.list() if (r.get('url') or '').rstrip('/') == endpoint and r['enabled'] and tool in r['allowed']]
             if len(candidates) != 1:
-                raise ValueError('请在「设置 → 插件」启用 Microsoft Learn 文档搜索，或在输入区选择本次连接。')
-            row, tool = candidates[0], 'microsoft_docs_search'
+                raise ValueError(f'请在「设置 → 插件」启用 {label}，或在输入区选择本次连接。')
+            row = candidates[0]
         if not row['enabled'] or tool not in row['allowed']:
             raise ValueError('插件或工具已停用，请在设置中核对。')
         return dict(id=row['id'], revision=row['revision'], name=row['name'], tool=tool, destination=row.get('url') or row.get('program'))

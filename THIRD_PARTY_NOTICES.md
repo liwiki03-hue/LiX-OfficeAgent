@@ -32,3 +32,7 @@
 逐包版本、安装元数据和原许可证位置见 release/DEPENDENCY_NOTICES.json；未安装的可选/平台依赖明确标为未核对，不自动安装大型 extras。
 
 LibreOffice 原版归档保持未修改，其安装目录内 LICENSE、NOTICE 和各组件通知完整保留。许可说明：https://www.libreoffice.org/licenses/ 。对应版本源码入口：https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.6.2/src/ 。本轮只制作本地构建候选，公开分发前需完成对应源码取得与许可交付核对，不把链接存在当作已经交付源码。
+
+## 中文技术校对与参考文献核对
+
+「中文技术校对」改编了 Fenng 的术语一致、字面量与事实保护规则。「参考文献核对」采用 K-Dense 的题录比对与去重方法，查询通过 LiX 的文献服务执行。两个工作流均在工作区技能包中附带各自的 MIT 版权及许可文本。[Fenng 固定原件](https://github.com/Fenng/Tech-Doc-Style-Chinese/blob/b119d01c9bb7cd132b3c62fafdff34227c4410d1/SKILL.md) · [K-Dense 固定原件](https://github.com/K-Dense-AI/scientific-agent-skills/blob/ec59a29a03d5c40f73ab40878df04860bc00e876/skills/citation-management/SKILL.md)

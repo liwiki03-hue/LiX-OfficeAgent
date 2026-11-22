@@ -189,13 +189,23 @@ class TurnScopes:
         return account, generation, *self.chat._read_binding()[:3]
 
     def choose_file(self, document_id, version):
-        from .turn_attachment import choose, recheck
+        from .turn_attachment import choose
+        return self._prepare_file(document_id, version, lambda: choose(self.chat.floating))
+
+    def drop_file(self, epoch, document_id, version, path):
+        from .turn_attachment import select_dropped
+        return self._prepare_file(document_id, version, lambda: select_dropped(path), epoch)
+
+    def _prepare_file(self, document_id, version, select, expected_epoch=None):
+        from .turn_attachment import recheck
         floating = self.chat.floating
         with floating.lock, self.chat.lock:
+            if expected_epoch is not None and floating.epoch != expected_epoch:
+                raise ValueError('当前文档已切换，请重新拖入参考文件。')
             owner = self._file_owner(document_id, version)
             self.file_choice += 1
             request = self.file_choice
-        selected = choose(floating)
+        selected = select()
         with floating.lock, self.chat.lock:
             if request != self.file_choice or owner != self._file_owner(document_id, version):
                 raise ValueError('选择已过期，请在当前对话重新选择。')
@@ -261,6 +271,9 @@ class TurnScopes:
                                            target, deepcopy(reference), full, masked, label, fields, time.monotonic(), raw)
         if action == 'file':
             message = '要参考另一份文件，请选择它。仅在本轮读取所选文件。'
+        elif action == 'citation':
+            field, value = next(iter(full.items()))
+            message = f'本次仅向 {label} 查询{field}「{value}」。允许发送吗？'
         else:
             scope = '选中的' + '、'.join(fields) + '原文' if raw else '本次脱敏材料'
             message = '要把' + scope + '发送给 ' + label + '，用于回答本条问题吗？'
@@ -390,7 +403,7 @@ class TurnScopes:
                 messages = {'file': '已取消，文件未读取。', 'plugin_model': '已取消向模型发送资料。插件查询已完成。'}
                 self.chat.update(item.turn, 'stopped', messages.get(item.action, '已取消，内容未发送给该接收方。'), status='stopped')
                 return {'ok': True}
-            if item.action != 'file' and item.target != self.target(floating.api._connections.capture('agent')):
+            if item.action not in ('file', 'citation') and item.target != self.target(floating.api._connections.capture('agent')):
                 self.pending.pop(item.turn)
                 self.reconfirm.add(item.turn)
                 self.chat._start_read(row, self.chat._read_binding()[3], item.reference)

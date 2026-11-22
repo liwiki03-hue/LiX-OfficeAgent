@@ -153,6 +153,14 @@ class Literature:
         return self._network(lambda client, check: client.search(query, check=check),
                              lambda editor, result: self._accept(*result, query.model_dump(mode='json')))
 
+    def lookup_for_chat(self, query, current):
+        def lookup(client, check):
+            def guard():
+                check()
+                current()
+            return client.search(query, check=guard)
+        return self._network(lookup, lambda editor, result: result)
+
     def review(self, record_id, decision, reason):
         def operation(editor):
             self._record(record_id)

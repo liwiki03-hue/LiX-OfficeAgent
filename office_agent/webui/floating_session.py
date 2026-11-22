@@ -856,6 +856,13 @@ class FloatingSession:
                 if not continuation:
                     raise ValueError('当前没有待执行要求，未自动继续旧请求')
                 model_limit = None if runtime.model_limit is None else max(0, runtime.model_limit - runtime.model_calls)
+            turn_id = self.conversation.active_task
+            proofread = None
+            if (continuation and turn_id == row.get('conversation_id')
+                    and any(item['client_id'] == turn_id for item in continuation)):
+                pending_skill = self.conversation.scopes.selected_skills.get(turn_id, {})
+                if pending_skill.get('workflow') == 'chinese-proofread' and pending_skill.get('copy_anchor'):
+                    proofread = deepcopy(pending_skill)
             saved = deepcopy(self.outputs)
             conversation = self.conversation.state()
             queued = [m['text'] for m in self.runtime.messages if m['revision'] > self.runtime.applied] if self.runtime else []
@@ -881,6 +888,8 @@ class FloatingSession:
                     if level and self.access.serial == serial + 1:
                         self.access.set(self.document['id'], self.document['version'], self.epoch, level, True)
                         if continuation:
+                            if proofread:
+                                self.conversation.scopes.selected_skills[turn_id] = proofread
                             self.runtime = InstructionRuntime(self.document['version'], persist=self.persist,
                                                               notify=self.notice, model_limit=model_limit)
                             self.app.instruction_runtime = self.runtime
@@ -1246,7 +1255,9 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             local_history = base_intent == 'read' and edit_history_question(text)
             skip_reference = local or known_read or at_limit and not resolving
             if local_only and not (skip_reference or selection_prompt or local_history):
-                return {'ok': False, 'reason': 'model_required', 'error': '请先在输入区选择有效的文档 Agent 模型；要求已保留。'}
+                from .citation_turn import handles_without_model
+                if plugin_choice or base_intent != 'read' or not handles_without_model(floating, text, resources):
+                    return {'ok': False, 'reason': 'model_required', 'error': '请先在输入区选择有效的文档 Agent 模型；要求已保留。'}
             if skip_reference or opening and not floating.document.get('ready'):
                 reference_value = None
             elif floating.paged.active():
@@ -1343,8 +1354,9 @@ class FloatingApi(OfficeCanvasApi,PresentationApi,Api):
             from .plugin_turns import usable_sources
             self._floating.authenticated()
             row = self._floating.conversation.turns.get(client_id) or {}
-            links = usable_sources(row.get('plugin_sources', []))
-            if type(index) is not int or not 0 <= index < len(links):
+            links = usable_sources(row.get('citation_sources', []) or row.get('plugin_sources', []))
+            if (type(index) is not int or not 0 <= index < len(links)
+                    or row.get('citation_sources') and not links[index]['url'].startswith('https://doi.org/10.')):
                 raise ValueError('找不到这次查询的来源。')
             return {'ok': bool(webbrowser.open(links[index]['url']))}
         return self._floating_call(action)

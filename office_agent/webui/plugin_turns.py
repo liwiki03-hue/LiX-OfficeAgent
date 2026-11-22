@@ -9,7 +9,9 @@ from urllib.parse import unquote, urlsplit
 from ..agent import OfficeAgent
 from ..model_content import check_scope
 from ..rag import SECRET
+from . import openalex_search
 from .plugin_connections import LEARN_URL
+from .plugin_oauth import PluginError
 from .turn_scope import TTL, field_names, mask_text, requested_fields, wants_raw
 
 
@@ -70,10 +72,12 @@ class PluginSend:
 
 def _plugin_preview(conversation, row, reference, binding):
     floating = conversation.floating
-    question = row['question']
+    question, ticket = row['question'], row['plugin']
     query = mask_text(question)
     selected = ''
-    if re.search(r'选区|所选|选中|当前引用|这段|这句话', question):
+    if ticket['destination'].rstrip('/') == openalex_search.URL and ticket['tool'] == openalex_search.TOOL:
+        query = openalex_search.preview(query)
+    elif re.search(r'选区|所选|选中|当前引用|这段|这句话', question):
         if not reference or reference.get('kind') == 'append':
             raise ValueError('请先引用要发送的文字，再重新提问。')
         material, _, _ = conversation._material(question, reference, read_binding=binding, with_sources=True, force_selection=True)
@@ -146,6 +150,7 @@ def answer_with_plugin(conversation, row, reference, metrics, current):
     plugins = floating.api._plugins
     identifier = row['id']
     ticket = row['plugin']
+    openalex = ticket['destination'].rstrip('/') == openalex_search.URL and ticket['tool'] == openalex_search.TOOL
     binding = conversation.plugin_bindings.get(identifier)
     if not binding:
         raise ValueError('先前的插件许可已结束，请重新发起查询。')
@@ -208,7 +213,14 @@ def answer_with_plugin(conversation, row, reference, metrics, current):
             metrics.count('tool_executions')
             try:
                 result = plugins.query(ticket, query, stopped, before_dispatch=before_dispatch)
-            except Exception:
+            except Exception as error:
+                if openalex and isinstance(error, openalex_search.SearchRejected) and not stopped():
+                    guard()
+                    conversation.update(identifier, 'failed', str(error), status='failed')
+                    return
+                if openalex and dispatched and isinstance(error, PluginError) and not stopped():
+                    conversation.update(identifier, 'uncertain', 'OpenAlex 检索已派发，结果未知。' + str(error), status='uncertain')
+                    return
                 if not dispatched or stopped():
                     raise
                 conversation.update(identifier, 'uncertain', '本次查询已派发，未取得可核对的结果。', status='uncertain')
@@ -228,6 +240,13 @@ def answer_with_plugin(conversation, row, reference, metrics, current):
         if len(material.encode('utf-8')) > 20000:
             raise ValueError('插件结果超过本轮容量，请缩小查询范围。')
         elapsed = round((time.monotonic() - started) * 1000)
+        if openalex:
+            with floating.lock, conversation.lock:
+                guard()
+                metrics.mark('first_effective_answer')
+                conversation.update(identifier, 'answer', material, status='complete', answer=material,
+                                    plugin_called=True, plugin_sources=sources, plugin_elapsed_ms=elapsed)
+            return
         payload = dict(question=mask_text(row['question']), public_query=mask_text(query),
                        external_evidence=material, sources=sources)
         with conversation.lock:

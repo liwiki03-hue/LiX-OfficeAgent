@@ -134,6 +134,124 @@ def test_composer_context_reads_chosen_file_and_skill_after_sending(paged_browse
     assert source.read_bytes() == original and extra.read_bytes() == extra_before and not api._floating.outputs and not errors
 
 
+def select_text_in_editor(page, paragraph, selected):
+    start, end = paragraph.evaluate("""(element, selected) => {
+        const text=document.createTreeWalker(element,NodeFilter.SHOW_TEXT).nextNode();
+        const start=text.data.indexOf(selected);
+        if(start<0)throw Error('The selected text is not in the paragraph.');
+        const range=document.createRange();
+        range.setStart(text,start);range.setEnd(text,start+selected.length);
+        const rect=range.getBoundingClientRect();
+        return [[rect.left,rect.top+rect.height/2],[rect.right,rect.top+rect.height/2]];
+    }""", selected)
+    offset = page.locator('#paged-editor-main iframe').bounding_box()
+    page.mouse.move(offset['x']+start[0], offset['y']+start[1])
+    page.mouse.down()
+    page.mouse.move(offset['x']+end[0], offset['y']+end[1], steps=10)
+    page.mouse.up()
+
+
+def test_readonly_word_references_text_selected_in_the_editor(paged_browser, monkeypatch):
+    from docx import Document
+    from playwright.sync_api import expect
+    from tests.test_editable_copies import make_readonly
+
+    page, api, source, errors = paged_browser
+    readonly = source.parent / '只读引用.docx'
+    make_readonly(readonly)
+    book = Document(readonly)
+    text = '实验温度是 25 ℃，重复说明。'
+    book.paragraphs[0].insert_paragraph_before(text)
+    book.save(readonly)
+    original = readonly.read_bytes()
+    api._floating.dropped((str(readonly),))
+    expect(page.locator('#floating-title')).to_have_text(readonly.name)
+    frame = page.frame_locator('#paged-editor-main iframe')
+    body = frame.locator('.superdoc-page').get_by_text(text, exact=True)
+    expect(body).to_be_visible()
+    assert not api._floating.paged.editable
+    trigger = page.get_by_role('button', name='引用选区', exact=True)
+    trigger.click()
+    expect(page.locator('#paged-feedback')).to_contain_text('请先在文档正文中选中')
+    expect(page.get_by_role('dialog', name='从原稿摘录引用')).to_have_count(0)
+    select_text_in_editor(page, body, '实验温度是 25')
+    trigger.click()
+    expect(page.locator('#paged-reference-chip')).to_be_visible()
+    assert page.locator('#paged-reference-content').text_content() == '实验温度是 25'
+    assert next(iter(api._floating.paged.references.values()))['old'] == '实验温度是 25'
+    expect(page.locator('#floating-input')).to_be_focused()
+    assert not errors and not api._floating.outputs and readonly.read_bytes() == original
+
+
+def test_explorer_drop_uses_chat_as_reference_and_editor_as_open(paged_browser, monkeypatch):
+    from docx import Document
+    from playwright.sync_api import expect
+    from office_agent.webui.floating_shell import _receive_drop
+    from tests.test_paged_browser import engine_frame
+
+    page, api, source, errors = paged_browser
+    configure(page, api, monkeypatch)
+    answer = FixedAnswer({'content': '参考文件记录 21 天。'})
+    monkeypatch.setattr(api._connections, 'build_model', answer.build_model)
+    extra = source.parent / '拖放引用.docx'
+    book = Document()
+    book.add_paragraph('只有这份参考件包含 21 天。')
+    book.save(extra)
+    before = source.read_bytes(), extra.read_bytes()
+    doc_id = api._floating.document['id']
+    monkeypatch.setattr(api._app.window, 'create_file_dialog', lambda *args, **kwargs: pytest.fail('drop opened a picker'))
+    messages = []
+
+    class File:
+        Path = str(extra)
+
+    def receive(message, names):
+        assert names == [extra.name]
+        messages.append(json.loads(message[1])['route'])
+        args = SimpleNamespace(Source=page_url, WebMessageAsJson=json.dumps(message), get_AdditionalObjects=lambda: [File()])
+        _receive_drop(api, page_url, args, File)
+
+    page_url = page.url
+    page.expose_function('dropFixture', receive)
+    page.evaluate("""window.chrome.webview={postMessageWithAdditionalObjects:(message,files)=>
+        dropFixture(message, files.map(file=>file.name))}""")
+    cdp = page.context.new_cdp_session(page)
+
+    def drag(point):
+        x, y = point['x']+10, point['y']+10
+        for kind in ['dragEnter', 'dragOver', 'drop']:
+            cdp.send('Input.dispatchDragEvent', {'type': kind, 'x': x, 'y': y,
+                     'data': {'items': [], 'files': [str(extra)], 'dragOperationsMask': 1}})
+
+    input = page.locator('#floating-input')
+    input.fill('比较两份文件的交付周期')
+    input.evaluate('input=>input.setSelectionRange(2,5)')
+    drag(input.bounding_box())
+    expect(page.get_by_role('button', name='移除参考：拖放引用.docx', exact=True)).to_be_visible()
+    assert messages == ['reference']
+    assert api._floating.document['id'] == doc_id and not api._floating.conversation.turns
+    assert input.input_value() == '比较两份文件的交付周期'
+    assert input.evaluate('input=>[input.selectionStart,input.selectionEnd]') == [2, 5]
+    assert not answer.calls
+
+    page.locator('#floating-send').click()
+    allow = page.get_by_role('button', name='仅允许这一次', exact=True)
+    expect(allow).to_be_visible()
+    assert not answer.calls
+    allow.click()
+    reply = page.locator('.conversation-turn[data-state="complete"]')
+    expect(reply).to_contain_text('参考文件记录 21 天')
+    assert len(answer.calls) == 1 and '只有这份参考件包含 21 天' in answer.calls[0]
+    assert api._floating.document['id'] == doc_id
+
+    drag(engine_frame(page).locator('.superdoc-page').first.bounding_box())
+    expect(page.locator('#floating-title')).to_have_text(extra.name)
+    expect(page.get_by_role('button', name='移除参考：拖放引用.docx', exact=True)).to_have_count(0)
+    assert messages == ['reference', 'open']
+    assert api._floating.document['id'] != doc_id
+    assert not errors and not api._floating.outputs and before == (source.read_bytes(), extra.read_bytes())
+
+
 def test_composer_plugin_is_locally_listed_and_only_called_after_permission(paged_browser, monkeypatch):
     from playwright.sync_api import expect
     from office_agent.webui import plugin_transport

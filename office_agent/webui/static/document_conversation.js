@@ -94,6 +94,17 @@
       if(node.text.textContent!==text)node.text.textContent=text;
       node.text.classList.toggle('conversation-progress',showPreviewStatus);
       window.OfficePlugins?.renderTurn(node,row,handlers);
+      if(row.citation_sources?.length&&!node.citationSources){
+        node.citationSources=make('details','',node.assistant);
+        node.citationSources.className='conversation-source-details';
+        make('summary','来源 · Crossref',node.citationSources);
+        row.citation_sources.forEach((source,index)=>{
+          if(typeof source.url!=='string'||!source.url.startsWith('https://doi.org/10.'))return;
+          const link=make('a',source.title,node.citationSources);
+          link.href=source.url;link.title=source.url;
+          link.onclick=event=>{event.preventDefault();handlers.pluginSource?.(row.id,index);};
+        });
+      }
       const summaryKey=JSON.stringify([row.resources,row.skill_loaded,row.references?.find(item=>item.scope==='本轮所选参考文件')?.location]);
       if(row.resources&&node.summaryKey!==summaryKey){
         node.summaryKey=summaryKey;

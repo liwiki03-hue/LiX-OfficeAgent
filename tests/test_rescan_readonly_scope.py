@@ -4,7 +4,7 @@ from docx.text.paragraph import Paragraph
 
 from office_agent.paged_documents import W
 from tests.test_document_conversation import Answers, attach, finish, send
-from tests.test_document_conversation_browser import configure
+from tests.test_document_conversation_browser import configure, select_text_in_editor
 from tests.test_editable_copies import make_readonly, readonly
 from tests.test_paged_browser import paged_browser
 
@@ -39,7 +39,7 @@ def test_readonly_engine_selection_and_source_excerpt_use_checked_offsets(readon
     assert not floating.access.state()['active'] and source.read_bytes() == original
 
 
-def test_readonly_word_recovers_selection_from_host_excerpt(paged_browser, monkeypatch, tmp_path):
+def test_readonly_word_recovers_selection_from_editor(paged_browser, monkeypatch, tmp_path):
     browser, api, _, errors = paged_browser
     source = tmp_path / '只读问答.docx'
     make_readonly(source)
@@ -55,14 +55,13 @@ def test_readonly_word_recovers_selection_from_host_excerpt(paged_browser, monke
     resume = browser.get_by_role('button', name='用新选区回答', exact=True)
     resume.wait_for()
     assert not answers.calls
+    frame = browser.frame_locator('#paged-editor-main iframe')
+    paragraph = frame.locator('.superdoc-page').get_by_text('实验条件为25 ℃，30个样本的延迟为120 ms[1]。', exact=True)
+    paragraph.wait_for()
+    select_text_in_editor(browser, paragraph, '25 ℃')
     browser.get_by_role('button', name='引用选区', exact=True).click()
-    picker = browser.get_by_role('dialog', name='从原稿摘录引用')
-    picker.get_by_label('原稿段落').select_option(index=1)
-    area = picker.get_by_label('原稿文字')
-    area.focus()
-    area.evaluate("node=>{const i=node.value.indexOf('25 ℃');node.setSelectionRange(i,i+4)}")
-    picker.get_by_role('button', name='引用所选文字').click()
-    picker.wait_for(state='detached')
+    browser.locator('#paged-reference-chip').wait_for()
+    assert browser.locator('#paged-reference-content').text_content() == '25 ℃'
     resume.click()
     browser.locator('.conversation-turn[data-state="complete"]').get_by_text('正文第2段').wait_for()
     assert len(answers.calls) == 1 and '25 ℃' in answers.calls[0] and '30个样本' not in answers.calls[0]

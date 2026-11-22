@@ -12,6 +12,7 @@
         const timer=setTimeout(()=>no(Error('本机编辑器未能连接，请保留原稿并重新打开')),15000);
         this.frame.onload=()=>{
           if(this.closed)return;
+          if(this.frame.contentDocument)window.OfficeFloating?.bindFileDrop(this.frame.contentDocument);
           const channel=new MessageChannel();this.port=channel.port1;
           this.port.onmessage=event=>{
             const message=event.data;

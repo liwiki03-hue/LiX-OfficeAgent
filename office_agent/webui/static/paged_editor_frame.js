@@ -226,7 +226,7 @@
   }
   function selection(options={}) {
     const context=tableContext(), active=editor().state.selection;
-    if(context&&(options.table===true||!active.empty&&rows().filter(row=>row.from<active.to&&row.to>active.from).length>1)){
+    if(options.source!==true&&context&&(options.table===true||!active.empty&&rows().filter(row=>row.from<active.to&&row.to>active.from).length>1)){
       const picked=rows().filter(row=>row.position>context.position&&row.position<context.position+context.node.nodeSize&&row.text&&(options.table===true||row.from<active.to&&row.to>active.from));
       if(!picked.length||picked.length>8)throw Error('表格引用限1—8个非空段落，请缩小范围');
       return {nodes:picked.map(row=>{const positions=batchPositions(row),start=options.table===true?0:positions.findIndex(position=>position>=active.from),end=options.table===true?row.text.length:positions.findIndex(position=>position>=active.to);return {node_id:row.id,start:start<0?row.text.length:start,end:end<0?row.text.length:end};}).filter(row=>row.end>row.start),whole_table:options.table===true};
@@ -239,13 +239,14 @@
       const caret=editor().state.selection.from,row=rows().find(item=>caret>=item.from&&caret<=item.to);
       if(row&&row.text.trim())segment={blockId:row.id,range:{start:0,end:row.text.length}};
       else throw Error('请在要修改的段落中放置光标，或选择一段文字');
-    }else if(value.empty||!segment)throw Error('首版AI修改请选择一个段落内的明确文字范围');
+    }else if(value.empty||!segment)throw Error('请先在文档正文中选中同一段内的明确文字范围。');
     const row=rows().find(item=>item.id===segment.blockId);
     if (!row) throw Error('首版AI仅支持正文或普通表格内文字；请重新选择');
     if(options.source===true){
       const values=rows();
-      if(values.length>3000||values.reduce((size,item)=>size+item.text.length,0)>1000000)throw Error('请从原稿摘录选取');
-      return {source_index:values.findIndex(item=>item.id===row.id),paragraphs:values.map(item=>item.text),
+      const bounded=values.length<=3000&&values.reduce((size,item)=>size+item.text.length,0)<=1000000;
+      return {source_index:values.findIndex(item=>item.id===row.id),
+        paragraphs:bounded?values.map(item=>item.text):null,source_paragraph:row.text,
         start:segment.range.start,end:segment.range.end,expected:editor().state.doc.textBetween(active.from,active.to,'\n')};
     }
     const styles=new Set(),fonts=new Set(),sizes=new Set(),marks=new Set();

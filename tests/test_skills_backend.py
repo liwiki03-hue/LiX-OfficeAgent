@@ -7,9 +7,12 @@ from office_agent.skills_store import SkillsError
 
 class Store:
     def __init__(self): self.calls=[]
-    def catalog(self):
-        return [{'id':'user:report-style','name':'报告风格','description':'报告格式保持表格',
-                 'source':'user','enabled':True}]
+    def catalog(self, *, include_sha=False):
+        item = {'id': 'user:report-style', 'name': '报告风格', 'description': '报告格式保持表格',
+                'source': 'user', 'enabled': True}
+        if include_sha:
+            item['sha256'] = 'a' * 64
+        return [item]
     def read(self,identifier):
         self.calls.append(('read',identifier)); return {'body':'disabled content','enabled':False}
     def load(self,identifier):
@@ -28,6 +31,7 @@ def backend():
 
 def test_catalog_does_not_load_body_and_prompt_names_are_stable_slugs(backend):
     assert backend.catalog()[0]['name']=='报告风格'
+    assert 'sha256' not in backend.catalog()[0]
     rendered=backend.context().render('报告格式')
     assert 'report-style' in rendered and 'Use approved report format.' in rendered
     assert backend._store.calls==[('load','user:report-style')]

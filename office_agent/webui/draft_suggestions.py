@@ -16,6 +16,16 @@ class DraftNumberConflict(GuardError):
     pass
 
 
+PROOFREAD_UNITS = re.compile(r'(?<![A-Za-z])[-+]?\d+(?:[.,]\d+)*\s*(?:[A-Za-zμµ°℃℉%‰]+|毫秒|微秒|秒|分钟|小时|千克|毫升|摄氏度|个|次)')
+PROOFREAD_LIMITS = re.compile(r'(?:尚未|未曾|未经|未能|未|无法|不能|不得|禁止|仅限|仅适用于|除非)[^，。；,;！？!?\n]{1,100}')
+
+
+def check_proofreading(old, new):
+    for rule in (NUMBER, PROOFREAD_UNITS, PROOFREAD_LIMITS):
+        if rule.findall(old) != rule.findall(new):
+            raise GuardError('校对建议改变了数字、单位或适用条件。请保留原文中的保护内容。')
+
+
 def validate_suggestion(before, after, reason, requirements):
     if SECRET.search(reason):
         raise GuardError('修改原因疑似包含凭据，未形成建议')

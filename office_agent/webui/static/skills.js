@@ -115,7 +115,7 @@
     const parts = item.id.split(':');
     if (parts.length !== 2 || parts[0] !== item.source || !slugValid(parts[1]) ||
         typeof item.name !== 'string' || typeof item.description !== 'string' || typeof item.enabled !== 'boolean') throw Error();
-    return {...item, slug: parts[1]};
+    return {...item, name:item.display_name||item.name, slug:parts[1]};
   }
   function showList(items) {
     if (!Array.isArray(items)) throw Error();
